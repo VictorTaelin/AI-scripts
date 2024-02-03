@@ -1,0 +1,22 @@
+{
+  "name": "taelin-ai-scripts",
+  "version": "0.1.0",
+  "description": "Handy AI scripts by Taelin",
+  "type": "module",
+  "main": "main.js",
+  "bin": {
+    "holefill": "holefill.mjs"
+  },
+  "scripts": {},
+  "keywords": [
+    "cli",
+    "openai",
+    "gpt-4"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "openai": "^4.26.0",
+    "gpt-tokenizer": "^2.1.2"
+  }
+}
