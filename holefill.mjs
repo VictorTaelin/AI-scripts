@@ -30,51 +30,14 @@ if (i % 2 === 0) {
       sum += i;
     }
 
-## NOTICE THE IDENTATION.
-## The first line isn't idented, because the hole already has spaces before it.
-## The other lines are idented, to match the surrounding style.
-
-#################
-
-## EXAMPLE QUERY:
-
-function factorial(N) {
-  var fact = 1;
-  for (var i = 1; i <= N; ++i) {
-{{LOOP}}
-  }
-  return fact;
-}
-
-TASK: Fill the {{LOOP}} hole.
-
-## CORRECT ANSWER:
-
-    fact *= i;
-
-## NOTICE THE IDENTATION.
-## ALL lines are idented, because there are no spaces before the hole.
-
-#################
-
-## EXAMPLE QUERY:
-
-Q: Which is the largest mammal?
-
-A: {{ANSWER}}
-
-TASK: Fill the {{ANSWER}} hole.
-
-## CORRECT ANSWER: 
-
-The blue whale.
-
-## NOTICE THE IDENTATION.
-## There is no identation, since this is an inline hole.
+## NOTICE THE INDENTATION.
+## 1. The first line is NOT indented, because there are already spaces before {{LOOP}}.
+## 2. The other lines ARE indented, to match the identation of the context.
+## THIS IS VERY IMPORTANT.
 `;
 
 var file = process.argv[2];
-var fill = process.argv[3];
+var curr = process.argv[3];
 var fast = process.argv[4] === "--fast";
 
 if (!file) {
@@ -86,10 +49,26 @@ if (!file) {
 }
 
 var file_code = await fs.readFile(file, 'utf-8');
-var fill_code = fill ? await fs.readFile(fill, 'utf-8') : file_code;
-var tokens = GPT.token_count(fill_code);
-var holes = fill_code.match(/{{\w+}}/g) || [];
-var model = fast ? "gpt-4-0125-preview" : "gpt-4-0314";
+var curr_code = curr ? await fs.readFile(curr, 'utf-8') : file_code;
+
+// Imports context files when //./path_to_file// is present.
+var regex = /\/\/\.\/(.*?)\/\//g;
+var match;
+while ((match = regex.exec(curr_code)) !== null) {
+  var import_path = path.resolve(path.dirname(file), match[1]);
+  if (await fs.stat(import_path).then(() => true).catch(() => false)) {
+    var import_text = await fs.readFile(import_path, 'utf-8');
+    console.log("import_file:", match[0]);
+    curr_code = curr_code.replace(match[0], '\n' + import_text);
+  } else {
+    console.log("import_file:", match[0], "ERROR");
+    process.exit(1);
+  }
+}
+
+var tokens = GPT.token_count(curr_code);
+var holes = curr_code.match(/{{\w+}}/g) || [];
+var model = fast ? "gpt-4-0125-preview" : "gpt-4-32k-0314";
 
 console.log("holes_found:", holes);
 console.log("token_count:", tokens);
@@ -97,7 +76,7 @@ console.log("model_label:", model);
 
 for (let hole of holes) {
   console.log("next_filled: " + hole + "...");
-  var prompt = fill_code + "\nTASK: Fill the {{"+hole+"}} hole.";
+  var prompt = curr_code + "\nTASK: Fill the {{"+hole+"}} hole. Answer only with the EXACT completion to replace {{"+hole+"}} with. INDENT IT BASED ON THE CONTEXT. DO NOT USE BACKTICKS.";
   var answer = await GPT.ask({system, prompt, model});
   file_code = file_code.replace(hole, answer);
 }
