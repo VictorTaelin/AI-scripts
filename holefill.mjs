@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-
 import * as GPT from './GPT.mjs';
+import * as Claude from './Claude.mjs';
 import process from "process";
 import fs from 'fs/promises';
 import os from 'os';
@@ -9,8 +9,6 @@ import path from 'path';
 const system = `
 You are a HOLE FILLER. You are provided with a file containing holes, formatted
 as '{{HOLE}}'. Your TASK is to answer with a string to replace this hole with.
-
-#################
 
 ## EXAMPLE QUERY:
 
@@ -30,20 +28,21 @@ if (i % 2 === 0) {
       sum += i;
     }
 
-## NOTICE THE INDENTATION.
-## 1. The first line is NOT indented, because there are already spaces before {{LOOP}}.
-## 2. The other lines ARE indented, to match the identation of the context.
-## THIS IS VERY IMPORTANT.
+## NOTICE THE INDENTATION:
+
+1. The first line is NOT indented, because there are already spaces before {{LOOP}}.
+
+2. The other lines ARE indented, to match the identation of the context.
 `;
 
 var file = process.argv[2];
 var curr = process.argv[3];
-var fast = process.argv[4] === "--fast";
+var model = process.argv[4] || "gpt-4-0125-preview";
 
 if (!file) {
-  console.log("Usage: holefill <file> [<shortened_file>]");
+  console.log("Usage: holefill <file> [<shortened_file>] [<model_name>]");
   console.log("");
-  console.log("This will replace all {{HOLES}} in <file>, using GPT-4.");
+  console.log("This will replace all {{HOLES}} in <file>, using GPT-4 / Claude-3.");
   console.log("A shortened file can be used to omit irrelevant parts.");
   process.exit();
 }
@@ -68,7 +67,7 @@ while ((match = regex.exec(curr_code)) !== null) {
 
 var tokens = GPT.token_count(curr_code);
 var holes = curr_code.match(/{{\w+}}/g) || [];
-var model = fast ? "gpt-4-0125-preview" : "gpt-4-32k-0314";
+var ask = model.startsWith("claude") ? Claude.ask : GPT.ask;
 
 console.log("holes_found:", holes);
 console.log("token_count:", tokens);
@@ -77,7 +76,7 @@ console.log("model_label:", model);
 for (let hole of holes) {
   console.log("next_filled: " + hole + "...");
   var prompt = curr_code + "\nTASK: Fill the {{"+hole+"}} hole. Answer only with the EXACT completion to replace {{"+hole+"}} with. INDENT IT BASED ON THE CONTEXT. DO NOT USE BACKTICKS.";
-  var answer = await GPT.ask({system, prompt, model});
+  var answer = await ask({system, prompt, model});
   file_code = file_code.replace(hole, answer);
 }
 
