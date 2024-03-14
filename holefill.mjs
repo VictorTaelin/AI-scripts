@@ -32,7 +32,7 @@ if (i % 2 === 0) {
 
 1. The first line is NOT indented, because there are already spaces before {{LOOP}}.
 
-2. The other lines ARE indented, to match the identation of the context.
+2. The other lines ARE indented, to match the indentation of the context.
 `;
 
 var file = process.argv[2];
@@ -64,6 +64,8 @@ while ((match = regex.exec(curr_code)) !== null) {
     process.exit(1);
   }
 }
+
+await fs.writeFile(curr, curr_code, 'utf-8');
 
 var tokens = GPT.token_count(curr_code);
 var holes = curr_code.match(/{{\w+}}/g) || [];
