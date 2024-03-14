@@ -19,7 +19,7 @@ export async function ask({ system, prompt, max_tokens, model = 'claude-3-opus-2
     }).on('text', (text) => process.stdout.write(text));
     const message = await stream.finalMessage();
     console.log(); // Add a newline at the end
-    return message.content;
+    return message.content[0].text;
   } else {
     const message = await anthropic.messages.create({
       model,
@@ -28,6 +28,6 @@ export async function ask({ system, prompt, max_tokens, model = 'claude-3-opus-2
       temperature,
       ...(system && { system }),
     });
-    return message.content;
+    return message.content[0].text;
   }
 }
