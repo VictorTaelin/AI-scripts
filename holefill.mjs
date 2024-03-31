@@ -77,7 +77,7 @@ console.log("model_label:", model);
 
 for (let hole of holes) {
   console.log("next_filled: " + hole + "...");
-  var prompt = curr_code + "\nTASK: Fill the {{"+hole+"}} hole. Answer only with the EXACT completion to replace {{"+hole+"}} with. INDENT IT BASED ON THE CONTEXT. DO NOT USE BACKTICKS.";
+  var prompt = curr_code + "\nTASK: Fill the {{"+hole+"}} hole. Answer only with the EXACT completion to replace {{"+hole+"}} with. INDENT IT BASED ON THE CONTEXT.";
   var answer = await ask({system, prompt, model});
   file_code = file_code.replace(hole, answer);
 }
