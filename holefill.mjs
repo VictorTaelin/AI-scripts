@@ -1,44 +1,38 @@
 #!/usr/bin/env node
-import { asker, MODELS } from './Ask.mjs';
+import { asker, MODELS, token_count } from './Ask.mjs';
 import process from "process";
 import fs from 'fs/promises';
 import path from 'path';
 
 const system = `
 You are a HOLE FILLER. You are provided with a file containing holes, formatted
-as '{{HOLE}}'. Your TASK is to answer with a string to replace this hole with.
+as '{{X}}'. Your TASK is to answer with a string to replace this hole with.
 
-## EXAMPLE QUERY:
+# EXAMPLE QUERY:
 
 function sum_evens(lim) {
   var sum = 0;
   for (var i = 0; i < lim; ++i) {
-    {{LOOP}}
+    {{X}}
   }
   return sum;
 }
 
-TASK: Fill the {{LOOP}} hole.
+TASK: Fill the {{X}} hole.
 
-## CORRECT ANSWER:
+# CORRECT ANSWER:
 
 if (i % 2 === 0) {
       sum += i;
     }
 
-## NOTICE THE CONTEXT-AWARE INDENTATION:
+# NOTICE THE CONTEXT-AWARE INDENTATION:
 
 1. The first line is NOT indented, because there are already spaces before {{LOOP}}.
 
 2. The other lines ARE indented, to match the indentation of the context.
 
-# NOTICE NO EXTRA EXPLANATORY WORDS:
-
-1. Do NOT add explanatory words like 'here is the code...' in the answer.
-
-2. Unless demanded by context, do NOT add backticks around the answer.
-
-3. Answer just with the correct substitution. 
+# ANSWER ONLY WITH THE CORRECT SUBSTITUTION. NOTHING ELSE.
 `;
 
 var file = process.argv[2];
@@ -75,8 +69,8 @@ while ((match = regex.exec(curr_code)) !== null) {
 
 await fs.writeFile(curr, curr_code, 'utf-8');
 
-var tokens = curr_code.length; // Use the length of the code as a rough estimate of tokens
-var holes = curr_code.match(/{{\w+}}/g) || [];
+var tokens = token_count(curr_code);
+var holes  = curr_code.match(/{{\w+}}/g) || [];
 
 var ask = asker();
 
