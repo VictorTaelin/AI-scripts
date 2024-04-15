@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 import * as GPT from './GPT.mjs';
 import * as Claude from './Claude.mjs';
 import process from "process";
@@ -37,7 +38,7 @@ if (i % 2 === 0) {
 
 var file = process.argv[2];
 var curr = process.argv[3];
-var model = process.argv[4] || "gpt-4-0125-preview";
+var model = process.argv[4] || "gpt-4-turbo-2024-04-09";
 
 if (!file) {
   console.log("Usage: holefill <file> [<shortened_file>] [<model_name>]");

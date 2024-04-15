@@ -5,7 +5,8 @@
   "type": "module",
   "main": "main.js",
   "bin": {
-    "holefill": "holefill.mjs"
+    "holefill": "holefill.mjs",
+    "chatsh": "chatsh.mjs"
   },
   "scripts": {},
   "keywords": [
