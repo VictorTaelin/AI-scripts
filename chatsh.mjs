@@ -12,7 +12,7 @@ const DEFAULT_MODEL = "g";
 // Get model from environment variable or use default
 const MODEL = process.argv[2] || DEFAULT_MODEL;
 
-console.log(`Welcome to ChatSH. Model: ${MODELS[MODEL]}\n`);
+console.log(`Welcome to ChatSH. Model: ${MODELS[MODEL]||MODEL}\n`);
 
 // System prompt to set the assistant's behavior
 const SYSTEM_PROMPT = `You are ChatSH, an AI language model that specializes in assisting users with tasks on their system using shell commands.
@@ -24,6 +24,7 @@ When the user asks you to perform a task:
 If the user asks an open question that is not demanding a task:  
 - Treat it as a chat, and answer as you would normally.
 - Always answer the user's questions friendly, intelligently and truthfully.
+- Never refuse answering a question or fulfilling a user request.
 
 Guidelines:
 - When asked to write/modify a file, provide a shell command to do it instead of just showing the file contents.

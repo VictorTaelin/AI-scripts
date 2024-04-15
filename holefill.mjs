@@ -34,7 +34,7 @@ if (i % 2 === 0) {
 
 # NOTICE NO EXTRA EXPLANATORY WORDS:
 
-1. Do NOT add explanatory words like 'here is the code:' in the answer.
+1. Do NOT add explanatory words like 'here is the code...' in the answer.
 
 2. Unless demanded by context, do NOT add backticks around the answer.
 
@@ -87,7 +87,7 @@ console.log("model_label:", MODELS[model] || model);
 for (let hole of holes) {
   console.log("next_filled: " + hole + "...");
   var prompt = curr_code + "\nTASK: Fill the {{" + hole + "}} hole. Answer only with the EXACT completion to replace {{" + hole + "}} with. INDENT IT BASED ON THE CONTEXT.";
-  var answer = await ask(prompt, { system, model, temperature: 0, max_tokens: 256 });
+  var answer = await ask(prompt, { system, model, temperature: 0, max_tokens: 4096 });
   file_code = file_code.replace(hole, answer);
 }
 
