@@ -3,12 +3,12 @@
 import readline from 'readline';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { makeStatefulAsker, MODELS } from './Ask.mjs';
+import { asker, MODELS } from './Ask.mjs';
 
 const execAsync = promisify(exec);
 
 // Default model if not specified
-const DEFAULT_MODEL = "cf";  
+const DEFAULT_MODEL = "g";  
 // Get model from environment variable or use default
 const MODEL = process.argv[2] || DEFAULT_MODEL;
 
@@ -22,13 +22,16 @@ When the user asks you to perform a task:
 - Do NOT include any explanatory text along with the code.
 
 If the user asks an open question that is not demanding a task:  
-- Treat it as a chat, and ask as an assistant instead.
-- As an assistant, you're helpful, friendly, intelligent and truthful.
+- Treat it as a chat, and answer as you would normally.
+- Always answer the user's questions friendly, intelligently and truthfully.
 
 Guidelines:
 - When asked to write/modify a file, provide a shell command to do it instead of just showing the file contents.
 - When asked to query an API, write a shell command to make the request.
 - Always assume common commands/tools are available. Don't write install commands.
+
+User shell:
+${await get_shell()}
 `;
 
 // Create readline interface for user input/output
@@ -39,7 +42,7 @@ const rl = readline.createInterface({
 });
 
 // Create a stateful asker
-const ask = makeStatefulAsker();
+const ask = asker();
 
 // Utility function to prompt the user for input
 async function prompt(query) {
@@ -90,6 +93,12 @@ async function main() {
 function extractCode(text) {
   const match = text.match(/```sh([\s\S]*?)```/);
   return match ? match[1].trim() : null;
+}
+
+
+async function get_shell() {
+  const shellInfo = (await execAsync('uname -a && $SHELL --version')).stdout.trim();
+  return shellInfo;
 }
 
 main();
