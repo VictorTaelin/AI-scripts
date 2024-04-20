@@ -2,87 +2,167 @@
 import { asker, MODELS, token_count } from './Ask.mjs';
 import process from "process";
 import fs from 'fs/promises';
+import os from 'os';
 import path from 'path';
+
+const ask = asker();
 
 const system = `
 You are a HOLE FILLER. You are provided with a file containing holes, formatted
-as '{{X}}'. Your TASK is to answer with a string to replace this hole with.
+as '{{HOLE_NAME}}'. Your TASK is to complete with a string to replace this hole
+with, inside a <COMPLETION/> XML tag, including context-aware indentation, if
+needed.  All completions MUST be truthful, accurate, well-written and correct.
 
-# EXAMPLE QUERY:
+## EXAMPLE QUERY:
 
+<QUERY>
 function sum_evens(lim) {
   var sum = 0;
   for (var i = 0; i < lim; ++i) {
-    {{X}}
+    {{FILL_HERE}}
   }
   return sum;
 }
+</QUERY>
 
-TASK: Fill the {{X}} hole.
+TASK: Fill the {{FILL_HERE}} hole.
 
-# CORRECT ANSWER:
+## CORRECT COMPLETION
 
-if (i % 2 === 0) {
+<COMPLETION>if (i % 2 === 0) {
       sum += i;
-    }
+    }</COMPLETION>
 
-# NOTICE THE CONTEXT-AWARE INDENTATION:
+## EXAMPLE QUERY:
 
-1. The first line is NOT indented, because there are already spaces before {{LOOP}}.
+<QUERY>
+def sum_list(lst):
+  total = 0
+  for x in lst:
+  {{FILL_HERE}}
+  return total
 
-2. The other lines ARE indented, to match the indentation of the context.
+print sum_list([1, 2, 3])
+</QUERY>
 
-# ANSWER ONLY WITH THE CORRECT SUBSTITUTION. NOTHING ELSE.
+## CORRECT COMPLETION:
+
+<COMPLETION>  total += x</COMPLETION>
+
+## EXAMPLE QUERY:
+
+<QUERY>
+// data Tree a = Node (Tree a) (Tree a) | Leaf a
+
+// sum :: Tree Int -> Int
+// sum (Node lft rgt) = sum lft + sum rgt
+// sum (Leaf val)     = val
+
+// convert to TypeScript:
+{{FILL_HERE}}
+</QUERY>
+
+## CORRECT COMPLETION:
+
+<COMPLETION>type Tree<T>
+  = {$:"Node", lft: Tree<T>, rgt: Tree<T>}
+  | {$:"Leaf", val: T};
+
+function sum(tree: Tree<number>): number {
+  switch (tree.$) {
+    case "Node":
+      return sum(tree.lft) + sum(tree.rgt);
+    case "Leaf":
+      return tree.val;
+  }
+}</COMPLETION>
+
+## EXAMPLE QUERY:
+
+The 4th {{FILL_HERE}} is Jupiter.
+
+## CORRECT COMPLETION:
+
+<COMPLETION>the 4th planet after Mars</COMPLETION>
+
+## EXAMPLE QUERY:
+
+function hypothenuse(a, b) {
+  return Math.sqrt({{FILL_HERE}}b ** 2);
+}
+
+## CORRECT COMPLETION:
+
+<COMPLETION>a ** 2 + </COMPLETION>
 `;
 
 var file = process.argv[2];
-var curr = process.argv[3];
-var model = process.argv[4] || "C";
+var mini = process.argv[3];
+var model = process.argv[4] || "g";
 
 if (!file) {
-  console.log("Usage: holefill <file> [<shortened_file>] [<model>]");
-  console.log("Replaces {{HOLES}} in <file> using the specified model. Shortcuts:");
-  for (var key in MODELS) {
-    console.log("- " + key + " = " + MODELS[key]);
-  }
-  console.log("A shortened file can be used to provide relevant context.");
-  process.exit(1);
+  console.log("Usage: holefill <file> [<shortened_file>] [<model_name>]");
+  console.log("");
+  console.log("This will replace all {{HOLES}} in <file>, using GPT-4 / Claude-3.");
+  console.log("A shortened file can be used to omit irrelevant parts.");
+  process.exit();
 }
 
 var file_code = await fs.readFile(file, 'utf-8');
-var curr_code = curr ? await fs.readFile(curr, 'utf-8') : file_code;
+var mini_code = mini ? await fs.readFile(mini, 'utf-8') : file_code;
 
 // Imports context files when //./path_to_file// is present.
 var regex = /\/\/\.\/(.*?)\/\//g;
 var match;
-while ((match = regex.exec(curr_code)) !== null) {
+while ((match = regex.exec(mini_code)) !== null) {
   var import_path = path.resolve(path.dirname(file), match[1]);
   if (await fs.stat(import_path).then(() => true).catch(() => false)) {
     var import_text = await fs.readFile(import_path, 'utf-8');
     console.log("import_file:", match[0]);
-    curr_code = curr_code.replace(match[0], '\n' + import_text);
+    mini_code = mini_code.replace(match[0], '\n' + import_text);
   } else {
     console.log("import_file:", match[0], "ERROR");
     process.exit(1);
   }
 }
 
-await fs.writeFile(curr, curr_code, 'utf-8');
+await fs.writeFile(mini, mini_code, 'utf-8');
 
-var tokens = token_count(curr_code);
-var holes  = curr_code.match(/{{\w+}}/g) || [];
+var tokens = token_count(mini_code);
+var holes = mini_code.match(/{{\w+}}/g) || [];
 
-var ask = asker();
+if (holes.length === 0 && mini_code.indexOf("??") !== -1 && (mini_code.match(/\?\?/g) || []).length == 1) {
+  holes = "??";
+}
 
 console.log("holes_found:", holes);
 console.log("token_count:", tokens);
 console.log("model_label:", MODELS[model] || model);
 
-for (let hole of holes) {
-  console.log("next_filled: " + hole + "...");
-  var prompt = curr_code + "\nTASK: Fill the {{" + hole + "}} hole. Answer only with the EXACT completion to replace {{" + hole + "}} with. INDENT IT BASED ON THE CONTEXT.";
-  var answer = await ask(prompt, { system, model, temperature: 0, max_tokens: 4096 });
-  file_code = file_code.replace(hole, answer);
+if (holes === "??") {
+    console.log("next_filled: ??");
+    var prompt = "<QUERY>\n" + mini_code.replace("??", "{{FILL_HERE}}") + "\n</QUERY>\nTASK: Fill the {{FILL_HERE}} hole. Answer only with the CORRECT completion, and NOTHING ELSE. Do it now.";
+    var answer = await ask(prompt, {system, model});
+    var match = answer.match(/<COMPLETION>([\s\S]*?)<\/COMPLETION>/);
+    if (match) {
+      file_code = file_code.replace("??", match[1]);
+    } else {
+      console.error("Error: Could not find <COMPLETION> tags in the AI's response.");
+      process.exit(1);
+    }
+} else {
+  for (let hole of holes) {
+    console.log("next_filled: " + hole + "...");
+    var prompt = "<QUERY>\n" + mini_code + "\n</QUERY>\nTASK: Fill the {{"+hole+"}} hole. Answer only with the CORRECT completion, and NOTHING ELSE. Do it now.";
+    var answer = await ask(prompt, {system, model});
+    var match = answer.match(/<COMPLETION>([\s\S]*?)<\/COMPLETION>/);
+    if (match) {
+      file_code = file_code.replace(hole, match[1]);
+    } else {
+      console.error("Error: Could not find <COMPLETION> tags in the AI's response for hole: " + hole);
+      process.exit(1);
+    }
+  }
 }
 
 await fs.writeFile(file, file_code, 'utf-8');

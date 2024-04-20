@@ -60,8 +60,8 @@ async function main() {
     const userMessage = await prompt('$ ');
     
     try {
-      const fullMessage = SYSTEM_PROMPT + "\n" + lastOutput + userMessage;
-      const assistantMessage = await ask(fullMessage, { model: MODEL });  
+      const fullMessage = lastOutput + userMessage;
+      const assistantMessage = await ask(fullMessage, { system: SYSTEM_PROMPT, model: MODEL });  
       console.log(); 
       
       const code = extractCode(assistantMessage);
