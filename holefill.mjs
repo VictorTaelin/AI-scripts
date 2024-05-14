@@ -25,8 +25,6 @@ function sum_evens(lim) {
 }
 </QUERY>
 
-TASK: Fill the {{FILL_HERE}} hole.
-
 ## CORRECT COMPLETION
 
 <COMPLETION>if (i % 2 === 0) {
@@ -94,6 +92,10 @@ function hypothenuse(a, b) {
 ## CORRECT COMPLETION:
 
 <COMPLETION>a ** 2 + </COMPLETION>
+
+## IMPORTANT:
+
+- Answer ONLY with the <COMPLETION/> block. Do NOT include anything outside it.
 `;
 
 var file = process.argv[2];
@@ -141,7 +143,7 @@ console.log("model_label:", MODELS[model] || model);
 
 if (holes === "??") {
     console.log("next_filled: ??");
-    var prompt = "<QUERY>\n" + mini_code.replace("??", "{{FILL_HERE}}") + "\n</QUERY>\nTASK: Fill the {{FILL_HERE}} hole. Answer only with the CORRECT completion, and NOTHING ELSE. Do it now.";
+    var prompt = "<QUERY>\n" + mini_code.replace("??", "{{FILL_HERE}}") + "\n</QUERY>";
     var answer = await ask(prompt, {system, model});
     var match = answer.match(/<COMPLETION>([\s\S]*?)<\/COMPLETION>/);
     if (match) {
@@ -153,7 +155,7 @@ if (holes === "??") {
 } else {
   for (let hole of holes) {
     console.log("next_filled: " + hole + "...");
-    var prompt = "<QUERY>\n" + mini_code + "\n</QUERY>\nTASK: Fill the {{"+hole+"}} hole. Answer only with the CORRECT completion, and NOTHING ELSE. Do it now.";
+    var prompt = "<QUERY>\n" + mini_code + "\n</QUERY>";
     var answer = await ask(prompt, {system, model});
     var match = answer.match(/<COMPLETION>([\s\S]*?)<\/COMPLETION>/);
     if (match) {

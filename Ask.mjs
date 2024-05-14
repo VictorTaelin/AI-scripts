@@ -8,7 +8,7 @@ import { encode } from "gpt-tokenizer/esm/model/davinci-codex"; // tokenizer
 
 // Map of model shortcodes to full model names
 export const MODELS = {
-  g: 'gpt-4-turbo-2024-04-09', 
+  g: 'gpt-4o', 
   G: 'gpt-4-32k-0314',
   h: 'claude-3-haiku-20240307',
   s: 'claude-3-sonnet-20240229',
@@ -108,12 +108,11 @@ export function asker() {
       });
       await stream.finalMessage();
     } else if (isGroq) {
-      params.messages = messages.map(msg => ({
-        role: msg.role,
-        content: msg.content
-      }));
+      params.messages = messages;
 
       const stream = await client.chat.completions.create(params);
+
+      //await fs.writeFile(".fill.json.tmp", JSON.stringify(params,null,2));
 
       for await (const chunk of stream) {
         const text = chunk.choices[0]?.delta?.content || "";

@@ -6,7 +6,8 @@
   "main": "main.js",
   "bin": {
     "holefill": "holefill.mjs",
-    "chatsh": "chatsh.mjs"
+    "chatsh": "chatsh.mjs",
+    "aiemu": "aiemu.mjs"
   },
   "scripts": {},
   "keywords": [
