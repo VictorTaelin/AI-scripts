@@ -1,9 +1,10 @@
+#!/usr/bin/env node
+
 import process from "process";
 import fs from 'fs/promises';
-import { asker, MODELS } from './Ask.mjs';
+import { chat, MODELS } from './Chat.mjs';
 
-//const MODEL = "claude-3-opus-20240229";
-const MODEL = "g";
+const MODEL = process.argv[2] || "g";
 
 const SYSTEM = `
 You're a game emulator. You can emulate ANY game, but text-based. Your goal is
@@ -226,7 +227,7 @@ If the player provides feedback after a '#', use it to improve the experience.
   console.log(ASCII_ART);
 
   console.log("");
-  console.log(`\x1b[32mUsing \x1b[1m${MODEL}\x1b[0m`);
+  console.log(`\x1b[32mUsing \x1b[1m${MODELS[MODEL]||MODEL}\x1b[0m`);
   console.log("");
 
   process.stdout.write("Game: ");
@@ -234,7 +235,7 @@ If the player provides feedback after a '#', use it to improve the experience.
 
   console.log(`Emulating ${game}...\n\n`);
 
-  const ask = asker();
+  const ask = chat(MODEL);
   let messages = [
     {role: "user", content: `# GAME: ${game}`},
   ];

@@ -1,11 +1,9 @@
 #!/usr/bin/env node
-import { asker, MODELS, token_count } from './Ask.mjs';
+import { chat, MODELS, tokenCount } from './Chat.mjs';
 import process from "process";
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-
-const ask = asker();
 
 const system = `
 You are a HOLE FILLER. You are provided with a file containing holes, formatted
@@ -98,9 +96,10 @@ function hypothenuse(a, b) {
 - Answer ONLY with the <COMPLETION/> block. Do NOT include anything outside it.
 `;
 
-var file = process.argv[2];
-var mini = process.argv[3];
+var file  = process.argv[2];
+var mini  = process.argv[3];
 var model = process.argv[4] || "g";
+var ask   = chat(model);
 
 if (!file) {
   console.log("Usage: holefill <file> [<shortened_file>] [<model_name>]");
@@ -130,7 +129,7 @@ while ((match = regex.exec(mini_code)) !== null) {
 
 await fs.writeFile(mini, mini_code, 'utf-8');
 
-var tokens = token_count(mini_code);
+var tokens = tokenCount(mini_code);
 var holes = mini_code.match(/{{\w+}}/g) || [];
 
 if (holes.length === 0 && mini_code.indexOf("??") !== -1 && (mini_code.match(/\?\?/g) || []).length == 1) {

@@ -3,7 +3,7 @@
 import readline from 'readline';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { asker, MODELS } from './Ask.mjs';
+import { chat, MODELS } from './Chat.mjs';
 
 const execAsync = promisify(exec);
 
@@ -43,7 +43,7 @@ const rl = readline.createInterface({
 });
 
 // Create a stateful asker
-const ask = asker();
+const ask = chat(MODEL);
 
 // Utility function to prompt the user for input
 async function prompt(query) {
