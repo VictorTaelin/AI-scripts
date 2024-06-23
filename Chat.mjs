@@ -139,11 +139,29 @@ export function chat(model) {
 // Utility function to read the API token for a given vendor
 async function getToken(vendor) {
   const tokenPath = path.join(os.homedir(), '.config', `${vendor}.token`);
+  
   try {
     return (await fs.readFile(tokenPath, 'utf8')).trim();
   } catch (err) {
-    console.error(`Error reading ${vendor}.token file:`, err.message);
-    process.exit(1);
+    // If the file is not found, check for the token in the environment variable
+    if (err.message.includes('ENOENT')) {
+      console.log(`Checking for ${vendor} API key in environment variable...`);
+      switch (vendor) {
+        case 'openai':
+          const token = process.env.OPENAI_API_KEY;
+          if (token === undefined) {
+            console.error('Environment variable OPENAI_API_KEY is not set');
+            process.exit(1);
+          }
+          return token;
+        default:
+          console.error(`API key for ${vendor} not found in environment variable or ${tokenPath}`);
+          process.exit(1)
+      }
+    } else {
+      console.error('Error opening file: ', err.message);
+      process.exit(1);
+    }
   }
 }
 
