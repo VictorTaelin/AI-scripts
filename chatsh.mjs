@@ -3,7 +3,7 @@
 import readline from 'readline';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { chat, MODELS } from './Chat.mjs';
+import { chat, MODELS, checkForToken } from './Chat.mjs';
 
 const execAsync = promisify(exec);
 
@@ -54,6 +54,9 @@ async function prompt(query) {
 
 // Main interaction loop
 async function main() {
+  // Check for existing token before starting
+  await checkForToken(MODEL);
+
   let lastOutput = "";
   
   while (true) {

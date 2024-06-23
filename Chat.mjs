@@ -136,6 +136,21 @@ export function chat(model) {
   }
 }
 
+export async function checkForToken(model) {
+  model = MODELS[model] || model;
+  if (model.startsWith('gpt')) {
+    await getToken('openai');
+  } else if (model.startsWith('claude')) {
+    await getToken('anthropic');
+  } else if (model.startsWith('llama')) {
+    await getToken('groq');
+  } else if (model.startsWith('gemini')) {
+    await getToken('google');
+  } else {
+    throw new Error(`Unsupported model: ${model}`);
+  }
+}
+
 // Utility function to read the API token for a given vendor
 async function getToken(vendor) {
   const tokenPath = path.join(os.homedir(), '.config', `${vendor}.token`);
@@ -145,7 +160,6 @@ async function getToken(vendor) {
   } catch (err) {
     // If the file is not found, check for the token in the environment variable
     if (err.message.includes('ENOENT')) {
-      console.log(`Checking for ${vendor} API key in environment variable...`);
       switch (vendor) {
         case 'openai':
           const token = process.env.OPENAI_API_KEY;
