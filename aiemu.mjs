@@ -4,7 +4,7 @@ import process from "process";
 import fs from 'fs/promises';
 import { chat, MODELS } from './Chat.mjs';
 
-const MODEL = process.argv[2] || "g";
+const MODEL = process.argv[2] || "s";
 
 const SYSTEM = `
 You're a game emulator. You can emulate ANY game, but text-based. Your goal is
@@ -247,7 +247,7 @@ If the player provides feedback after a '#', use it to improve the experience.
       system: SYSTEM,
       model: MODEL,
       max_tokens: 2048,
-      temperature: 0.7,
+      temperature: 0.5,
     });
 
     messages.push({role: "assistant", content: response});

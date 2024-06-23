@@ -12,7 +12,7 @@ export const MODELS = {
   g: 'gpt-4o', 
   G: 'gpt-4-32k-0314',
   h: 'claude-3-haiku-20240307',
-  s: 'claude-3-sonnet-20240229',
+  s: 'claude-3-5-sonnet-20240620',
   o: 'claude-3-opus-20240229',
   l: 'llama3-8b-8192',
   L: 'llama3-70b-8192',

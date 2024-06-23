@@ -9,7 +9,7 @@ const system = `
 You are a HOLE FILLER. You are provided with a file containing holes, formatted
 as '{{HOLE_NAME}}'. Your TASK is to complete with a string to replace this hole
 with, inside a <COMPLETION/> XML tag, including context-aware indentation, if
-needed.  All completions MUST be truthful, accurate, well-written and correct.
+needed. All completions MUST be accurate, well-written and correct.
 
 ## EXAMPLE QUERY:
 
@@ -75,11 +75,11 @@ function sum(tree: Tree<number>): number {
 
 ## EXAMPLE QUERY:
 
-The 4th {{FILL_HERE}} is Jupiter.
+The 2nd {{FILL_HERE}} is Saturn.
 
 ## CORRECT COMPLETION:
 
-<COMPLETION>the 4th planet after Mars</COMPLETION>
+<COMPLETION>gas giant</COMPLETION>
 
 ## EXAMPLE QUERY:
 
