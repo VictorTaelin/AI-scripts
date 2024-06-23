@@ -164,7 +164,7 @@ async function getToken(vendor) {
         case 'openai':
           const token = process.env.OPENAI_API_KEY;
           if (token === undefined) {
-            console.error('Environment variable OPENAI_API_KEY is not set');
+            console.error(`API key for ${vendor} not found in environment variable or ${tokenPath}`);
             process.exit(1);
           }
           return token;
