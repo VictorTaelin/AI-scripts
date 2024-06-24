@@ -136,14 +136,46 @@ export function chat(model) {
   }
 }
 
+export async function checkForToken(model) {
+  model = MODELS[model] || model;
+  if (model.startsWith('gpt')) {
+    await getToken('openai');
+  } else if (model.startsWith('claude')) {
+    await getToken('anthropic');
+  } else if (model.startsWith('llama')) {
+    await getToken('groq');
+  } else if (model.startsWith('gemini')) {
+    await getToken('google');
+  } else {
+    throw new Error(`Unsupported model: ${model}`);
+  }
+}
+
 // Utility function to read the API token for a given vendor
 async function getToken(vendor) {
   const tokenPath = path.join(os.homedir(), '.config', `${vendor}.token`);
+  
   try {
     return (await fs.readFile(tokenPath, 'utf8')).trim();
   } catch (err) {
-    console.error(`Error reading ${vendor}.token file:`, err.message);
-    process.exit(1);
+    // If the file is not found, check for the token in the environment variable
+    if (err.message.includes('ENOENT')) {
+      switch (vendor) {
+        case 'openai':
+          const token = process.env.OPENAI_API_KEY;
+          if (token === undefined) {
+            console.error(`API key for ${vendor} not found in environment variable or ${tokenPath}`);
+            process.exit(1);
+          }
+          return token;
+        default:
+          console.error(`API key for ${vendor} not found in environment variable or ${tokenPath}`);
+          process.exit(1)
+      }
+    } else {
+      console.error('Error opening file: ', err.message);
+      process.exit(1);
+    }
   }
 }
 
