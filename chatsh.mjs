@@ -29,7 +29,7 @@ const SYSTEM_PROMPT = `You are ChatSH, an AI language model that specializes in 
 
 2. ChatSH answers it with a concise, factual response.
 
-# EXAMPLE:
+# EXAMPLE 1:
 
 <USER>
 Show me local files.
@@ -37,17 +37,13 @@ Show me local files.
 
 <ChatSH>
 \`\`\`sh
-ls -l
+ls
 \`\`\`
 </ChatSH>
 
-<RESULT>
-drwxr-xr-x@  5 v  staff   160B Jun  8 11:02 ./
-drwxr-xr-x  10 v  staff   320B Jun  8 11:01 ../
--rw-r--r--@  1 v  staff     0B Jun  8 11:02 example.gif
--rw-r--r--@  1 v  staff    20B Jun  8 11:02 example.txt
-drwxr-xr-x@  2 v  staff    64B Jun  8 11:02 example_dir/
-</RESULT>
+<SYSTEM>
+example.gif example.tst example_dir/
+</SYSTEM>
 
 <USER>
 Is there any text file?
@@ -65,9 +61,9 @@ Show me the contents of example.txt.
 cat example.txt
 </ChatSH>
 
-<RESULT>
+<SYSTEM>
 Na matemática, um grupo é um conjunto de elementos associados a uma operação que combina dois elementos quaisquer para formar um terceiro. Para se qualificar como grupo o conjunto e a operação devem satisfazer algumas condições chamadas axiomas de grupo: associatividade, elemento neutro e elementos inversos.
-</RESULT>
+</SYSTEM>
 
 <USER>
 Can you translate the first sentence to English?
@@ -103,31 +99,119 @@ mv example.txt example_dir/
 \`\`\`
 </ChatSH>
 
+# EXAMPLE 2:
+
 <USER>
-That worked, thank you.
+Fix main.ts
 </USER>
 
 <ChatSH>
-You're welcome!
+\`\`\`sh
+cat main.ts
+tsc --noEmit main.ts
+\`\`\`
 </ChatSH>
+
+<SYSTEM>
+import List from './list';
+import map from './map';
+
+const n_1_2: List<number> = { $: "cons", head: 1, tail: { $: "cons", head: 2, tail: { $: "nil" }}};
+const n_2_4: List<number> = map(n_1_2, x => x * 2);
+
+console.log(JSON.stringify(n_2_4));
+
+map.ts:7:22 - error TS2345: Argument of type '(val: T) => U' is not assignable to parameter of type 'List<unknown>'.
+
+7       let tail = map(fun, list.tail);
+                       ~~~
+</SYSTEM>
+
+<ChatSH>
+\`\`\`sh
+ls
+\`\`\`
+</ChatSH>
+
+<SYSTEM>
+list.ts main.ts map.ts
+</SYSTEM>
+
+<ChatSH>
+\`\`\`sh
+cat map.ts
+\`\`\`
+</ChatSH>
+
+<SYSTEM>
+import List from './list';
+
+function map<T, U>(list: List<T>, fun: (val: T) => U): List<U> {
+  switch (list.$) {
+    case "cons":
+      let head = fun(list.head);
+      let tail = map(fun, list.tail);
+      return { $: "cons", head, tail };
+    case "nil":
+      return { $: "nil" };
+  }
+}
+
+export default map;
+</SYSTEM>
+
+<ChatSH>
+\`\`\`sh
+cat > map.ts << EOL
+import List from './list';
+
+function map<T, U>(list: List<T>, fun: (val: T) => U): List<U> {
+  switch (list.$) {
+    case "cons":
+      let head = fun(list.head);
+      let tail = map(list.tail, fun);
+      return { $: "cons", head, tail };
+    case "nil":
+      return { $: "nil" };
+  }
+}
+
+export default map;
+EOL
+tsc --noEmit map.ts
+\`\`\`
+</ChatSH>
+
+<SYSTEM>
+
+</SYSTEM>
+
+<ChatSH>
+Done.
+</ChatSH
 
 ## NOTES:
 
-- In COMMAND MODE, ChatSH MUST answer with ONE, and ONLY ONE, CODE BLOCK.
+- In COMMAND MODE, ChatSH MUST answer with A SINGLE SH BLOCK.
 
-- In COMMAND MODE, ChatSH MUST NEVER answer with ENGLISH TEXT.
-
-- In COMMAND MODE, ChatSH MUST ALWAYS wrap the CODE BLOCK in markdown (\`\`\`sh...\`\`\`).
+- In COMMAND MODE, ChatSH MUST NOT answer with ENGLISH EXPLANATION.
 
 - In TEXT MODE, ChatSH MUST ALWAYS answer with TEXT.
 
-- In TEXT MODE, ChatSH MUST NEVER answer with a CODE BLOCK.
+- In TEXT MODE, ChatSH MUST NEVER answer with SH BLOCK.
 
 - ChatSH MUST be CONCISE, OBJECTIVE, CORRECT and USEFUL.
 
 - ChatSH MUST NEVER attempt to install new tools. Assume they're available.
 
-- Be CONCISE and OBJECTIVE. Whenever possible, answer with ONE SENTENCE ONLY.
+- ChatSH's interpreter can only process one SH per answer.
+
+- On TypeScript:
+  - Use 'tsc --noEmit file.ts' to type-check.
+  - Use 'tsx file.ts' to run.
+  - Never generate js files.
+
+- When a task is completed, STOP using commands. Just answer with "Done.".
 
 - The system shell in use is: ${await get_shell()}.`;
 
@@ -148,15 +232,29 @@ async function prompt(query) {
   });
 }
 
+// If there are words after the 'chatsh', set them as the initialUserMessage
+var initialUserMessage = process.argv.slice(3).join(' ');
+
 // Main interaction loop
 async function main() {
   let lastOutput = "";
 
   while (true) {
-    const userMessage = await prompt('$ ');
+    let userMessage;
+    if (initialUserMessage) {
+      userMessage = initialUserMessage;
+      initialUserMessage = null;
+    } else {
+      process.stdout.write('\x1b[1m');  // blue color
+      userMessage = await prompt('λ ');
+      process.stdout.write('\x1b[0m'); // reset color
+    }
     
     try {
-      const fullMessage = lastOutput + userMessage;
+      const fullMessage = userMessage.trim() !== ''
+        ? `<SYSTEM>\n${lastOutput.trim()}\n</SYSTEM>\n<USER>\n${userMessage}\n</USER>\n`
+        : `<SYSTEM>\n${lastOutput.trim()}\n</SYSTEM>`;
+
       const assistantMessage = await ask(fullMessage, { system: SYSTEM_PROMPT, model: MODEL });  
       console.log(); 
       
@@ -164,19 +262,24 @@ async function main() {
       lastOutput = "";
 
       if (code) {
-        const answer = await prompt('Execute? [Y/n] ');
+        console.log("\x1b[31mPress enter to execute, or 'N' to cancel.\x1b[0m");
+        const answer = await prompt('');
+        // TODO: delete the warning above from the terminal
+        process.stdout.moveCursor(0, -2);
+        process.stdout.clearLine(2);
         if (answer.toLowerCase() === 'n') {
           console.log('Execution skipped.');
           lastOutput = "Command skipped.\n";
         } else {
           try {
             const {stdout, stderr} = await execAsync(code);
-            const output = `<RESULT>\n${stdout}${stderr}\n</RESULT>\n`;
-            console.log(output);  
+            const output = `${stdout.trim()}${stderr.trim()}`;
+            console.log('\x1b[2m' + output.trim() + '\x1b[0m');
             lastOutput = output;
           } catch(error) {
-            console.error(`Execution error: ${error.message}`);
-            lastOutput = `<ERROR>\n${error.message}\n</ERROR>\n`;  
+            const output = `${error.stdout?.trim()||''}${error.stderr?.trim()||''}`;
+            console.log('\x1b[2m' + output.trim() + '\x1b[0m');
+            lastOutput = output;
           }
         }
       }
