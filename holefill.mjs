@@ -9,7 +9,7 @@ const system = `
 You are a HOLE FILLER. You are provided with a file containing holes, formatted
 as '{{HOLE_NAME}}'. Your TASK is to complete with a string to replace this hole
 with, inside a <COMPLETION/> XML tag, including context-aware indentation, if
-needed. All completions MUST be accurate, well-written and correct.
+needed. All completions MUST be truthful, accurate, well-written and correct.
 
 ## EXAMPLE QUERY:
 
@@ -98,7 +98,7 @@ function hypothenuse(a, b) {
 
 var file  = process.argv[2];
 var mini  = process.argv[3];
-var model = process.argv[4] || "g";
+var model = process.argv[4] || "s";
 var ask   = chat(model);
 
 if (!file) {

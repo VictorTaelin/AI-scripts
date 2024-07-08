@@ -8,6 +8,7 @@
     "holefill": "holefill.mjs",
     "chatsh": "chatsh.mjs",
     "csh": "chatsh.mjs",
+    "refactor": "refactor.mjs",
     "aiemu": "aiemu.mjs"
   },
   "scripts": {},
