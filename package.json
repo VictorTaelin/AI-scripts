@@ -9,6 +9,7 @@
     "chatsh": "chatsh.mjs",
     "csh": "chatsh.mjs",
     "refactor": "refactor.mjs",
+    "kindcoder": "kindcoder.mjs",
     "aiemu": "aiemu.mjs"
   },
   "scripts": {},

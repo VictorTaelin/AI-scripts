@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
@@ -34,6 +36,31 @@ In some cases, you WILL need additional context to fulfill a request. When that 
 </SHOW>
 
 You can ask for information as many times as you want.
+
+# GUIDE FOR AGDA STYLE
+
+Every Agda file MUST:
+
+1. Start with a "module" declaration.
+
+2. Must have ONLY ONE top-level definition.
+
+3. Export ALL its in-scope values>
+
+Example file:
+
+\`\`\`
+module Term where
+
+{-# NO_TERMINATION_CHECK #-}
+
+data Term : Set where
+  var : Term
+  abs : (Term → Term) → Term
+  app : Term → Term → Term
+
+open Term public using (Term; var; abs; app)
+\`\`\`
 
 # EXAMPLE
 
