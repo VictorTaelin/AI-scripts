@@ -12,7 +12,7 @@ const execAsync = promisify(exec);
 const kind2_guide = await fs.readFile(new URL('./KIND2_GUIDE_AI.md', import.meta.url), 'utf-8');
 
 // System prompt for the AI model, defining its role and behavior
-const system = `
+const system_KindCoder = `
 You are KindCoder, a Kind2-Lang coding assistant.
 
 # USER INPUT
@@ -114,7 +114,189 @@ file inside a RESULT tag, completing the task successfully. Good job!
 The user will now give you a Kind2 file, and a change request. Read it carefully
 and update it as demanded. Consult the guides above as necessary. Pay attention
 to syntax details, like mandatory parenthesis, to emit valid code. Do it now:
-`;
+`.trim();
+
+const system_DepsPredictor = `
+# ABOUT KIND2
+
+Kind2 is a minimal purely functional programming language, where every file
+defines exactly ONE function, type or constant. For example:
+
+'''
+// Nat/add.kind2: defines Nat addition
+
+use Nat/{succ,zero}
+
+add
+- a: Nat
+- b: Nat
+: Nat
+
+match a {
+  succ: (succ (add a.pred b))
+  zero: b
+}
+'''
+
+The file above implements the global 'Nat/add' definition.
+
+# INPUT
+
+You will be given the NAME of a Kind2 file, its source code (which may be
+empty), and a list of ALL Kind2 definitions available in the stdlib.
+
+# OUTPUT
+
+You must answer with a list of definitions that are, or that you predict WILL BE
+used, directly or not, inside that Kind2 file. Answer in a <DEPENDENCIES/> tag.
+
+Optionally, you can also include a SHORT, 1-paragraph <JUSTIFICATION/>.
+
+# EXAMPLE INPUT
+
+<NAME>Nat/equal</NAME>
+
+<SOURCE>
+</SOURCE>
+
+<DEFINITIONS>
+- List/
+  - cons
+  - nil
+  - match
+  - map
+  - fold
+  - filter
+  - zip
+  - length
+- Nat/
+  - match
+  - fold
+  - succ
+  - zero
+  - add
+  - sub
+  - mul
+  - div
+  - mod
+  - pow
+  - lte
+  - gte
+- Bool/
+  - match
+  - fold
+  - true
+  - false
+  - not
+  - and
+  - or
+  - xor
+  - nand
+</DEFINITION>
+
+# EXAMPLE OUTPUT
+
+<JUSTIFICATION>
+Nat/equal is likely to be a pairwise comparison between Nats. As such, it must
+include Nat (obviously), as well as its constructor and match. It returns a
+Bool, so, it must also include its constructors and match. For completion, I've
+also added boolean AND and OR, since these are commonly used in comparison.
+</JUSTIFICATION>
+<DEPENDENCIES>
+Nat
+Nat/succ
+Nat/zero
+Nat/match
+Bool
+Bool/true
+Bool/false
+Bool/match
+Bool/and
+Bool/or
+</DEPENDENCIES>
+
+# HINTS
+
+- Attempt to include ALL files that might be relevant, directly or not.
+
+- If the file is the constructor of an ADT, then, INCLUDE its type.
+  Example: 'List/cons' MUST include 'List'
+
+- When in doubt, prefer to include MORE, rather than LESS, potencial dependencies.
+
+- Try to include AT LEAST 8 dependencies, and AT MOST 32.
+
+- Sometimes the user will give hints in the file. Follow them.
+`.trim();
+
+// Function to predict dependencies
+async function predictDependencies(name, fileContent) {
+  // Function to get all Kind2 files recursively
+  async function getAllKind2Files(dir) {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    const files = await Promise.all(entries.map(async (entry) => {
+      const res = path.resolve(dir, entry.name);
+      if (entry.isDirectory()) {
+        const subFiles = await getAllKind2Files(res);
+        return subFiles.length > 0 ? { name: entry.name, children: subFiles } : null;
+      } else if (entry.name.endsWith('.kind2')) {
+        return { name: entry.name.replace('.kind2', '') };
+      }
+      return null;
+    }));
+    return files.filter(file => file !== null);
+  }
+
+  // Function to build a tree structure from files
+  function buildTree(files, prefix = '') {
+    let result = '';
+    for (const file of files) {
+      if (file.children) {
+        result += `${prefix}- ${file.name}/\n`;
+        result += buildTree(file.children, `${prefix}  `);
+      } else {
+        result += `${prefix}- ${file.name}\n`;
+      }
+    }
+    return result;
+  }
+
+  const allFiles = await getAllKind2Files(path.join(path.dirname(name), '..', '..', 'book'));
+  const defsTree = buildTree(allFiles);
+
+  const aiInput = [
+    `<NAME>${name}</NAME>`,
+    '<SOURCE>',
+    fileContent.trim(),
+    '</SOURCE>',
+    '<DEFINITIONS>',
+    defsTree.trim(),
+    '</DEFINITIONS>'
+  ].join('\n').trim();
+
+  const aiOutput = await chat("h")(aiInput, { system: system_DepsPredictor, model: "h" });
+  console.log("");
+
+  const dependenciesMatch = aiOutput.match(/<DEPENDENCIES>([\s\S]*)<\/DEPENDENCIES>/);
+  if (!dependenciesMatch) {
+    console.error("Error: AI output does not contain a valid DEPENDENCIES tag.");
+    return [];
+  }
+
+  return dependenciesMatch[1].trim().split('\n').map(dep => dep.trim());
+}
+
+// Function to perform type checking based on file extension
+async function typeCheck(file) {
+  let ext = path.extname(file);
+  let cmd = `kind2 check ${file}`;
+  try {
+    var result = await execAsync(cmd);
+    return result.stderr.trim() || result.stdout.trim();
+  } catch (error) {
+    return error.stderr.trim();
+  }
+}
 
 // Main function to handle the refactoring process
 async function main() {
@@ -136,70 +318,20 @@ async function main() {
   let fileContent = await fs.readFile(file, 'utf-8');
   let dirContent = await fs.readdir(dir);
 
-  // New functionality: Handle lines starting with '//@'
-  let extraFiles = [];
-  fileContent = fileContent.split('\n').filter(line => {
-    if (line.startsWith('//@')) {
-      extraFiles.push(line.slice(3));
-      return false;
-    }
-    return true;
-  }).join('\n');
-
   // If the request is empty, replace it by a default request.
   if (request.trim() === '') {
     request = [
       "Update this file.",
-      "- If it is empty, implement the *Initial Template*.",
-      "- If it has holes, fill them, up to \"one layer\". Don't fully complete it.",
+      "- If it is empty, implement an initial template.",
+      "- If it has holes, fill them, up to \"one layer\".",
       "- If it has no holes, fully complete it, as much as possible."
     ].join('\n');
   }
 
   // If the file is empty, ask the AI to fill with an initial template
   if (fileContent.trim() === '') {
-
-    const getAllKind2Files = async (dir) => {
-      const entries = await fs.readdir(dir, { withFileTypes: true });
-      const files = await Promise.all(entries.map(async (entry) => {
-        const res = path.resolve(dir, entry.name);
-        if (entry.isDirectory()) {
-          const subFiles = await getAllKind2Files(res);
-          return { name: entry.name, children: subFiles };
-        } else if (entry.name.endsWith('.kind2')) {
-          return { name: entry.name };
-        }
-        return null;
-      }));
-      return files.filter(Boolean);
-    };
-
-    const buildTree = (files, prefix = '') => {
-      let result = '';
-      for (const file of files) {
-        if (file.children) {
-          result += `${prefix}- ${file.name}/\n`;
-          result += buildTree(file.children, `${prefix}  `);
-
-        } else {
-          result += `${prefix}- ${file.name}\n`;
-        }
-      }
-      return result;
-    };
-
-    const allFiles = await getAllKind2Files(path.join(dir, '..', '..', 'book'));
-    const relativeFilesString = buildTree(allFiles);
-
     fileContent = [
-      "This is a new, empty file.",
-      "",
-      "Please replace this file with a Kind2 definition, including:",
-      "- 'use' imports (read the list above to decide which are relevant)",
-      "- the function name and its arguments (based on the file name)",
-      "- a hole in the place of its body (just `?body`)",
-      "",
-      "Example Initial Template:",
+      "This file is empty. Please replace it with a Kind2 definition. Example:",
       "",
       "```kind2",
       "/// Does foo.",
@@ -223,25 +355,29 @@ async function main() {
       "- x1: X1",
       "...",
       "",
-      "?body",
+      "body",
       "```",
-      "",
-      "Do not complete the file yet. Just write this *Initial Template*.",
-      "Exception: if this should be a 'data' declaration, fully complete it.",
-      "",
-      "[HINT] Below is a list of ALL files in the book:",
-      relativeFilesString,
     ].join('\n');
   }
 
   // Extract the definition name from the file path
   let defName = file.split('/book/')[1].replace('.kind2', '');
 
-  // Get dependencies
-  let depsCmd = `kind2 deps ${defName}`;
-  let { stdout: depsOutput } = await execAsync(depsCmd);
-  let deps = depsOutput.trim().split('\n');
-  deps = [...new Set([...deps, ...extraFiles])];
+  // Collect direct and indirect dependencies
+  let deps;
+  try {
+    let { stdout } = await execAsync(`kind2 deps ${defName}`);
+    deps = stdout.trim().split('\n');
+  } catch (e) {
+    deps = [];
+  }
+
+  // Predict additional dependencies
+  const predictedDeps = await predictDependencies(defName, fileContent);
+  //console.log(JSON.stringify(predictedDeps,null,2));
+  //process.exit();
+  deps = [...new Set([...deps, ...predictedDeps])];
+  deps = deps.filter(dep => dep !== defName);
 
   // Read dependent files
   let depFiles = await Promise.all(deps.map(async (dep) => {
@@ -263,7 +399,7 @@ async function main() {
   }));
 
   // Perform initial type checking
-  let initialCheck = await typeCheck(defName);
+  let initialCheck = (await typeCheck(defName)).replace(/\x1b\[[0-9;]*m/g, '');
 
   // Prepare AI input
   let aiInput = [
@@ -279,13 +415,11 @@ async function main() {
     '</REQUEST>'
   ].join('\n').trim();
 
-  // TODO: write a .prompt file with the system + aiInput strings
-  
   // Write a .prompt file with the system + aiInput strings
-  await fs.writeFile('.kindcoder', system + '\n\n' + aiInput, 'utf-8');
+  await fs.writeFile('.kindcoder', system_KindCoder + '\n\n' + aiInput, 'utf-8');
 
   // Call the AI model
-  let aiOutput = await ask(aiInput, { system, model });
+  let aiOutput = await ask(aiInput, { system: system_KindCoder, model });
 
   // Extract the result from AI output
   let resultMatch = aiOutput.match(/<RESULT>([\s\S]*)<\/RESULT>/);
@@ -302,17 +436,6 @@ async function main() {
   console.log("File updated successfully.");
 }
 
-// Function to perform type checking based on file extension
-async function typeCheck(file) {
-  let ext = path.extname(file);
-  let cmd = `kind2 check ${file}`;
-  try {
-    var result = await execAsync(cmd);
-    return result.stderr.trim() || result.stdout.trim();
-  } catch (error) {
-    return error.stderr.trim();
-  }
-}
-
 // Run the main function and handle any errors
 main().catch(console.error);
+

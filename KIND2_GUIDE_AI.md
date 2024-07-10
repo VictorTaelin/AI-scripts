@@ -100,12 +100,9 @@ use Nat/{succ,zero}
 This locally expands 'succ' and 'zero' to 'Nat/succ' and 'Nat/zero'. It is
 specially useful to avoid typing full constructor names on 'match' cases.
 
-Note this is different from the `use x = value` syntax, which is used to create
-a local definition that, unlike `let`, is expanded statically (inlined).
-
-Also note that, for better organization, Kind2 will also look for a definition
-in two places: `Def/name.kind2` and `Def/name/_.kind2`. This allows us to, for
-example, place `Nat` on `book/Nat/_.kind2` instead of `book/Nat.kind2`.
+NOTE: when a definition is not found in `Foo/Bar.kind2`, Kind2 will try to
+look for it on `Foo/Bar/_.kind2`. The `_` is just a placeholder and is NOT
+part of the definition's name.
 
 ### Pattern-Matching
 
@@ -150,8 +147,9 @@ switch x = expr {
 
 ### Other Sugars
 
-- Lists: `[a, b, c]`
-- Equality: `{a = b}`
+- Lists: `[a, b, c]` (desugars to cons/nil)
+- Strings: `"foo"` (desugars to lists of u48 codepoints)
+- Equality: `{a = b}` (desugars to `(Equal _ a b)`)
 - Function: `A -> B` (desugars to `∀(x_: A) B`)
 - Implicit: `(foo/ x y)` (desugars to `(foo _ _ ... x y)`, auto-filling erased args)
 - Comments: `// comment here`
