@@ -167,6 +167,7 @@ Optionally, you can also include a SHORT, 1-paragraph <JUSTIFICATION/>.
   - map
   - fold
   - filter
+  - equal
   - zip
   - length
 - Nat/
@@ -174,6 +175,7 @@ Optionally, you can also include a SHORT, 1-paragraph <JUSTIFICATION/>.
   - fold
   - succ
   - zero
+  - compare
   - add
   - sub
   - mul
@@ -200,7 +202,8 @@ Optionally, you can also include a SHORT, 1-paragraph <JUSTIFICATION/>.
 Nat/equal is likely to be a pairwise comparison between Nats. As such, it must
 include Nat (obviously), as well as its constructor and match. It returns a
 Bool, so, it must also include its constructors and match. For completion, I've
-also added boolean AND and OR, since these are commonly used in comparison.
+also added bool AND and OR, since these are often used in comparison. Finally,
+Nat/compare and List/equal might be similar algorithms, so, I included them.
 </JUSTIFICATION>
 <DEPENDENCIES>
 Nat
@@ -213,18 +216,23 @@ Bool/false
 Bool/match
 Bool/and
 Bool/or
+Nat/compare
+List/equal
 </DEPENDENCIES>
 
 # HINTS
 
 - Attempt to include ALL files that might be relevant, directly or not.
 
+- Always include files that might be similar algorithms to the current one.
+  Example: 'Map/set' MUST include 'Mat/get'
+
 - If the file is the constructor of an ADT, then, INCLUDE its type.
   Example: 'List/cons' MUST include 'List'
 
 - When in doubt, prefer to include MORE, rather than LESS, potencial dependencies.
 
-- Try to include AT LEAST 8 dependencies, and AT MOST 32.
+- Try to include AT LEAST 4 dependencies, and AT MOST (only if needed) 16.
 
 - Sometimes the user will give hints in the file. Follow them.
 `.trim();
@@ -244,7 +252,7 @@ async function predictDependencies(name, fileContent) {
       }
       return null;
     }));
-    return files.filter(file => file !== null);
+    return files.filter(file => file !== null).map(file => ({...file, name: file.name.replace(/\/_$/, '')}));
   }
 
   // Function to build a tree structure from files
@@ -261,7 +269,7 @@ async function predictDependencies(name, fileContent) {
     return result;
   }
 
-  const allFiles = await getAllKind2Files(path.join(path.dirname(name), '..', '..', 'book'));
+  const allFiles = await getAllKind2Files("./");
   const defsTree = buildTree(allFiles);
 
   const aiInput = [
@@ -274,7 +282,7 @@ async function predictDependencies(name, fileContent) {
     '</DEFINITIONS>'
   ].join('\n').trim();
 
-  const aiOutput = await chat("h")(aiInput, { system: system_DepsPredictor, model: "h" });
+  const aiOutput = await chat("s")(aiInput, { system: system_DepsPredictor, model: "s" });
   console.log("");
 
   const dependenciesMatch = aiOutput.match(/<DEPENDENCIES>([\s\S]*)<\/DEPENDENCIES>/);
@@ -302,7 +310,7 @@ async function typeCheck(file) {
 async function main() {
   // Check for correct usage and parse command-line arguments
   if (process.argv.length < 3) {
-    console.log("Usage: kind-refactor <file> <request> [<model>]");
+    console.log("Usage: kindcoder <file> <request> [<model>]");
     process.exit(1);
   }
 
@@ -315,7 +323,12 @@ async function main() {
 
   // Get directory and file information
   let dir = path.dirname(file);
-  let fileContent = await fs.readFile(file, 'utf-8');
+  let fileContent;
+  try {
+    fileContent = await fs.readFile(file, 'utf-8');
+  } catch (e) {
+    fileContent = "";
+  }
   let dirContent = await fs.readdir(dir);
 
   // If the request is empty, replace it by a default request.

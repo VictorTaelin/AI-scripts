@@ -39,7 +39,7 @@ Since Kind2's core is so simple, it comes with many syntax sugars.
 Every .kind2 file must define ONE top-level function:
 
 ```
-name <p0: P0> <p1: P1> ...
+func <p0: P0> <p1: P1> ...
 - arg0: typ0
 - arg1: typ1
 - ...
@@ -74,7 +74,7 @@ Where:
 Top-Level datatypes desugar to λ-encodings. The λ-encoded constructors must be
 created manually, in separate files. See examples below.
 
-## Names, Paths and Use Aliases
+### Names, Paths and Use Aliases
 
 Kind2 doesn't need imports. Every file defines a single top-level definition,
 which can be addressed from any other file via its full path. Example:
@@ -145,13 +145,40 @@ switch x = expr {
 }: motive
 ```
 
+### Note on Parameters and Metavars 
+
+Top-level definitions can have N parameters, or erased arguments. Example:
+
+```
+// Pair/swap.kind2
+swap <A> <B>
+- pair: (Pair A B)
+...
+```
+
+There are two ways to call these functions.
+
+1. Filling the parameters explicitly:
+
+```
+(swap Nat (List Nat) (Pair/new Nat (List Nat) Nat/zero (List/nil Nat)))
+```
+
+2. Using metavars (`_`) to fill the parameters:
+
+```
+(swap _ _ (Pair/new _ _ Nat/zero (List/nil _)))
+
+As you can see, using metavars is much more concise. As a rule of thumb, always
+use metavars on the function body, but write it fully on its arglist. Remember
+to always count the arguments: you need one metavar (`_`) per parameter (`<>`).
+
 ### Other Sugars
 
 - Lists: `[a, b, c]` (desugars to cons/nil)
 - Strings: `"foo"` (desugars to lists of u48 codepoints)
 - Equality: `{a = b}` (desugars to `(Equal _ a b)`)
 - Function: `A -> B` (desugars to `∀(x_: A) B`)
-- Implicit: `(foo/ x y)` (desugars to `(foo _ _ ... x y)`, auto-filling erased args)
 - Comments: `// comment here`
 
 ## Kind2 Examples
@@ -416,7 +443,7 @@ List/fold <A> (P: *)
 : P
 
 match xs {
-  cons: (c xs.head (List/fold/ P c n xs.tail))
+  cons: (c xs.head (List/fold _ P c n xs.tail))
   nil: n
 }
 ```
@@ -499,6 +526,10 @@ match list {
 Take a moment to notice how EVERY constructor and function application in Kind2
 requires a parenthesis, just like Lisp. Trying to write `(foo x y)` without the
 surrounding parenthesis is a syntax error. Confirm this is true and move on.
+
+Also, note that ERASED arguments can usually be inferred, so, a metavar ('_')
+can be used. Example: '(func _ _ ... arg0 arg1 ...)' can be writen instead of
+'(func A B ... arg0 arg1 ...)'. Prefer metavars on the body of the function.
 
 ### Sigma/_.kind2
 
