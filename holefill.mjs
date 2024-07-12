@@ -99,7 +99,7 @@ function hypothenuse(a, b) {
 var file  = process.argv[2];
 var mini  = process.argv[3];
 var model = process.argv[4] || "s";
-var chat  = createChat(model, {system, model});
+var chat  = createChat(model, {system});
 
 if (!file) {
   console.log("Usage: holefill <file> [<shortened_file>] [<model_name>]");

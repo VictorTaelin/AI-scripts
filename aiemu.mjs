@@ -237,7 +237,6 @@ If the player provides feedback after a '#', use it to improve the experience.
 
   const chatOpts = {
     system: SYSTEM,
-    model: MODEL,
     max_tokens: 2048,
     temperature: 0.5,
   };

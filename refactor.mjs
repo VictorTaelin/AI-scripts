@@ -143,7 +143,7 @@ async function main() {
   const check = process.argv.includes("--check");
 
   // Initialize the chat function with the specified model
-  const chat = createChat(model, { system, model });
+  const chat = createChat(model, { system });
 
   // Get directory and file information
   const dir = path.dirname(file);

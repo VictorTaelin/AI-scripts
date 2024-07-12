@@ -278,7 +278,7 @@ async function promptLoop() {
 var initialUserMessage = process.argv.slice(3).join(' ');
 
 // Create a stateful asker
-const chat = createChat(MODEL, { system: SYSTEM_PROMPT, model: MODEL  });
+const chat = createChat(MODEL, { system: SYSTEM_PROMPT  });
 
 // Main interaction loop
 async function main() {

@@ -129,13 +129,13 @@ function geminiChat(clientClass, { system, model, temperature = 0.0, max_tokens 
 export function createChat(model, opts) {
   model = MODELS[model] || model;
   if (model.startsWith('gpt')) {
-    return openAIChat(OpenAI, opts);
+    return openAIChat(OpenAI, { model, ... opts });
   } else if (model.startsWith('claude')) {
-    return anthropicChat(Anthropic, opts);
+    return anthropicChat(Anthropic, { model, ... opts });
   } else if (model.startsWith('llama')) {
-    return openAIChat(Groq, opts);
+    return openAIChat(Groq, { model, ... opts });
   } else if (model.startsWith('gemini')) {
-    return geminiChat(GoogleGenerativeAI, opts);
+    return geminiChat(GoogleGenerativeAI, { model, ... opts });
   } else {
     throw new Error(`Unsupported model: ${model}`);
   }
