@@ -121,7 +121,7 @@ function geminiChat(clientClass) {
 }
 
 // Generic asker function that dispatches to the correct asker based on the model name
-export function chat(model) {
+export function createChat(model) {
   model = MODELS[model] || model;
   if (model.startsWith('gpt')) {
     return openAIChat(OpenAI);

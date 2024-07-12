@@ -2,7 +2,7 @@
 
 import process from "process";
 import fs from 'fs/promises';
-import { chat, MODELS } from './Chat.mjs';
+import { createChat, MODELS } from './Chat.mjs';
 
 const MODEL = process.argv[2] || "s";
 
@@ -42,11 +42,11 @@ Here are some examples of how your game screen should look.
 
 You're in a Pokémon battle.
 ,-----------------------------,
-   Blastoise LV30    [💦🐢💣]  
-   HP: |||.......    [🔫🐚🛡️]  
-                               
-   Charizard LV32    [🔥🐉🦇]  
-   HP: ||||||....    [🌋🦖😤]  
+   Blastoise LV30    [💦🐢💣]
+   HP: |||.......    [🔫🐚🛡️]
+
+   Charizard LV32    [🔥🐉🦇]
+   HP: ||||||....    [🌋🦖😤]
 '-----------------------------'
 A) FIGHT
 B) PKMN
@@ -58,19 +58,19 @@ D) RUN
 You're in Odolwa's boss room in Woodfall Temple.
 Odolwa is dancing and swinging his swords menacingly.
 ,--------------------------------------------------,
-  HP   ❤️ ❤️ ❤️ 🤍🤍🤍🤍                               
-  MANA 🟩🟩🟩⬜⬜⬜⬜⬜⬜⬜                         
-                                                    
-   Link      Navi  Door0                            
-   [🗡️🧝🛡️]  [🧚]  [🚪🔒]                           
-                                                    
-   Odolwa    Jar   Door1   Chest                    
-   [🗡️🎭🗡️]  [🏺]  [🚪🔒]  [🎁🔒]                   
-                                                    
-   Grs0 Grs1 Grs2                                   
-   [🌿] [🌿] [🌿]                                   
-                                                    
-  💎 000                     🕒 7 AM :: ☀️  1st Day  
+  HP   ❤️ ❤️ ❤️ 🤍🤍🤍🤍
+  MANA 🟩🟩🟩⬜⬜⬜⬜⬜⬜⬜
+
+   Link      Navi  Door0
+   [🗡️🧝🛡️]  [🧚]  [🚪🔒]
+
+   Odolwa    Jar   Door1   Chest
+   [🗡️🎭🗡️]  [🏺]  [🚪🔒]  [🎁🔒]
+
+   Grs0 Grs1 Grs2
+   [🌿] [🌿] [🌿]
+
+  💎 000                     🕒 7 AM :: ☀️  1st Day
 '--------------------------------------------------'
 A) Talk to Navi
 B) Enter Door0
@@ -85,16 +85,16 @@ H) Check Grs2
 
 You're in the main entrance hall of Princess Peach's castle.
 ,---------------------------------.
-  🍄x4                       🌟x7  
-                                   
-    Door0       Door1      Door2   
-    [🚪🌟]      [🚪🔒]     [🚪0]   
-                                   
-  Door3   Door4    Door5   Door6   
-  [🚪0]   [🚪3]    [🚪7]   [🚪1]   
-                                   
-    Exit    Mario   Coin0  Coin1   
-    [🚪]    [🍄]     [🟡]   [🟡]   
+  🍄x4                       🌟x7
+
+    Door0       Door1      Door2
+    [🚪🌟]      [🚪🔒]     [🚪0]
+
+  Door3   Door4    Door5   Door6
+  [🚪0]   [🚪3]    [🚪7]   [🚪1]
+
+    Exit    Mario   Coin0  Coin1
+    [🚪]    [🍄]     [🟡]   [🟡]
 '---------------------------------'
 A) Enter Door0
 B) Enter Door1
@@ -110,16 +110,16 @@ J) Exit
 //# Example: Pokémon Red - Title Screen
 
 ,-------------------------------,
-             Pokémon             
-              Red                
-                                 
-            [🔥🐉🦇]             
-                                 
-         ©1996 Nintendo          
-          Creatures Inc.         
-         GAME FREAK inc.         
-                                 
-       Press Start Button        
+             Pokémon
+              Red
+
+            [🔥🐉🦇]
+
+         ©1996 Nintendo
+          Creatures Inc.
+         GAME FREAK inc.
+
+       Press Start Button
 '-------------------------------'
 A) New Game
 B) Continue
@@ -128,18 +128,18 @@ C) Options
 //# Example: Pokémon Red - Introduction
 
 ,-------------------------------.
-                                 
-            OAK                  
-  Hello there! Welcome to the    
-  world of POKÉMON!              
-                                 
-            OAK                  
-  My name is OAK!                
-  People call me the             
-  POKÉMON PROF!                  
-                                 
-           NIDORAN♂              
-           [🐭💜🦏]                 
+
+            OAK
+  Hello there! Welcome to the
+  world of POKÉMON!
+
+            OAK
+  My name is OAK!
+  People call me the
+  POKÉMON PROF!
+
+           NIDORAN♂
+           [🐭💜🦏]
 '-------------------------------'
 A) Next
 
@@ -147,16 +147,16 @@ A) Next
 
 You're in Pallet Town, your hometown.
 ,--------------------------,
-      🌳 [Route 1] 🌳       
-                            
-   House0        House1     
-   [🏠]          [🏠]       
-                            
-   Grass         Oak's Lab  
-   [🌿]          [🏫]       
-                            
-   Beach         Sign   🌸  
-   [🌊]          [🪧]   🌼  
+      🌳 [Route 1] 🌳
+
+   House0        House1
+   [🏠]          [🏠]
+
+   Grass         Oak's Lab
+   [🌿]          [🏫]
+
+   Beach         Sign   🌸
+   [🌊]          [🪧]   🌼
 '--------------------------'
 A) Enter House0
 B) Enter House1
@@ -169,11 +169,11 @@ F) Exit to Route 1
 
 You're inside your house in Pallet Town.
 ,---------------------------.
-  PC        TV      Stairs   
-  [💻]      [📺]     [┗┓]    
-                             
-  Bed       You              
-  [🛏️]      [👦]             
+  PC        TV      Stairs
+  [💻]      [📺]     [┗┓]
+
+  Bed       You
+  [🛏️]      [👦]
 '---------------------------'
 A) Check the PC
 B) Play SNES on TV
@@ -183,23 +183,23 @@ B) Go Downstairs
 //# Example: The Legend of Zelda - Majora's Mask - Title Screen
 
 ,------------------------------------------,
-                                               
-               The Legend of                
-                  Zelda                    
-              Majora's Mask                 
-                                               
-                 [🎭😈🌙]                    
-                                            
-               Press Start                  
-                                               
-                                               
-  ©2000 Nintendo. All Rights Reserved.         
+
+               The Legend of
+                  Zelda
+              Majora's Mask
+
+                 [🎭😈🌙]
+
+               Press Start
+
+
+  ©2000 Nintendo. All Rights Reserved.
 '------------------------------------------'
 A) PRESS START
 B) OPTIONS
 
-IMPORTANT: 
-- You ARE the videogame. Stay in character. 
+IMPORTANT:
+- You ARE the videogame. Stay in character.
 - Start from the game's initial menus and emulate each level in order.
 - Emulate the game loyally, following its original sequence of events.
 - Design a well-aligned UI for each screen. Position elements in 2D.
@@ -217,11 +217,11 @@ If the player provides feedback after a '#', use it to improve the experience.
   console.clear();
 
   const ASCII_ART = `
-\x1b[1m\x1b[36m█▀▀▀▀▀█ ▀ ▄▀▄ █▀▀▀▀▀█\x1b[0m  
+\x1b[1m\x1b[36m█▀▀▀▀▀█ ▀ ▄▀▄ █▀▀▀▀▀█\x1b[0m
 \x1b[1m\x1b[36m█ ███ █ ▀ ▀█▀ █ ███ █\x1b[0m
 \x1b[1m\x1b[36m█ ▀▀▀ █ █ ▄█▄ █ ▀▀▀ █\x1b[0m
 \x1b[1m\x1b[36m▀▀▀▀▀▀▀ ▀ ▀▀▀ ▀▀▀▀▀▀▀\x1b[0m
-\x1b[2mA I   E M U L A T O R\x1b[0m  
+\x1b[2mA I   E M U L A T O R\x1b[0m
 `.trim();
 
   console.log(ASCII_ART);
@@ -235,7 +235,7 @@ If the player provides feedback after a '#', use it to improve the experience.
 
   console.log(`Emulating ${game}...\n\n`);
 
-  const ask = chat(MODEL);
+  const ask = createChat(MODEL);
   let messages = [
     {role: "user", content: `# GAME: ${game}`},
   ];

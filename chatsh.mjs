@@ -3,7 +3,7 @@
 import readline from 'readline/promises';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { chat, MODELS } from './Chat.mjs';
+import { createChat, MODELS } from './Chat.mjs';
 
 const execAsync = promisify(exec);
 
@@ -278,7 +278,7 @@ async function promptLoop() {
 var initialUserMessage = process.argv.slice(3).join(' ');
 
 // Create a stateful asker
-const ask = chat(MODEL);
+const ask = createChat(MODEL);
 
 // Main interaction loop
 async function main() {

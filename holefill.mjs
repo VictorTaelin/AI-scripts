@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { chat, MODELS, tokenCount } from './Chat.mjs';
+import { createChat, MODELS, tokenCount } from './Chat.mjs';
 import process from "process";
 import fs from 'fs/promises';
 import os from 'os';
@@ -99,7 +99,7 @@ function hypothenuse(a, b) {
 var file  = process.argv[2];
 var mini  = process.argv[3];
 var model = process.argv[4] || "s";
-var ask   = chat(model);
+var ask   = createChat(model);
 
 if (!file) {
   console.log("Usage: holefill <file> [<shortened_file>] [<model_name>]");
