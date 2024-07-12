@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import readline from 'readline';
+import readline from 'readline/promises';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { chat, MODELS } from './Chat.mjs';
@@ -8,7 +8,7 @@ import { chat, MODELS } from './Chat.mjs';
 const execAsync = promisify(exec);
 
 // Default model if not specified
-const DEFAULT_MODEL = "s";  
+const DEFAULT_MODEL = "s";
 // Get model from environment variable or use default
 const MODEL = process.argv[2] || DEFAULT_MODEL;
 
@@ -219,21 +219,66 @@ Done.
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
-  terminal: true  
+  terminal: true
 });
 
-// Create a stateful asker
-const ask = chat(MODEL);
+// Prompts.
+const CMDPROMPT = ': ';
+const CHATPROMPT = 'λ ';
 
-// Utility function to prompt the user for input
-async function prompt(query) {
-  return new Promise(resolve => {
-    rl.question(query, resolve);  
-  });
+// Loop processing command prompts until user is done.
+async function commandLoop() {
+  while (true) {
+    let res = await rl.question(CMDPROMPT);
+    if (res == "exit") {
+      return;
+    }
+  }
+}
+
+// Loop waiting for a chat prompt (including going into command prompt when
+// requested).
+async function promptLoop() {
+  let prompt = CHATPROMPT;
+  while (true) {
+    let abort = new AbortController();
+
+    async function firstKey(c, k) {
+      if (rl.line == ':') {
+        abort.abort();
+      }
+    }
+
+    process.stdin.on('keypress', firstKey);
+    try {
+      process.stdout.write('\x1b[1m');  // blue color
+      let res = await rl.question(prompt, {signal: abort.signal });
+      process.stdout.write('\x1b[0m'); // reset color
+      process.stdin.removeListener('keypress', firstKey);
+
+      if (prompt == CHATPROMPT) {
+        // Received latest chat prompt.
+        return res;
+      }
+
+      // Process a command prompt.
+      console.log(`Processing ${res}`);
+    } catch (exception) {
+      // Aborted. Toggle between chat and command modes.
+      process.stdout.moveCursor(-1, -1);
+      process.stdout.clearLine(1);
+      process.stdin.removeListener('keypress', firstKey);
+      prompt = prompt == CHATPROMPT ? CMDPROMPT : CHATPROMPT;
+    }
+  }
+
 }
 
 // If there are words after the 'chatsh', set them as the initialUserMessage
 var initialUserMessage = process.argv.slice(3).join(' ');
+
+// Create a stateful asker
+const ask = chat(MODEL);
 
 // Main interaction loop
 async function main() {
@@ -245,25 +290,24 @@ async function main() {
       userMessage = initialUserMessage;
       initialUserMessage = null;
     } else {
-      process.stdout.write('\x1b[1m');  // blue color
-      userMessage = await prompt('λ ');
-      process.stdout.write('\x1b[0m'); // reset color
+      userMessage = await promptLoop();
     }
-    
+
     try {
       const fullMessage = userMessage.trim() !== ''
         ? `<SYSTEM>\n${lastOutput.trim()}\n</SYSTEM>\n<USER>\n${userMessage}\n</USER>\n`
         : `<SYSTEM>\n${lastOutput.trim()}\n</SYSTEM>`;
 
-      const assistantMessage = await ask(fullMessage, { system: SYSTEM_PROMPT, model: MODEL });  
-      console.log(); 
-      
+      const assistantMessage = await ask(fullMessage, { system: SYSTEM_PROMPT, model: MODEL  });
+      console.log();
+
       const code = extractCode(assistantMessage);
       lastOutput = "";
 
+
       if (code) {
         console.log("\x1b[31mPress enter to execute, or 'N' to cancel.\x1b[0m");
-        const answer = await prompt('');
+        const answer = await rl.question("");
         // TODO: delete the warning above from the terminal
         process.stdout.moveCursor(0, -2);
         process.stdout.clearLine(2);
