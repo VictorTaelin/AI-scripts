@@ -21,7 +21,7 @@ export const MODELS = {
 };
 
 // Factory function to create a stateful OpenAI chat
-export function openAIChat(clientClass) {
+function openAIChat(clientClass) {
   const messages = [];
 
   async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 4096, stream = true }) {
@@ -54,7 +54,7 @@ export function openAIChat(clientClass) {
 }
 
 // Factory function to create a stateful Anthropic chat
-export function anthropicChat(clientClass) {
+function anthropicChat(clientClass) {
   const messages = [];
 
   async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 4096, stream = true }) {
@@ -82,7 +82,7 @@ export function anthropicChat(clientClass) {
   return ask;
 }
 
-export function geminiChat(clientClass) {
+function geminiChat(clientClass) {
   const messages = [];
 
   async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 4096, stream = true }) {
