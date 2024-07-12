@@ -99,7 +99,7 @@ function hypothenuse(a, b) {
 var file  = process.argv[2];
 var mini  = process.argv[3];
 var model = process.argv[4] || "s";
-var chat  = createChat(model);
+var chat  = createChat(model, {system, model});
 
 if (!file) {
   console.log("Usage: holefill <file> [<shortened_file>] [<model_name>]");
@@ -155,7 +155,7 @@ if (holes === "??") {
   for (let hole of holes) {
     console.log("next_filled: " + hole + "...");
     var prompt = "<QUERY>\n" + mini_code + "\n</QUERY>";
-    var answer = await chat.ask(prompt, {system, model});
+    var answer = await chat.ask(prompt);
     var match = answer.match(/<COMPLETION>([\s\S]*?)<\/COMPLETION>/);
     if (match) {
       file_code = file_code.replace(hole, match[1]);

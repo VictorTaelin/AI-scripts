@@ -235,7 +235,13 @@ If the player provides feedback after a '#', use it to improve the experience.
 
   console.log(`Emulating ${game}...\n\n`);
 
-  const chat = createChat(MODEL);
+  const chatOpts = {
+    system: SYSTEM,
+    model: MODEL,
+    max_tokens: 2048,
+    temperature: 0.5,
+  };
+  const chat = createChat(MODEL, chatOpts);
   let messages = [
     {role: "user", content: `# GAME: ${game}`},
   ];
@@ -243,12 +249,7 @@ If the player provides feedback after a '#', use it to improve the experience.
   while (true) {
     console.clear();
 
-    const response = await chat.ask(messages[messages.length - 1].content, {
-      system: SYSTEM,
-      model: MODEL,
-      max_tokens: 2048,
-      temperature: 0.5,
-    });
+    const response = await chat.ask(messages[messages.length - 1].content);
 
     messages.push({role: "assistant", content: response});
 

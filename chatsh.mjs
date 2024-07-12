@@ -278,7 +278,7 @@ async function promptLoop() {
 var initialUserMessage = process.argv.slice(3).join(' ');
 
 // Create a stateful asker
-const chat = createChat(MODEL);
+const chat = createChat(MODEL, { system: SYSTEM_PROMPT, model: MODEL  });
 
 // Main interaction loop
 async function main() {
@@ -298,7 +298,7 @@ async function main() {
         ? `<SYSTEM>\n${lastOutput.trim()}\n</SYSTEM>\n<USER>\n${userMessage}\n</USER>\n`
         : `<SYSTEM>\n${lastOutput.trim()}\n</SYSTEM>`;
 
-      const assistantMessage = await chat.ask(fullMessage, { system: SYSTEM_PROMPT, model: MODEL  });
+      const assistantMessage = await chat.ask(fullMessage);
       console.log();
 
       const code = extractCode(assistantMessage);

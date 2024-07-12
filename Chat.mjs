@@ -26,10 +26,10 @@ function newChat(ask) {
 }
 
 // Factory function to create a stateful OpenAI chat
-function openAIChat(clientClass) {
+function openAIChat(clientClass, { system, model, temperature = 0.0, max_tokens = 4096, stream = true }) {
   const messages = [];
 
-  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 4096, stream = true }) {
+  async function ask(userMessage) {
     model = MODELS[model] || model;
     const client = new clientClass({ apiKey: await getToken(clientClass.name.toLowerCase()) });
 
@@ -59,10 +59,10 @@ function openAIChat(clientClass) {
 }
 
 // Factory function to create a stateful Anthropic chat
-function anthropicChat(clientClass) {
+function anthropicChat(clientClass, { system, model, temperature = 0.0, max_tokens = 4096, stream = true }) {
   const messages = [];
 
-  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 4096, stream = true }) {
+  async function ask(userMessage) {
     model = MODELS[model] || model;
     const client = new clientClass({ apiKey: await getToken(clientClass.name.toLowerCase()) });
 
@@ -87,10 +87,10 @@ function anthropicChat(clientClass) {
   return newChat(ask);
 }
 
-function geminiChat(clientClass) {
+function geminiChat(clientClass, { system, model, temperature = 0.0, max_tokens = 4096, stream = true }) {
   const messages = [];
 
-  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 4096, stream = true }) {
+  async function ask(userMessage) {
     model = MODELS[model] || model;
     const client = new clientClass(await getToken(clientClass.name.toLowerCase()));
 
@@ -126,16 +126,16 @@ function geminiChat(clientClass) {
 }
 
 // Generic asker function that dispatches to the correct asker based on the model name
-export function createChat(model) {
+export function createChat(model, opts) {
   model = MODELS[model] || model;
   if (model.startsWith('gpt')) {
-    return openAIChat(OpenAI);
+    return openAIChat(OpenAI, opts);
   } else if (model.startsWith('claude')) {
-    return anthropicChat(Anthropic);
+    return anthropicChat(Anthropic, opts);
   } else if (model.startsWith('llama')) {
-    return openAIChat(Groq);
+    return openAIChat(Groq, opts);
   } else if (model.startsWith('gemini')) {
-    return geminiChat(GoogleGenerativeAI);
+    return geminiChat(GoogleGenerativeAI, opts);
   } else {
     throw new Error(`Unsupported model: ${model}`);
   }
