@@ -143,7 +143,7 @@ async function main() {
   const check = process.argv.includes("--check");
 
   // Initialize the chat function with the specified model
-  const ask = createChat(model);
+  const chat = createChat(model);
 
   // Get directory and file information
   const dir = path.dirname(file);
@@ -162,7 +162,7 @@ async function main() {
   // Main interaction loop with the AI
   while (true) {
     console.log("");
-    const aiOutput = await ask(aiInput, { system, model });
+    const aiOutput = await chat.ask(aiInput, { system, model });
 
     // Handle AI's request for additional information
     if (aiOutput.includes("<SHOW>")) {

@@ -20,6 +20,11 @@ export const MODELS = {
   I: 'gemini-1.5-pro-latest'
 };
 
+// Create a new Chat interface object.
+function newChat(ask) {
+  return { ask };
+}
+
 // Factory function to create a stateful OpenAI chat
 function openAIChat(clientClass) {
   const messages = [];
@@ -50,7 +55,7 @@ function openAIChat(clientClass) {
     return result;
   }
 
-  return ask;
+  return newChat(ask);
 }
 
 // Factory function to create a stateful Anthropic chat
@@ -79,7 +84,7 @@ function anthropicChat(clientClass) {
     return result;
   }
 
-  return ask;
+  return newChat(ask);
 }
 
 function geminiChat(clientClass) {
@@ -117,7 +122,7 @@ function geminiChat(clientClass) {
     return result;
   }
 
-  return ask;
+  return newChat(ask);
 }
 
 // Generic asker function that dispatches to the correct asker based on the model name
