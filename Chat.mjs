@@ -9,7 +9,7 @@ import { encode } from "gpt-tokenizer/esm/model/davinci-codex"; // tokenizer
 
 // Map of model shortcodes to full model names
 export const MODELS = {
-  g: 'gpt-4o', 
+  g: 'gpt-4o',
   G: 'gpt-4-32k-0314',
   h: 'claude-3-haiku-20240307',
   s: 'claude-3-5-sonnet-20240620',
@@ -70,7 +70,7 @@ export function anthropicChat(clientClass) {
       .stream({ ...params, messages })
       .on('text', (text) => {
         process.stdout.write(text);
-        result += text;  
+        result += text;
       });
     await response.finalMessage();
 
@@ -151,7 +151,7 @@ export function tokenCount(inputText) {
   // Encode the input string into tokens
   const tokens = encode(inputText);
 
-  // Get the number of tokens 
+  // Get the number of tokens
   const numberOfTokens = tokens.length;
 
   // Return the number of tokens
