@@ -20,22 +20,39 @@ export const MODELS = {
   I: 'gemini-1.5-pro-latest'
 };
 
+const DEFAULT_MODEL = "s";
+
+// Select which model to use based on a string. When empty, use default model.
+export function selectModel(model) {
+  return MODELS[model] || model || MODELS[DEFAULT_MODEL];
+}
+
 // Create a new Chat interface object.
-function newChat(ask) {
-  return { ask };
+function newChat(ask, getMessages) {
+  return { ask, getMessages };
 }
 
 // Factory function to create a stateful OpenAI chat
-function openAIChat(clientClass, { system, model, temperature = 0.0, max_tokens = 4096, stream = true }) {
+function openAIChat(clientClass, { system, model, temperature = 0.0, max_tokens = 4096, stream = true, old_messages}) {
   const messages = [];
+
+  if (system) {
+    messages.push({ role: "system", content: system })
+  }
+
+
+  // Ignore "system" messages (as they are added above).
+  if (old_messages) {
+    old_messages.forEach(m => {
+      if (m.role != "system") {
+        messages.push(m);
+      }
+    });
+  }
 
   async function ask(userMessage) {
     model = MODELS[model] || model;
     const client = new clientClass({ apiKey: await getToken(clientClass.name.toLowerCase()) });
-
-    if (messages.length === 0) {
-      messages.push({ role: "system", content: system });
-    }
 
     messages.push({ role: "user", content: userMessage });
 
@@ -55,12 +72,23 @@ function openAIChat(clientClass, { system, model, temperature = 0.0, max_tokens 
     return result;
   }
 
-  return newChat(ask);
+  const getMessages = () => messages;
+
+  return newChat(ask, getMessages);
 }
 
 // Factory function to create a stateful Anthropic chat
-function anthropicChat(clientClass, { system, model, temperature = 0.0, max_tokens = 4096, stream = true }) {
+function anthropicChat(clientClass, { system, model, temperature = 0.0, max_tokens = 4096, stream = true, old_messages }) {
   const messages = [];
+
+  // Ignore "system" messages (they are an arg in the call).
+  if (old_messages) {
+    old_messages.forEach(m => {
+      if (m.role != "system") {
+        messages.push(m);
+      }
+    });
+  }
 
   async function ask(userMessage) {
     model = MODELS[model] || model;
@@ -84,11 +112,22 @@ function anthropicChat(clientClass, { system, model, temperature = 0.0, max_toke
     return result;
   }
 
-  return newChat(ask);
+  const getMessages = () => messages;
+
+  return newChat(ask, getMessages);
 }
 
 function geminiChat(clientClass, { system, model, temperature = 0.0, max_tokens = 4096, stream = true }) {
   const messages = [];
+
+  // Convert to the format used by gemini.
+  if (old_messages) {
+    old_messages.forEach(m => {
+      if (m.role != "system") {
+        messages.push({ role: m.role, parts: [{ text: m.content }] });
+      }
+    });
+  }
 
   async function ask(userMessage) {
     model = MODELS[model] || model;
@@ -122,7 +161,14 @@ function geminiChat(clientClass, { system, model, temperature = 0.0, max_tokens 
     return result;
   }
 
-  return newChat(ask);
+  // Gemini messages do not have the same format as openAI/Anthropic. Pop
+  // the inner list and rename 'model' to 'assistant'.
+  const getMessages = () => messages.map(m => ({
+    role: m.role == "model" ? "assistant" : m.role,
+    content: m.parts[0].text,
+  }));
+
+  return newChat(ask, getMessages);
 }
 
 // Generic asker function that dispatches to the correct asker based on the model name

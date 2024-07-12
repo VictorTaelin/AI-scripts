@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { createChat, MODELS, tokenCount } from './Chat.mjs';
+import { createChat, selectModel, tokenCount } from './Chat.mjs';
 import process from "process";
 import fs from 'fs/promises';
 import os from 'os';
@@ -98,7 +98,7 @@ function hypothenuse(a, b) {
 
 var file  = process.argv[2];
 var mini  = process.argv[3];
-var model = process.argv[4] || "s";
+var model = selectModel(process.argv[4]);
 var chat  = createChat(model, {system});
 
 if (!file) {
@@ -138,7 +138,7 @@ if (holes.length === 0 && mini_code.indexOf("??") !== -1 && (mini_code.match(/\?
 
 console.log("holes_found:", holes);
 console.log("token_count:", tokens);
-console.log("model_label:", MODELS[model] || model);
+console.log("model_label:", model);
 
 if (holes === "??") {
     console.log("next_filled: ??");

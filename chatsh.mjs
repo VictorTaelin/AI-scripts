@@ -3,16 +3,15 @@
 import readline from 'readline/promises';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { createChat, MODELS } from './Chat.mjs';
+import { createChat, selectModel, MODELS } from './Chat.mjs';
+import { Command, Argument } from 'commander';
 
 const execAsync = promisify(exec);
 
-// Default model if not specified
-const DEFAULT_MODEL = "s";
 // Get model from environment variable or use default
-const MODEL = process.argv[2] || DEFAULT_MODEL;
+let model = selectModel(process.argv[2]);
 
-console.log(`Welcome to ChatSH. Model: ${MODELS[MODEL]||MODEL}\n`);
+console.log(`Welcome to ChatSH. Model: ${model}\n`);
 
 // System prompt to set the assistant's behavior
 const SYSTEM_PROMPT = `You are ChatSH, an AI language model that specializes in assisting users with tasks on their system using shell commands. ChatSH operates in two modes: COMMAND MODE and CHAT MODE.
@@ -222,17 +221,74 @@ const rl = readline.createInterface({
   terminal: true
 });
 
+// Create a stateful asker
+let chat = createChat(model, { system: SYSTEM_PROMPT  });
+
+
 // Prompts.
 const CMDPROMPT = ': ';
 const CHATPROMPT = 'λ ';
 
-// Loop processing command prompts until user is done.
-async function commandLoop() {
-  while (true) {
-    let res = await rl.question(CMDPROMPT);
-    if (res == "exit") {
+// Process a single command when in command mode.
+async function processCommand(input) {
+  if (input == '') {
+    return;
+  }
+
+  // Split input into arguments.
+  const regex = new RegExp('"[^"]+"|[\\S]+', 'g');
+  const argv = input.match(regex).filter(e => !!e).map(e => e.replace(/"/g, ''))
+
+  // Setup the handlers for commands.
+  const program = new Command();
+  program
+    .command('show')
+    .summary('Debug an internal var')
+    .addArgument(new Argument('<varname>', 'Which var to show').choices([
+      'messages', 'model']))
+    // .argument('<varname>', 'Which var to show')
+    .action((varname) => {
+      switch (varname) {
+      case 'messages':
+          console.log(chat.getMessages());
+          break;
+      case 'model':
+          console.log(`Current model: ${model}`)
+          break;
+      default:
+          console.log(`Unknown var ${varname}`);
+      }
+    })
+    .exitOverride();
+
+  program
+    .command('model')
+    .summary('Change active model')
+    .argument('[newModelName]', 'New model name')
+    .action(newModelName => {
+      if (!newModelName) {
+        console.log('Known Models');
+        console.log(MODELS);
+        return;
+      }
+
+      // Replace chat.
+      const newModel = selectModel(newModelName);
+      const old_messages = chat.getMessages();
+      chat = createChat(newModel, { system: SYSTEM_PROMPT, old_messages  });
+      model = newModel;
+    })
+    .exitOverride();
+
+  program.exitOverride();
+
+  try {
+    program.parse(argv, { from: 'user' });
+  } catch (err) {
+    if (err.code == 'commander.help' || err.code == 'commander.helpDisplayed') {
       return;
     }
+    console.log(`Exception processing command: ${err}`);
   }
 }
 
@@ -252,17 +308,17 @@ async function promptLoop() {
     process.stdin.on('keypress', firstKey);
     try {
       process.stdout.write('\x1b[1m');  // blue color
-      let res = await rl.question(prompt, {signal: abort.signal });
+      let line = await rl.question(prompt, {signal: abort.signal });
       process.stdout.write('\x1b[0m'); // reset color
       process.stdin.removeListener('keypress', firstKey);
 
       if (prompt == CHATPROMPT) {
         // Received latest chat prompt.
-        return res;
+        return line;
       }
 
       // Process a command prompt.
-      console.log(`Processing ${res}`);
+      processCommand(line);
     } catch (exception) {
       // Aborted. Toggle between chat and command modes.
       process.stdout.moveCursor(-1, -1);
@@ -276,9 +332,6 @@ async function promptLoop() {
 
 // If there are words after the 'chatsh', set them as the initialUserMessage
 var initialUserMessage = process.argv.slice(3).join(' ');
-
-// Create a stateful asker
-const chat = createChat(MODEL, { system: SYSTEM_PROMPT  });
 
 // Main interaction loop
 async function main() {

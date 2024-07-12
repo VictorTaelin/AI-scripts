@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import process from "process";
-import { createChat, MODELS, tokenCount } from './Chat.mjs';
+import { createChat, selectModel, tokenCount } from './Chat.mjs';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
@@ -139,7 +139,7 @@ async function main() {
 
   const file = process.argv[2];
   const request = process.argv[3];
-  const model = process.argv[4] || "s";
+  const model = selectModel(process.argv[4]);
   const check = process.argv.includes("--check");
 
   // Initialize the chat function with the specified model

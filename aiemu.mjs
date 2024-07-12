@@ -2,9 +2,9 @@
 
 import process from "process";
 import fs from 'fs/promises';
-import { createChat, MODELS } from './Chat.mjs';
+import { createChat, selectModel } from './Chat.mjs';
 
-const MODEL = process.argv[2] || "s";
+const MODEL = selectModel(process.argv[2]);
 
 const SYSTEM = `
 You're a game emulator. You can emulate ANY game, but text-based. Your goal is
@@ -227,7 +227,7 @@ If the player provides feedback after a '#', use it to improve the experience.
   console.log(ASCII_ART);
 
   console.log("");
-  console.log(`\x1b[32mUsing \x1b[1m${MODELS[MODEL]||MODEL}\x1b[0m`);
+  console.log(`\x1b[32mUsing \x1b[1m${MODEL}\x1b[0m`);
   console.log("");
 
   process.stdout.write("Game: ");
