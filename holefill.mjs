@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { chat, MODELS, tokenCount } from './Chat.mjs';
+import { createChat, selectModel, tokenCount } from './Chat.mjs';
 import process from "process";
 import fs from 'fs/promises';
 import os from 'os';
@@ -98,8 +98,8 @@ function hypothenuse(a, b) {
 
 var file  = process.argv[2];
 var mini  = process.argv[3];
-var model = process.argv[4] || "s";
-var ask   = chat(model);
+var model = selectModel(process.argv[4]);
+var chat  = createChat(model, {system});
 
 if (!file) {
   console.log("Usage: holefill <file> [<shortened_file>] [<model_name>]");
@@ -138,12 +138,12 @@ if (holes.length === 0 && mini_code.indexOf("??") !== -1 && (mini_code.match(/\?
 
 console.log("holes_found:", holes);
 console.log("token_count:", tokens);
-console.log("model_label:", MODELS[model] || model);
+console.log("model_label:", model);
 
 if (holes === "??") {
     console.log("next_filled: ??");
     var prompt = "<QUERY>\n" + mini_code.replace("??", "{{FILL_HERE}}") + "\n</QUERY>";
-    var answer = await ask(prompt, {system, model});
+    var answer = await chat.ask(prompt, {system, model});
     var match = answer.match(/<COMPLETION>([\s\S]*?)<\/COMPLETION>/);
     if (match) {
       file_code = file_code.replace("??", match[1]);
@@ -155,7 +155,7 @@ if (holes === "??") {
   for (let hole of holes) {
     console.log("next_filled: " + hole + "...");
     var prompt = "<QUERY>\n" + mini_code + "\n</QUERY>";
-    var answer = await ask(prompt, {system, model});
+    var answer = await chat.ask(prompt);
     var match = answer.match(/<COMPLETION>([\s\S]*?)<\/COMPLETION>/);
     if (match) {
       file_code = file_code.replace(hole, match[1]);

@@ -8,5 +8,3 @@ Some AI scripts I use daily.
 - `aiemu`: moved to [here](https://github.com/victorTaelin/aiemu)
 
 - `chatsh [model]`: like ChatGPT but in the terminal
-
-TODO: remove `Claude.mjs`/`GPT.mjs` and just use `Ask.mjs` in all files

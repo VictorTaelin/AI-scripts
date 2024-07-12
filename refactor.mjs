@@ -4,7 +4,7 @@ import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import process from "process";
-import { chat, MODELS, tokenCount } from './Chat.mjs';
+import { createChat, selectModel, tokenCount } from './Chat.mjs';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
@@ -166,11 +166,11 @@ async function main() {
 
   const file = process.argv[2];
   const request = process.argv[3];
-  const model = process.argv[4] || "s";
+  const model = selectModel(process.argv[4]);
   const check = process.argv.includes("--check");
 
   // Initialize the chat function with the specified model
-  const ask = chat(model);
+  const chat = createChat(model, { system });
 
   // Get directory and file information
   const dir = path.dirname(file);
@@ -189,8 +189,8 @@ async function main() {
   // Main interaction loop with the AI
   while (true) {
     console.log("");
-    const aiOutput = await ask(aiInput, { system, model });
-    
+    const aiOutput = await chat.ask(aiInput);
+
     // Handle AI's request for additional information
     if (aiOutput.includes("<SHOW>")) {
       const showMatch = aiOutput.match(/<SHOW>([\s\S]*?)<\/SHOW>/);
@@ -209,7 +209,7 @@ async function main() {
         }
         aiInput = showContent;
       }
-    } 
+    }
     // Handle AI's refactoring result
     else if (aiOutput.includes("<RESULT>")) {
       const resultMatch = aiOutput.match(/<RESULT>([\s\S]*?)<\/RESULT>/);
@@ -217,7 +217,7 @@ async function main() {
         const newContent = resultMatch[1];
         await fs.writeFile(file, newContent.trim(), 'utf-8');
         console.log("\nFile refactored successfully.");
-        
+
         // If --check flag is present, perform type check on the refactored file
         if (check) {
           const checkResult = await typeCheck(file);
@@ -255,7 +255,7 @@ async function typeCheck(file) {
     default:
       return null;
   }
-  
+
   try {
     var result = await execAsync(cmd);
     return result.stderr || result.stdout;

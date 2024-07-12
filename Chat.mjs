@@ -9,7 +9,7 @@ import { encode } from "gpt-tokenizer/esm/model/davinci-codex"; // tokenizer
 
 // Map of model shortcodes to full model names
 export const MODELS = {
-  g: 'gpt-4o', 
+  g: 'gpt-4o',
   G: 'gpt-4-32k-0314',
   h: 'claude-3-haiku-20240307',
   s: 'claude-3-5-sonnet-20240620',
@@ -20,17 +20,39 @@ export const MODELS = {
   I: 'gemini-1.5-pro-latest'
 };
 
+const DEFAULT_MODEL = "s";
+
+// Select which model to use based on a string. When empty, use default model.
+export function selectModel(model) {
+  return MODELS[model] || model || MODELS[DEFAULT_MODEL];
+}
+
+// Create a new Chat interface object.
+function newChat(ask, getMessages) {
+  return { ask, getMessages };
+}
+
 // Factory function to create a stateful OpenAI chat
-export function openAIChat(clientClass) {
+function openAIChat(clientClass, { system, model, temperature = 0.0, max_tokens = 4096, stream = true, old_messages}) {
   const messages = [];
 
-  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 4096, stream = true }) {
+  if (system) {
+    messages.push({ role: "system", content: system })
+  }
+
+
+  // Ignore "system" messages (as they are added above).
+  if (old_messages) {
+    old_messages.forEach(m => {
+      if (m.role != "system") {
+        messages.push(m);
+      }
+    });
+  }
+
+  async function ask(userMessage) {
     model = MODELS[model] || model;
     const client = new clientClass({ apiKey: await getToken(clientClass.name.toLowerCase()) });
-
-    if (messages.length === 0) {
-      messages.push({ role: "system", content: system });
-    }
 
     messages.push({ role: "user", content: userMessage });
 
@@ -50,14 +72,25 @@ export function openAIChat(clientClass) {
     return result;
   }
 
-  return ask;
+  const getMessages = () => messages;
+
+  return newChat(ask, getMessages);
 }
 
 // Factory function to create a stateful Anthropic chat
-export function anthropicChat(clientClass) {
+function anthropicChat(clientClass, { system, model, temperature = 0.0, max_tokens = 4096, stream = true, old_messages }) {
   const messages = [];
 
-  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 4096, stream = true }) {
+  // Ignore "system" messages (they are an arg in the call).
+  if (old_messages) {
+    old_messages.forEach(m => {
+      if (m.role != "system") {
+        messages.push(m);
+      }
+    });
+  }
+
+  async function ask(userMessage) {
     model = MODELS[model] || model;
     const client = new clientClass({ apiKey: await getToken(clientClass.name.toLowerCase()) });
 
@@ -70,7 +103,7 @@ export function anthropicChat(clientClass) {
       .stream({ ...params, messages })
       .on('text', (text) => {
         process.stdout.write(text);
-        result += text;  
+        result += text;
       });
     await response.finalMessage();
 
@@ -79,13 +112,24 @@ export function anthropicChat(clientClass) {
     return result;
   }
 
-  return ask;
+  const getMessages = () => messages;
+
+  return newChat(ask, getMessages);
 }
 
-export function geminiChat(clientClass) {
+function geminiChat(clientClass, { system, model, temperature = 0.0, max_tokens = 4096, stream = true }) {
   const messages = [];
 
-  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 4096, stream = true }) {
+  // Convert to the format used by gemini.
+  if (old_messages) {
+    old_messages.forEach(m => {
+      if (m.role != "system") {
+        messages.push({ role: m.role, parts: [{ text: m.content }] });
+      }
+    });
+  }
+
+  async function ask(userMessage) {
     model = MODELS[model] || model;
     const client = new clientClass(await getToken(clientClass.name.toLowerCase()));
 
@@ -117,20 +161,27 @@ export function geminiChat(clientClass) {
     return result;
   }
 
-  return ask;
+  // Gemini messages do not have the same format as openAI/Anthropic. Pop
+  // the inner list and rename 'model' to 'assistant'.
+  const getMessages = () => messages.map(m => ({
+    role: m.role == "model" ? "assistant" : m.role,
+    content: m.parts[0].text,
+  }));
+
+  return newChat(ask, getMessages);
 }
 
 // Generic asker function that dispatches to the correct asker based on the model name
-export function chat(model) {
+export function createChat(model, opts) {
   model = MODELS[model] || model;
   if (model.startsWith('gpt')) {
-    return openAIChat(OpenAI);
+    return openAIChat(OpenAI, { model, ... opts });
   } else if (model.startsWith('claude')) {
-    return anthropicChat(Anthropic);
+    return anthropicChat(Anthropic, { model, ... opts });
   } else if (model.startsWith('llama')) {
-    return openAIChat(Groq);
+    return openAIChat(Groq, { model, ... opts });
   } else if (model.startsWith('gemini')) {
-    return geminiChat(GoogleGenerativeAI);
+    return geminiChat(GoogleGenerativeAI, { model, ... opts });
   } else {
     throw new Error(`Unsupported model: ${model}`);
   }
@@ -151,7 +202,7 @@ export function tokenCount(inputText) {
   // Encode the input string into tokens
   const tokens = encode(inputText);
 
-  // Get the number of tokens 
+  // Get the number of tokens
   const numberOfTokens = tokens.length;
 
   // Return the number of tokens
