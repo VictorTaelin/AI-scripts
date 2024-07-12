@@ -56,7 +56,7 @@ Where:
 
 ### Top-Level Datatype
 
-Alternatively, a .kind2 type can also define an inductive datatype:
+Alternatively, a .kind2 tile can also define an inductive datatype:
 
 ```
 data Name <p0: P0> <p1: P1> ... (i0: I0) (i1: I1) ...
@@ -168,6 +168,7 @@ There are two ways to call these functions.
 
 ```
 (swap _ _ (Pair/new _ _ Nat/zero (List/nil _)))
+```
 
 As you can see, using metavars is much more concise. As a rule of thumb, always
 use metavars on the function body, but write it fully on its arglist. Remember

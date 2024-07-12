@@ -433,6 +433,7 @@ async function main() {
 
   // Call the AI model
   let aiOutput = await ask(aiInput, { system: system_KindCoder, model });
+  console.log("");
 
   // Extract the result from AI output
   let resultMatch = aiOutput.match(/<RESULT>([\s\S]*)<\/RESULT>/);
