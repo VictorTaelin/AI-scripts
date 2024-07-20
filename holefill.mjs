@@ -141,9 +141,8 @@ console.log("token_count:", tokens);
 console.log("model_label:", MODELS[model] || model);
 
 if (holes === "??") {
-    console.log("next_filled: ??");
     var prompt = "<QUERY>\n" + mini_code.replace("??", "{{FILL_HERE}}") + "\n</QUERY>";
-    var answer = await ask(prompt, {system, model});
+    var answer = await ask(prompt, {system, model, max_tokens: 4096}) + "</COMPLETION>";
     var match = answer.match(/<COMPLETION>([\s\S]*?)<\/COMPLETION>/);
     if (match) {
       file_code = file_code.replace("??", match[1]);
@@ -155,7 +154,7 @@ if (holes === "??") {
   for (let hole of holes) {
     console.log("next_filled: " + hole + "...");
     var prompt = "<QUERY>\n" + mini_code + "\n</QUERY>";
-    var answer = await ask(prompt, {system, model});
+    var answer = await ask(prompt, {system, model, max_tokens: 4096}) + "</COMPLETION>";
     var match = answer.match(/<COMPLETION>([\s\S]*?)<\/COMPLETION>/);
     if (match) {
       file_code = file_code.replace(hole, match[1]);
