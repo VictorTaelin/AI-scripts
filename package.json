@@ -10,7 +10,8 @@
     "csh": "chatsh.mjs",
     "refactor": "refactor.mjs",
     "kindcoder": "kindcoder.mjs",
-    "aiemu": "aiemu.mjs"
+    "aiemu": "aiemu.mjs",
+    "ts-deps": "ts-deps.mjs"
   },
   "scripts": {},
   "keywords": [
