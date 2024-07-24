@@ -66,7 +66,7 @@ function extractDependencies(filePath) {
 function main() {
   const args = process.argv.slice(2);
   if (args.length !== 1) {
-    console.error('Usage: node script.js <file.ts>');
+    console.error('Usage: ts-deps <file.ts>');
     process.exit(1);
   }
 
