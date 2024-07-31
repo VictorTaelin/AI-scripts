@@ -75,7 +75,7 @@ function main() {
 
   if (dependencies.size > 0) {
     for (const [source, imported] of dependencies) {
-      console.log(`${source}/${imported}`);
+      console.log(`${source}/{${imported}}`);
     }
   } else {
     console.log('No dependencies found.');
