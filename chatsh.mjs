@@ -58,7 +58,9 @@ Show me the contents of example.txt.
 </USER>
 
 <ChatSH>
+\`\`\`sh
 cat example.txt
+\`\`\`
 </ChatSH>
 
 <SYSTEM>
@@ -188,11 +190,11 @@ tsc --noEmit map.ts
 
 <ChatSH>
 Done.
-</ChatSH
+</ChatSH>
 
 ## NOTES:
 
-- In COMMAND MODE, ChatSH MUST answer with A SINGLE SH BLOCK.
+- In COMMAND MODE, ChatSH MUST answer with SH BLOCKS.
 
 - In COMMAND MODE, ChatSH MUST NOT answer with ENGLISH EXPLANATION.
 
@@ -204,14 +206,7 @@ Done.
 
 - ChatSH MUST NEVER attempt to install new tools. Assume they're available.
 
-- ChatSH's interpreter can only process one SH per answer.
-
-- On TypeScript:
-  - Use 'tsc --noEmit file.ts' to type-check.
-  - Use 'tsx file.ts' to run.
-  - Never generate js files.
-
-- When a task is completed, STOP using commands. Just answer with "Done.".
+- Do include <ChatSH> tags in your answer. It was there just to illustrate the conversation format.
 
 - The system shell in use is: ${await get_shell()}.`;
 
@@ -258,13 +253,14 @@ async function main() {
       const assistantMessage = await ask(fullMessage, { system: SYSTEM_PROMPT, model: MODEL });  
       console.log(); 
       
-      const code = extractCode(assistantMessage);
+      const codes = extractCodes(assistantMessage);
       lastOutput = "";
 
-      if (code) {
+      if (codes.length > 0) {
+        const combinedCode = codes.join('\n');
         console.log("\x1b[31mPress enter to execute, or 'N' to cancel.\x1b[0m");
         const answer = await prompt('');
-        // TODO: delete the warning above from the terminal
+        // Delete the warning above from the terminal
         process.stdout.moveCursor(0, -2);
         process.stdout.clearLine(2);
         if (answer.toLowerCase() === 'n') {
@@ -272,7 +268,7 @@ async function main() {
           lastOutput = "Command skipped.\n";
         } else {
           try {
-            const {stdout, stderr} = await execAsync(code);
+            const {stdout, stderr} = await execAsync(combinedCode);
             const output = `${stdout.trim()}${stderr.trim()}`;
             console.log('\x1b[2m' + output.trim() + '\x1b[0m');
             lastOutput = output;
@@ -289,10 +285,15 @@ async function main() {
   }
 }
 
-// Utility function to extract code from the assistant's message
-function extractCode(text) {
-  const match = text.match(/```sh([\s\S]*?)```/);
-  return match ? match[1].trim() : null;
+// Utility function to extract all code blocks from the assistant's message
+function extractCodes(text) {
+  const regex = /```sh([\s\S]*?)```/g;
+  const matches = [];
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    matches.push(match[1].trim());
+  }
+  return matches;
 }
 
 async function get_shell() {
