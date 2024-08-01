@@ -163,19 +163,23 @@ async function main() {
     ].join('\n');
   }
 
+  console.log(file);
+
   // Extract the definition name from the file path
   // TODO: probably change here to use smth other than book/
-  let defName = file.split('/book/')[1].replace('.ts', '');
+  // TODO: fix ts-deps to see defs without .ts
+  let defName = file.replace('.ts', '');
+  console.log(defName);
 
   // Collect direct and indirect dependencies
   let deps;
   try {
-    // this assumes the ts-deps command from here is installed
-    let { stdout } = await execAsync(`ts-deps ${defName}`);
+    let { stdout } = await execAsync(`ts-deps ${file}`);
     deps = stdout.trim().split('\n');
   } catch (e) {
     deps = [];
   }
+
 
   // Predict additional dependencies
   const predictedDeps = await predictDependencies(defName, fileContent);
@@ -187,7 +191,6 @@ async function main() {
   let depFiles = await Promise.all(deps.map(async (dep) => {
     let depPath, content;
     let path0 = path.join(dir, '..', `${dep}.ts`);
-    // TODO: _.ts not needed probably?
     let path1 = path.join(dir, '..', `${dep}/_.ts`); 
     try {
       content = await fs.readFile(path0, 'utf-8');
