@@ -46,8 +46,60 @@ Below is a complete example of how TsCoder should interact with the user.
 
 ## User:
 
-<FILE path="/Users/v/vic/dev/ts/book/Nat/_.ts">
-`.trim();
+<FILE path="/Users/v/vic/dev/ts/book/Pair/_.ts">
+...
+</FILE>
+
+<FILE path="/Users/v/vic/dev/ts/book/Pair/fst.ts">
+...
+</FILE>
+
+<FILE path="/Users/v/vic/dev/ts/book/Pair/snd.ts">
+...
+</FILE>
+
+<FILE path="/Users/v/vic/dev/ts/book/Pair/internal_product.ts" target>
+import { Pair } from "./_";
+import { fst } from "./fst";
+import { snd } from "./snd";
+
+export function internal_product(p: Pair<number, number>): number {
+?
+}
+...
+</FILE>
+
+<REQUEST>
+return the first element times the second element
+</REQUEST>
+
+<RESULT>
+import { Pair } from "./_";
+import { fst } from "./fst";
+import { snd } from "./snd";
+
+export function internal_product(p: Pair<number, number>): number {
+  return fst<number, number>(p) * snd<number, number>(p);
+}
+</RESULT>
+
+# EXPLANATION
+
+## Input:
+
+The user provided a target file (Pair/internal_product) to be modified, and a request:
+"return the first element times the second element". The user also provided some additional files and dirs for
+context (including Pair, Pair/fst, Pair/snd). The target file had an incomplete
+top-level definition, 'internal_product', with a hole, '?', as its body.
+
+## Output:
+
+As a response, you, TsCoder, used the imported fst and snd functions and returned the first element of the pair times the second element of the pair. You did NOT perform any extra work, nor change anything beyond what the user explicitly asked for. Instead, you just returned the result needed. You included the updated file inside a RESULT tag, completing the task successfully. Good job!
+
+# Task
+
+The user will now give you a TypeScript file, and a change request. Read it carefully and update is as demanded. Consult the guides above as necessary. Pay attention to syntax details, like parenthesis, style guide, to emit valid code. Do it now:`.trim();
+
 const system_DepsPredictor = "".trim();
 
 // Function to predict dependencies
@@ -159,15 +211,34 @@ async function main() {
   // TODO: add default def for ts template
   if (fileContent.trim() === '') {
     fileContent = [
+      "This file is empty. Please replace it with a TypeScript definition. Example:",
       "",
+      "/// Does foo.",
+      "///",
+      "/// # Input",
+      "///",
+      "/// * `x0` - Description",
+      "/// * `x1` - Description",
+      "/// ...",
+      "///",
+      "/// # Output",
+      "///",
+      "/// The result of doing foo",
+      "import { a, b } from './Lib/A';",
+      "import { c, d } from './Lib/B';",
+      "...",
+      "",
+      "function foo<A, B> (x0: X0, x1: X1)
+      "...",
+      "",
+      "body",
+      "```",
     ].join('\n');
   }
 
   console.log(file);
 
   // Extract the definition name from the file path
-  // TODO: probably change here to use smth other than book/
-  // TODO: fix ts-deps to see defs without .ts
   let defName = file.replace('.ts', '');
   console.log(defName);
 
@@ -179,7 +250,6 @@ async function main() {
   } catch (e) {
     deps = [];
   }
-
 
   // Predict additional dependencies
   const predictedDeps = await predictDependencies(defName, fileContent);
