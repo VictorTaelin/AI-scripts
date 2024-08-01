@@ -4,11 +4,11 @@ import fs from 'fs';
 import path from 'path';
 import ts from 'typescript';
 
-function extractDependencies(filePath) {
+function extract_dependencies(file_path) {
   try {
-    const content = fs.readFileSync(filePath, 'utf8');
-    const sourceFile = ts.createSourceFile(
-      filePath,
+    const content = fs.readFileSync(file_path, 'utf8');
+    const source_file = ts.createSourceFile(
+      file_path,
       content,
       ts.ScriptTarget.Latest,
       true
@@ -18,49 +18,74 @@ function extractDependencies(filePath) {
 
     function visit(node) {
       if (ts.isImportDeclaration(node)) {
-        const moduleSpecifier = node.moduleSpecifier.text;
-        const importClause = node.importClause;
-        if (importClause) {
-          if (importClause.name) {
-            dependencies.set(moduleSpecifier, importClause.name.text);
-          } else if (importClause.namedBindings) {
-            if (ts.isNamedImports(importClause.namedBindings)) {
-              const imports = importClause.namedBindings.elements.map(e => e.name.text);
-              dependencies.set(moduleSpecifier, `{${imports.join(', ')}}`);
-            } else if (ts.isNamespaceImport(importClause.namedBindings)) {
-              dependencies.set(moduleSpecifier, `* as ${importClause.namedBindings.name.text}`);
+        const module_specifier = node.moduleSpecifier.text;
+        const import_clause = node.importClause;
+        if (import_clause) {
+          if (import_clause.name) {
+            dependencies.set(module_specifier, import_clause.name.text);
+          } else if (import_clause.namedBindings) {
+            if (ts.isNamedImports(import_clause.namedBindings)) {
+              const imports = import_clause.namedBindings.elements.map(e => e.name.text);
+              dependencies.set(module_specifier, `{${imports.join(', ')}}`);
+            } else if (ts.isNamespaceImport(import_clause.namedBindings)) {
+              dependencies.set(module_specifier, `* as ${importClause.namedBindings.name.text}`);
             }
           }
         } else {
-          dependencies.set(moduleSpecifier, '');
+          dependencies.set(module_specifier, '');
         }
       } else if (ts.isImportEqualsDeclaration(node)) {
         if (ts.isExternalModuleReference(node.moduleReference)) {
-          const moduleSpecifier = node.moduleReference.expression.text;
-          dependencies.set(moduleSpecifier, node.name.text);
+          const module_specifier = node.moduleReference.expression.text;
+          dependencies.set(module_specifier, node.name.text);
         }
       } else if (ts.isCallExpression(node) && node.expression.text === 'require') {
         if (node.arguments.length > 0 && ts.isStringLiteral(node.arguments[0])) {
-          const moduleSpecifier = node.arguments[0].text;
-          dependencies.set(moduleSpecifier, '');
+          const module_specifier = node.arguments[0].text;
+          dependencies.set(module_specifier, '');
         }
       } else if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
         if (node.arguments.length > 0 && ts.isStringLiteral(node.arguments[0])) {
-          const moduleSpecifier = node.arguments[0].text;
-          dependencies.set(moduleSpecifier, '');
+          const module_specifier = node.arguments[0].text;
+          dependencies.set(module_specifier, '');
         }
       }
 
       ts.forEachChild(node, visit);
     }
 
-    visit(sourceFile);
+    visit(source_file);
 
     return dependencies;
   } catch (error) {
     console.error(`Error processing file: ${error.message}`);
     return new Map();
   }
+}
+
+function fix_file_path(filepath) {
+  if (!filepath) {
+    console.error(`Usage: ts-deps <file.ts>`);
+    process.exit(1);
+  }
+  // check if is a ts file | adds .ts if its a definition
+  let [file, extension] = filepath.split('.');
+  if (extension) {
+    // if is not a .ts file, exit
+    if (extension != "ts") {
+      console.error("File should be a typescript file or no extension def.");
+      process.exit(1);
+    } else {
+      return filepath;
+    }
+  } else {
+    // adds extension to definition
+    return filepath + ".ts";
+  }
+}
+
+function clean_imported_output(imported) {
+  return (imported.replace("}", "")).replace("{", "");
 }
 
 function main() {
@@ -70,12 +95,14 @@ function main() {
     process.exit(1);
   }
 
-  const filePath = args[0];
-  const dependencies = extractDependencies(filePath);
+  const file_path = args[0];
+  const fixed_file_path = fix_file_path(file_path);
+  const dependencies = extract_dependencies(fixed_file_path);
 
   if (dependencies.size > 0) {
     for (const [source, imported] of dependencies) {
-      console.log(`${source}/{${imported}}`);
+      const out_imported = clean_imported_output(imported);
+      console.log(`${source}/{${out_imported}}`);
     }
   } else {
     console.log('No dependencies found.');
