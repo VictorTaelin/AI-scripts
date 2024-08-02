@@ -12,7 +12,6 @@ const execAsync = promisify(exec);
 const ts_guide = await fs.readFile(new URL('./TS_GUIDE_AI.md', import.meta.url), 'utf-8');
 
 // System prompt for the AI model, defining its role and behavior
-// TODO add tsCoder and DepsPrediction text
 const system_TsCoder = `
 You are TsCoder, a TypeScript language coding assistant.
 
@@ -100,7 +99,127 @@ As a response, you, TsCoder, used the imported fst and snd functions and returne
 
 The user will now give you a TypeScript file, and a change request. Read it carefully and update is as demanded. Consult the guides above as necessary. Pay attention to syntax details, like parenthesis, style guide, to emit valid code. Do it now:`.trim();
 
-const system_DepsPredictor = "".trim();
+const system_DepsPredictor = `
+# ABOUT TypeScript FOR THE PROJECT
+
+TypeScript is being used as a minimal functional programming language, where very file defines exactly ONE function, type or constant. For example:
+
+'''
+// Nat/add.ts: defines Nat addition
+
+import { succ } from './succ' };
+import { zero } from './zero' };
+import { Nat } from './_' };
+import { match } from './match' };
+
+export function add(a: Nat, b: Nat): Nat {
+  switch(a.type) {
+    case 'succ':
+      return succ(add(a.pred, b));
+    case 'zero':
+      return b;
+  }
+}
+'''
+
+The file above implements and exports the global Nat/add definition.
+
+# INPUT
+
+You will be given the NAME of a TypeScript file, its source code (which may be empty), and a list of ALL TypeScript definitions available in the stdlib.
+
+# OUTPUT
+
+You must answer with a list of definitions that are, or that you predict WILL BE used, directly or not, inside that TypeScript file. Answer in a <DEPENDENCIES/> tag.
+
+Optionally, you can also include a SHORT, 1-paragraph <JUSTIFICATION/>.
+
+# EXAMPLE INPUT
+
+<NAME>Nat/equal</NAME>
+
+<SOURCE>
+</SOURCE>
+
+
+
+<DEFINITIONS>
+- List/
+  - cons
+  - nil
+  - match
+  - map
+  - fold
+  - filter
+  - equal
+  - zip
+  - length
+- Nat/
+  - match
+  - fold
+  - succ
+  - zero
+  - compare
+  - add
+  - sub
+  - mul
+  - div
+  - mod
+  - pow
+  - lte
+  - gte
+- Bool/
+  - match
+  - fold
+  - true
+  - false
+  - not
+  - and
+  - or
+  - xor
+  - nand
+</DEFINITION>
+
+# EXAMPLE OUTPUT
+
+<JUSTIFICATION>
+Nat/equal is likely to be a pairwise comparison between Nats. As such, it must
+include Nat (obviously), as well as its constructor and match. It returns a
+Bool, so, it must also include its constructors and match. For completion, I've
+also added bool AND and OR, since these are often used in comparison. Finally,
+Nat/compare and List/equal might be similar algorithms, so, I included them.
+</JUSTIFICATION>
+<DEPENDENCIES>
+Nat
+Nat/succ
+Nat/zero
+Nat/match
+Bool
+Bool/true
+Bool/false
+Bool/match
+Bool/and
+Bool/or
+Nat/compare
+List/equal
+</DEPENDENCIES>
+
+# HINTS
+
+- Attempt to include ALL files that might be relevant, directly or not.
+
+- Always include files that might be similar algorithms to the current one.
+  Example: 'Map/set' MUST include 'Mat/get'
+
+- If the file is the constructor of an ADT, then, INCLUDE its type
+  Example: 'List/cons' MUST include 'List'
+
+- When in doubt, prefer to include MORE, rather than LESS, potencial dependencies.
+
+- Try to include AT LEAST 4 dependencies, and AT MOST (only if needed) 16.
+
+- Sometimes the user will give hints in the file. Follow them.
+`.trim();
 
 // Function to predict dependencies
 async function predictDependencies(name, fileContent) {
@@ -180,7 +299,7 @@ async function main() {
   }
 
   let file = process.argv[2];
-  let request = process.argv[3];
+  let request = process.argv[3] || "";
   let model = process.argv[4] || "s";
 
   // Initialize the chat function with the specified model
@@ -197,7 +316,6 @@ async function main() {
   let dirContent = await fs.readdir(dir);
 
   // If the request is empty, replace it by a default request.
-  // TODO enhance default request
   if (request.trim() === '') {
     request = [
       "Update this file.",
@@ -208,7 +326,6 @@ async function main() {
   }
 
   // If the file is empty, ask the AI to fill with an initial template
-  // TODO: add default def for ts template
   if (fileContent.trim() === '') {
     fileContent = [
       "This file is empty. Please replace it with a TypeScript definition. Example:",
@@ -228,7 +345,7 @@ async function main() {
       "import { c, d } from './Lib/B';",
       "...",
       "",
-      "function foo<A, B> (x0: X0, x1: X1)
+      "function foo<A, B> (x0: X0, x1: X1)",
       "...",
       "",
       "body",
@@ -236,11 +353,8 @@ async function main() {
     ].join('\n');
   }
 
-  console.log(file);
-
   // Extract the definition name from the file path
   let defName = file.replace('.ts', '');
-  console.log(defName);
 
   // Collect direct and indirect dependencies
   let deps;
