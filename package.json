@@ -11,7 +11,8 @@
     "refactor": "refactor.mjs",
     "kindcoder": "kindcoder.mjs",
     "aiemu": "aiemu.mjs",
-    "ts-deps": "ts-deps.mjs"
+    "ts-deps": "ts-deps.mjs",
+    "tscoder": "tscoder.mjs"
   },
   "scripts": {},
   "keywords": [
