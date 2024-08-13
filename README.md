@@ -23,6 +23,8 @@ _fzf_complete_chatsh() {
 
 ```
 
+TODO: Openrouter is still failing because code is not complete
+
 - Add option, `--list-models` using https://nodejs.org/api/util.html#utilparseargsconfig
 - Try using https://openrouter.ai/api/v1/models to list openrouter models
 - Try using `chatsh --list-models | fzf | chatsh`
