@@ -145,7 +145,7 @@ export function geminiChat(clientClass) {
   return ask;
 }
 
-// Factory function to create a stateful OpenAI chat
+// Factory function to create a stateful Openrouter chat
 export function openRouterChat(clientClass) {
   const messages = [];
 
