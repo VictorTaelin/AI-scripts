@@ -196,7 +196,7 @@ export function chat(model) {
   } else if (model.startsWith('gemini')) {
     return geminiChat(GoogleGenerativeAI);
   } else if (model.startsWith('openrouter:')) {
-    return openAIChat(OpenRouter);
+    return openRouterChat(OpenAI);
   } else {
     throw new Error(`Unsupported model: ${model}`);
   }
