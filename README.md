@@ -16,7 +16,7 @@ To add [fzf](https://github.com/junegunn/fzf) completion for openrouter models, 
 ```bash
 _fzf_complete_chatsh() {
   _fzf_complete --multi --reverse --prompt="chatsh> " -- "$@" < <(
-    curl https://openrouter.ai/api/v1/models | jq -r '.data[].id' | sed 's/^/openrouter:/'
+    curl -s https://openrouter.ai/api/v1/models | jq -r '.data[].id' | sed 's/^/openrouter:/'
   )
 }
 [ -n "$BASH" ] && complete -F _fzf_complete_chatsh -o default -o bashdefault chatsh
