@@ -12,7 +12,7 @@ Some AI scripts I use daily.
 TODO: remove `Claude.mjs`/`GPT.mjs` and just use `Ask.mjs` in all files
 
 
-To add fzf completion for openrouter models, use this:
+To add [fzf](https://github.com/junegunn/fzf) completion for openrouter models, put this in .bashrc or similar:
 ```bash
 _fzf_complete_chatsh() {
   _fzf_complete --multi --reverse --prompt="chatsh> " -- "$@" < <(
@@ -21,4 +21,9 @@ _fzf_complete_chatsh() {
 }
 [ -n "$BASH" ] && complete -F _fzf_complete_chatsh -o default -o bashdefault chatsh
 
+```
+
+Then type:
+```bash
+$ chatsh **<tab>
 ```
