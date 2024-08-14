@@ -9,15 +9,17 @@ import { encode } from "gpt-tokenizer/esm/model/davinci-codex"; // tokenizer
 
 // Map of model shortcodes to full model names
 export const MODELS = {
-  g: 'gpt-4o', 
+  g: 'gpt-4o-2024-08-06', 
+  //g: 'chatgpt-4o-latest', 
   G: 'gpt-4-32k-0314',
   h: 'claude-3-haiku-20240307',
   s: 'claude-3-5-sonnet-20240620',
   o: 'claude-3-opus-20240229',
-  l: 'llama3-8b-8192',
-  L: 'llama3-70b-8192',
+  l: 'llama-3.1-8b-instant',
+  L: 'llama-3.1-70b-versatile',
   i: 'gemini-1.5-flash-latest',
-  I: 'gemini-1.5-pro-latest'
+  //I: 'gemini-1.5-pro-latest'
+  I: 'gemini-1.5-pro-exp-0801'
 };
 
 // Factory function to create a stateful OpenAI chat
@@ -94,8 +96,30 @@ export function geminiChat(clientClass) {
       temperature,
     };
 
-    const chat = client.getGenerativeModel({ model, systemInstruction: system, generationConfig })
-      .startChat({ history: messages });
+    const safetySettings = [
+      {
+        category: "HARM_CATEGORY_HARASSMENT",
+        threshold: "BLOCK_NONE",
+      },
+      {
+        category: "HARM_CATEGORY_HATE_SPEECH",
+        threshold: "BLOCK_NONE",
+      },
+      {
+        category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+        threshold: "BLOCK_NONE",
+      },
+      {
+        category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+        threshold: "BLOCK_NONE",
+      },
+    ];
+
+    const chat = client.getGenerativeModel({ model, generationConfig })
+      .startChat({ 
+        history: messages,
+        safetySettings: safetySettings,
+      });
 
     messages.push({ role: "user", parts: [{ text: userMessage }] });
 
@@ -124,6 +148,8 @@ export function geminiChat(clientClass) {
 export function chat(model) {
   model = MODELS[model] || model;
   if (model.startsWith('gpt')) {
+    return openAIChat(OpenAI);
+  } else if (model.startsWith('chatgpt')) {
     return openAIChat(OpenAI);
   } else if (model.startsWith('claude')) {
     return anthropicChat(Anthropic);

@@ -8,6 +8,8 @@ import { chat, MODELS, tokenCount } from './Chat.mjs';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
+const MODEL = "I";
+
 const execAsync = promisify(exec);
 const kind2_guide = await fs.readFile(new URL('./KIND2_GUIDE_AI.md', import.meta.url), 'utf-8');
 
@@ -282,7 +284,7 @@ async function predictDependencies(name, fileContent) {
     '</DEFINITIONS>'
   ].join('\n').trim();
 
-  const aiOutput = await chat("s")(aiInput, { system: system_DepsPredictor, model: "s" });
+  const aiOutput = await chat(MODEL)(aiInput, { system: system_DepsPredictor, model: MODEL });
   console.log("");
 
   const dependenciesMatch = aiOutput.match(/<DEPENDENCIES>([\s\S]*)<\/DEPENDENCIES>/);
@@ -316,7 +318,7 @@ async function main() {
 
   let file = process.argv[2];
   let request = process.argv[3];
-  let model = process.argv[4] || "s";
+  let model = process.argv[4] || MODEL;
 
   // Initialize the chat function with the specified model
   let ask = chat(model);
