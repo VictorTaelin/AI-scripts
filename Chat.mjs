@@ -9,7 +9,7 @@ import { encode } from "gpt-tokenizer/esm/model/davinci-codex"; // tokenizer
 
 // Map of model shortcodes to full model names
 export const MODELS = {
-  g: 'gpt-4o-2024-08-06', 
+  g: 'gpt-4o-2024-08-06',
   //g: 'chatgpt-4o-latest', 
   G: 'gpt-4-32k-0314',
   h: 'claude-3-haiku-20240307',
@@ -20,6 +20,7 @@ export const MODELS = {
   i: 'gemini-1.5-flash-latest',
   //I: 'gemini-1.5-pro-latest'
   I: 'gemini-1.5-pro-exp-0801'
+  // openrouter models are not included here
 };
 
 // Factory function to create a stateful OpenAI chat
@@ -72,7 +73,7 @@ export function anthropicChat(clientClass) {
       .stream({ ...params, messages })
       .on('text', (text) => {
         process.stdout.write(text);
-        result += text;  
+        result += text;
       });
     await response.finalMessage();
 
@@ -116,7 +117,7 @@ export function geminiChat(clientClass) {
     ];
 
     const chat = client.getGenerativeModel({ model, generationConfig })
-      .startChat({ 
+      .startChat({
         history: messages,
         safetySettings: safetySettings,
       });
@@ -144,6 +145,43 @@ export function geminiChat(clientClass) {
   return ask;
 }
 
+// Factory function to create a stateful Openrouter chat
+export function openRouterChat(clientClass) {
+  const messages = [];
+
+  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 4096, stream = true }) {
+
+    [, model] = model.split(':');
+    const client = new clientClass({
+      baseURL: "https://openrouter.ai/api/v1",
+      apiKey: await getToken('openrouter'),
+    });
+
+    if (messages.length === 0) {
+      messages.push({ role: "system", content: system });
+    }
+
+    messages.push({ role: "user", content: userMessage });
+
+    const params = { messages, model, temperature, max_tokens, stream };
+
+    let result = "";
+    const response = await client.chat.completions.create(params);
+
+    for await (const chunk of response) {
+      const text = chunk.choices[0]?.delta?.content || "";
+      process.stdout.write(text);
+      result += text;
+    }
+
+    messages.push({ role: 'assistant', content: result });
+
+    return result;
+  }
+
+  return ask;
+}
+
 // Generic asker function that dispatches to the correct asker based on the model name
 export function chat(model) {
   model = MODELS[model] || model;
@@ -157,6 +195,8 @@ export function chat(model) {
     return openAIChat(Groq);
   } else if (model.startsWith('gemini')) {
     return geminiChat(GoogleGenerativeAI);
+  } else if (model.startsWith('openrouter:')) {
+    return openRouterChat(OpenAI);
   } else {
     throw new Error(`Unsupported model: ${model}`);
   }
