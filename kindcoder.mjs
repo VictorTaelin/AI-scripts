@@ -8,7 +8,7 @@ import { chat, MODELS, tokenCount } from './Chat.mjs';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
-const MODEL = "I";
+const MODEL = "s";
 
 const execAsync = promisify(exec);
 const kind2_guide = await fs.readFile(new URL('./KIND2_GUIDE_AI.md', import.meta.url), 'utf-8');

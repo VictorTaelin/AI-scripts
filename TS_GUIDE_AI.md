@@ -10,7 +10,7 @@ Since the subset of typescript described above is simple, we will use the follow
 
 Every .ts file must define ONE top-level function:
 
-```
+```typescript
 function (arg0: typ0, arg1: typ1): ret_type {
   body
 }
@@ -21,40 +21,18 @@ Where:
 - ret_typ is the returned type
 - body is the function's body
 
-
 ### Top-Level Datatype
 
-Alternatively, a .ts file can also define a datatype:
+Alternatively, a .ts file can also define a datatype. Example:
 
+```typescript
+type HTerm
+  = { $: "Lam", bod: (x: HTerm) => HTerm }
+  | { $: "App", fun: HTerm, arg: HTerm }
+  | { $: "Var", nam: string }
 ```
-type Action
-  = { f0c1: t0c1, f1c1: t1c1 }
-  | { f0c2: t0c2, f1c2: t1c2 }
-```
 
-Where:
-- f0c1, f1c1... are fields of the first constructor
-- t0c1, t1c1... are types of the fields
-- f0c2, f1c2... are fields of the second constructor
-- t0c2, t1c2... are types of the fields
-
-### Names, Paths
-
-TODO
-
-
-## TypeScript UwU Moba Examples
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+ADTs must follow this convention:
+- Constructors represented as objects
+- The '$' field is used for the constructor name
+- Other fields are the constructor fields

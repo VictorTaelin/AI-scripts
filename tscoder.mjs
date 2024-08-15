@@ -141,8 +141,6 @@ Optionally, you can also include a SHORT, 1-paragraph <JUSTIFICATION/>.
 <SOURCE>
 </SOURCE>
 
-
-
 <DEFINITIONS>
 - List/
   - cons
