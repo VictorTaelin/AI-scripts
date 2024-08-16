@@ -545,10 +545,15 @@ List/equal
 async function predictDependencies(name, fileContent) {
   // Function to get all Typescript files recursively
   async function getAllTsFiles(dir) {
+ async function getAllTsFiles(dir) {
     const entries = await fs.readdir(dir, { withFileTypes: true });
     const files = await Promise.all(entries.map(async (entry) => {
       const res = path.resolve(dir, entry.name);
       if (entry.isDirectory()) {
+        // Skip node_modules directory
+        if (entry.name === 'node_modules') {
+          return null;
+        }
         const subFiles = await getAllTsFiles(res);
         return subFiles.length > 0 ? { name: entry.name, children: subFiles } : null;
       } else if (entry.name.endsWith('.ts')) {
