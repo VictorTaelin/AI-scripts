@@ -48,7 +48,7 @@ export type List<A>
 // The map function for List, to be implemented
 import { List } from "./_";
 
-export function map<A, B>(f: (a: A) => B, list: List<A>): List<B> {
+export function map<A, B>(fn: (a: A) => B, list: List<A>): List<B> {
   ?
 }
 </FILE>
@@ -154,6 +154,59 @@ ADTs must follow this convention:
 ## Idiomatic TypeScript Examples
 
 Below are some additional idiomatic TypeScript in the purely functional style: 
+
+### List/zip.ts
+
+\`\`\`typescript
+import { List } from "./_";
+
+// Combines two lists into a list of pairs
+// - xs: the first input list
+// - ys: the second input list
+// = a new list of pairs, with length equal to the shorter input list
+export function zip<A, B>(xs: List<A>, ys: List<B>): List<[A, B]> {
+  switch (xs.$) {
+    case "Cons": {
+      switch (ys.$) {
+        case "Cons": {
+          var head = [xs.head, ys.head] as [A,B];
+          var tail = zip(xs.tail, ys.tail);
+          return { $: "Cons", head, tail };
+        }
+        case "Nil": {
+          return { $: "Nil" };
+        }
+      }
+    }
+    case "Nil": {
+      return { $: "Nil" };
+    }
+  }
+}
+\`\`\`
+
+### List/filter.ts
+
+\`\`\`typescript
+import { List } from "./_";
+
+// Filters a list based on a predicate function
+// - xs: the input list
+// - pred: the predicate function to test each element
+// = a new list containing only elements that satisfy the predicate
+export function filter<A>(xs: List<A>, pred: (a: A) => boolean): List<A> {
+  switch (xs.$) {
+    case "Cons": {
+      var head = xs.head;
+      var tail = filter(xs.tail, pred);
+      return pred(xs.head) ? { $: "Cons", head, tail } : tail;
+    }
+    case "Nil": {
+      return { $: "Nil" };
+    }
+  }
+}
+\`\`\`
 
 ### Tree/_.ts
 
