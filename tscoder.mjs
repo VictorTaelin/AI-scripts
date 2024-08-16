@@ -544,7 +544,6 @@ List/equal
 // Function to predict dependencies
 async function predictDependencies(name, fileContent) {
   // Function to get all Typescript files recursively
-  async function getAllTsFiles(dir) {
  async function getAllTsFiles(dir) {
     const entries = await fs.readdir(dir, { withFileTypes: true });
     const files = await Promise.all(entries.map(async (entry) => {
@@ -708,7 +707,7 @@ async function main() {
   await fs.writeFile('.tscoder', system_TsCoder + '\n\n' + aiInput, 'utf-8');
 
   // Call the AI model
-  let aiOutput = await ask(aiInput, { system: system_TsCoder, model });
+  let aiOutput = await ask(aiInput, { system: system_TsCoder, model, system_cacheable: true });
   console.log("");
 
 
