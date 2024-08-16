@@ -597,7 +597,7 @@ async function predictDependencies(name, fileContent) {
 // Function to perform type checking based on file extension
 async function typeCheck(file) {
   let ext = path.extname(file);
-  let cmd = `tsc ${file}`;
+  let cmd = `tsc ${file} --noEmit`;
   try {
     var result = await execAsync(cmd);
     return result.stderr.trim() || result.stdout.trim();
