@@ -10,7 +10,7 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
-const DEPS_MODEL = "gpt-4o-mini-2024-07-18"; // default model for dependency guessing
+const DEPS_MODEL = "claude-3-5-sonnet-20240620"; // default model for dependency guessing
 const CODE_MODEL = "claude-3-5-sonnet-20240620"; // default model for coding
 
 // System prompt for the AI model, defining its role and behavior
