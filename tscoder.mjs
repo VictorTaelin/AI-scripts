@@ -10,6 +10,8 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
+const MODEL = "s"; // default model = sonnet-3.5
+
 // System prompt for the AI model, defining its role and behavior
 const system_TsCoder = `
 # TSCODER
@@ -404,11 +406,13 @@ export function dot(a: V3, b: V3): number {
 
 5. When defining local variables, align equal signs whenever possible.
 
-6. Consult TypeScript guide to emit idiomatic correct code.
+6. Use CamelCase for types and underscore_case for everything else. (IMPORTANT)
 
-7. Do NOT use or assume the existence of files that weren't shown to you.
+7. Consult TypeScript guide to emit idiomatic correct code.
 
-8. Be precise and careful in your modifications.
+8. Do NOT use or assume the existence of files that weren't shown to you.
+
+9. Be precise and careful in your modifications.
 
 ---
 
@@ -582,8 +586,8 @@ async function predictDependencies(name, fileContent) {
     '</DEFINITIONS>'
   ].join('\n').trim();
 
-  const aiOutput = await chat("s")(aiInput, { system: system_DepsPredictor, model: "s" });
-  console.log("");
+  const aiOutput = await chat(MODEL)(aiInput, { system: system_DepsPredictor, model: MODEL });
+  console.clear();
 
   const dependenciesMatch = aiOutput.match(/<DEPENDENCIES>([\s\S]*)<\/DEPENDENCIES>/);
   if (!dependenciesMatch) {
@@ -616,7 +620,7 @@ async function main() {
 
   let file = process.argv[2];
   let request = process.argv[3] || "";
-  let model = process.argv[4] || "s";
+  let model = process.argv[4] || MODEL;
 
   // Initialize the chat function with the specified model
   let ask = chat(model);
@@ -749,8 +753,6 @@ async function main() {
       console.error(`Error writing file ${fileToWrite.path}: ${error.message}`);
     }
   }
-
-  console.log("File updated successfully.");
 }
 
 // Run the main function and handle any errors
