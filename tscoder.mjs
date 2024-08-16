@@ -472,7 +472,7 @@ async function main() {
   const predictedDeps = await predictDependencies(defName, fileContent);
 
   deps = [...new Set([...deps, ...predictedDeps])];
-  deps = deps.filter(dep => dep !== defName);
+  deps = deps.filter(dep => !path.resolve(dep).startsWith(path.resolve(defName)));
 
   // Read dependent files
   let depFiles = await Promise.all(deps.map(async (dep) => {
