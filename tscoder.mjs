@@ -10,201 +10,11 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
-const MODEL = "s"; // default model = sonnet-3.5
+const DEPS_MODEL = "gpt-4o-mini-2024-07-18"; // default model for dependency guessing
+const CODE_MODEL = "claude-3-5-sonnet-20240620"; // default model for coding
 
 // System prompt for the AI model, defining its role and behavior
 const system_TsCoder = `
-# TSCODER
-
-You are TsCoder, a TypeScript language coding assistant.
-
-## INPUT: 
-
-You will receive a target <FILE/> in the TypeScript language, some additional <FILE/>'s for context, and a change or refactor <REQUEST/>, from the user.
-
-## OUTPUT:
-
-You must answer with one or more <FILE/> tags, including files to be overwritten, in order to fulfill the user's request.
-
----
-
-# EXAMPLE TSCODER USAGE
-
-## Suppose you're given the following INPUT:
-
-<FILE path="/Users/v/vic/dev/tsbook/List/_.ts">
-export type List<A>
-  = { "$": "Cons", head: A, tail: List<A> }
-  | { "$": "Nil" };
-</FILE>
-
-<FILE path="/Users/v/vic/dev/tsbook/List/map.ts" target>
-import { List } from "./_";
-
-export function map<A, B>(f: (a: A) => B, list: List<A>): List<B> {
-  ?
-}
-</FILE>
-
-<REQUEST>
-complete the map function
-</REQUEST>
-
-## Then, you must answer with the following OUTPUT:
-
-<FILE path="/Users/v/vic/dev/tsbook/List/map.ts">
-import { List } from "./_";
-
-export function map<A, B>(f: (a: A) => B, list: List<A>): List<B> {
-  switch (list.$) {
-    case "Cons": {
-      var head = f(list.head);
-      var tail = map(f, list.tail);
-      return { $: "Cons", head, tail };
-    }
-    case "Nil": {
-      return { $: "Nil" };
-    }
-  }
-}
-</FILE>
-
-(Because it fulfills the user's request perfectly.)
-
----
-
-# GUIDE FOR THE TYPESCRIPT LANGUAGE
-
-1. Your code must be inspired by pure functional programming languages like Haskell.
-
-2. Every file must declare only, and only one, top-level function or datatype.
-
-3. Functions must be pure, using switch instead of 'if-else' or 'case-of'.
-
-## Top-Level Function
-
-Every .ts file must define ONE top-level function. Example:
-
-\`\`\`typescript
-export function size(term: HTerm): number {
-  switch (term.$) {
-    case "Lam": {
-      var bod_size = size(term.bod({$: "Var", nam: term.nam}));
-      return 1 + bod_size;
-    }
-    case "App": {
-      var fun_size = size(term.fun);
-      var arg_size = size(term.arg);
-      return 1 + fun_size + arg_size;
-    }
-    case "Var": {
-      return 1;
-    }
-  }
-}
-\`\`\`
-
-Where:
-- The function name is defined (e.g., 'size')
-- Parameters are specified with their types (e.g., 'term: HTerm')
-- The return type is specified (e.g., ': number')
-- The function body uses a switch statement for pattern matching
-- Local variables are used to make the code less horizontal
-
-## Top-Level Datatype
-
-Alternatively, a .ts file can also define a datatype (ADT). Example:
-
-\`\`\`typescript
-export type HTerm
-  = { $: "Lam", bod: (x: HTerm) => HTerm }
-  | { $: "App", fun: HTerm, arg: HTerm }
-  | { $: "Var", nam: string }
-\`\`\`
-
-ADTs must follow this convention:
-- Constructors represented as objects
-- The dollar-sign is used for the constructor name
-- Other object fields are the constructor fields
-
-## Idiomatic TypeScript Examples
-
-Below are some additional idiomatic TypeScript in the purely functional style: 
-
-### Tree/_.ts
-
-\`\`\`typescript
-export type Tree<A>
-  = { $: "Node", val: A, left: Tree<A>, right: Tree<A> }
-  | { $: "Leaf" };
-\`\`\`
-
-### Tree/sum.ts
-
-\`\`\`typescript
-import { Tree } from "./_";
-
-export function sum(tree: Tree<number>): number {
-  switch (tree.$) {
-    case "Node": {
-      var left  = sum(tree.left);
-      var right = sum(tree.right);
-      return tree.val + left + right;
-    }
-    case "Leaf": {
-      return 0;
-    }
-  }
-}
-\`\`\`
-
-### V3/_.ts
-
-\`\`\`
-export type V3
-  = { $: "V3", x: number, y: number, z: number };
-\`\`\`
-
-## V3/dot.ts
-
-\`\`\`
-import { V3 } from "./_";
-
-export function dot(a: V3, b: V3): number {
-  return a.x * b.x + a.y * b.y + a.z * b.z;
-}
-\`\`\`
-
----
-
-# NOTES
-
-1. Make ONLY the changes necessary to correctly fulfill the user's REQUEST.
-
-2. Do NOT fix, remove, complete or alter any parts unrelated to the REQUEST.
-
-3. Pay attention to the user's style, and mimic it as close as possible.
-
-4. Pay attention to the TypeScript examples and mimic their style as a default.
-
-5. Consult TypeScript guide to emit idiomatic correct code.
-
-6. Do NOT use or assume the existence of files that weren't shown to you.
-
-7. Be precise and careful in your modifications.
-
----
-
-# TASK
-
-You will now be given the actual INPUT you must work with.
-
-#######################################################################
-
-The prompt above is used for an AI. Sadly, the examples it provides have no comments. Rewrite the ENTIRE prompt in order to include a COMMENT on each example. Do it now:
-
-#######################################################################
-
 # TSCODER
 
 You are TsCoder, a TypeScript language coding assistant.
@@ -586,7 +396,7 @@ async function predictDependencies(name, fileContent) {
     '</DEFINITIONS>'
   ].join('\n').trim();
 
-  const aiOutput = await chat(MODEL)(aiInput, { system: system_DepsPredictor, model: MODEL });
+  const aiOutput = await chat(DEPS_MODEL)(aiInput, { system: system_DepsPredictor, model: DEPS_MODEL });
   console.clear();
 
   const dependenciesMatch = aiOutput.match(/<DEPENDENCIES>([\s\S]*)<\/DEPENDENCIES>/);
@@ -599,6 +409,7 @@ async function predictDependencies(name, fileContent) {
 }
 
 // Function to perform type checking based on file extension
+// NOTE: not currently used
 async function typeCheck(file) {
   let ext = path.extname(file);
   let cmd = `tsc ${file} --noEmit`;
@@ -620,7 +431,7 @@ async function main() {
 
   let file = process.argv[2];
   let request = process.argv[3] || "";
-  let model = process.argv[4] || MODEL;
+  let model = process.argv[4] || CODE_MODEL;
 
   // Initialize the chat function with the specified model
   let ask = chat(model);
@@ -683,7 +494,7 @@ async function main() {
   }));
 
   // Perform initial type checking
-  let initialCheck = (await typeCheck(defName)).replace(/\x1b\[[0-9;]*m/g, '');
+  //let initialCheck = (await typeCheck(defName)).replace(/\x1b\[[0-9;]*m/g, '');
 
   // Prepare AI input
   let aiInput = [
@@ -691,9 +502,9 @@ async function main() {
     `<FILE path="${file}" target>`,
     fileContent,
     '</FILE>',
-    '<CHECKER>',
-    initialCheck,
-    '</CHECKER>',
+    //'<CHECKER>',
+    //initialCheck,
+    //'</CHECKER>',
     '<REQUEST>',
     request,
     '</REQUEST>'
