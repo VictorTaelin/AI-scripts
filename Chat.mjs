@@ -60,13 +60,36 @@ export function openAIChat(clientClass) {
 export function anthropicChat(clientClass) {
   const messages = [];
 
-  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 4096, stream = true }) {
+  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 4096, stream = true, system_cacheable = false }) {
     model = MODELS[model] || model;
-    const client = new clientClass({ apiKey: await getToken(clientClass.name.toLowerCase()) });
+    const client = new clientClass({ 
+      apiKey: await getToken(clientClass.name.toLowerCase()),
+      defaultHeaders: {
+        "anthropic-beta": "prompt-caching-2024-07-31" // Enable prompt caching
+      }
+    });
 
-    messages.push({ role: "user", content: userMessage });
+    let params = { model, temperature, max_tokens, stream, messages };
+    
+    const cached_system_message = { type: "text", text: system, cache_control: { type: "ephemeral" } };
 
-    const params = { system, model, temperature, max_tokens, stream };
+    let message = {
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text: userMessage,
+        }
+      ]
+    }
+
+    if (system_cacheable) {
+      message.content.unshift(cached_system_message);
+    } else {
+      params = { ...params, system };
+    }
+
+    messages.push(message);
 
     let result = "";
     const response = client.messages
