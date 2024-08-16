@@ -19,6 +19,7 @@ This repo in general is kinda gambiarra. Opus-4 might clean it up
 ## Usage
 
 Just `npm install -g` and run the given command the terminal.
+
 You'll need to add Anthropic/OpenAI keys to a location. The CLI will inform where.
 
 ## Using OpenRouter
