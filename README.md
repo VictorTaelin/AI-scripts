@@ -5,14 +5,18 @@ Some AI scripts I use daily.
 
 - `holefill`: I use it on VIM to fill code snippets
 
-- `aiemu`: moved to [here](https://github.com/victorTaelin/aiemu)
+- `aiemu`: emulate any game on the terminal ([example](https://x.com/VictorTaelin/status/1790183986096116189))
 
-- `chatsh [model]`: like ChatGPT but in the terminal
+- `chatsh`: like ChatGPT but in the terminal ([example](https://x.com/VictorTaelin/status/1809290888356729002))
 
-TODO: remove `Claude.mjs`/`GPT.mjs` and just use `Ask.mjs` in all files
+- `tscoder`: perform refactor requests ([example](https://x.com/VictorTaelin/status/1824489509146227192))
 
+For VIM integration, this is my (pure gambiarra) [vimrc](https://github.com/VictorTaelin/OSX/blob/master/vimrc). Use Sonnet to extract the relevant functions for you (:
+
+---
 
 To add [fzf](https://github.com/junegunn/fzf) completion for openrouter models, put this in .bashrc or similar:
+
 ```bash
 _fzf_complete_chatsh() {
   _fzf_complete --multi --reverse --prompt="chatsh> " -- "$@" < <(
