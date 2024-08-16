@@ -11,7 +11,10 @@ Some AI scripts I use daily.
 
 - `tscoder`: perform refactor requests ([example](https://x.com/VictorTaelin/status/1824489509146227192))
 
-For VIM integration, this is my (pure gambiarra) [vimrc](https://github.com/VictorTaelin/OSX/blob/master/vimrc). Use Sonnet to extract the relevant functions for you (:
+For VIM integration, this is my messy [vimrc](https://github.com/VictorTaelin/OSX/blob/master/vimrc).
+Use Sonnet to extract the relevant functions for you (:
+
+This repo in general is kinda gambiarra. Opus-4 might clean it up
 
 ---
 
