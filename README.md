@@ -7,7 +7,7 @@ Some AI scripts I use daily.
 
 - `aiemu`: emulate any game on the terminal ([example](https://x.com/VictorTaelin/status/1790183986096116189))
 
-- `chatsh`: like ChatGPT but in the terminal ([example](https://x.com/VictorTaelin/status/1809290888356729002))
+- `chatsh`: like ChatGPT but in the terminal ([example](https://github.com/VictorTaelin/ChatSH/raw/main/example.gif)) ([example](https://x.com/VictorTaelin/status/1809290888356729002))
 
 - `tscoder`: perform refactor requests ([example](https://x.com/VictorTaelin/status/1824489509146227192))
 
