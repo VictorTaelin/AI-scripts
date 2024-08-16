@@ -434,7 +434,7 @@ As a convention, datatypes and entry files are defined on 'TypeName/_.ts' or 'Li
 `.trim();
 
 // Function to predict dependencies
-async function predictDependencies(name, fileContent, request) {
+async function predictDependencies(file, fileContent, request) {
   // Function to get all Typescript files recursively
   async function getAllTsFiles(dir) {
     const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -469,7 +469,7 @@ async function predictDependencies(name, fileContent, request) {
   const defsTree = buildTree(allFiles);
 
   const aiInput = [
-    '<FILE path=${name}>',
+    `<FILE path="${file}">`,
     fileContent.trim(),
     '</FILE>',
     '<TREE>',
@@ -545,9 +545,6 @@ async function main() {
     fileContent = ["(empty file)"].join('\n');
   }
 
-  // Extract the definition name from the file path
-  let defName = file.replace('.ts', '');
-
   // Collect direct and indirect dependencies
   let deps, pred;
   try {
@@ -558,10 +555,10 @@ async function main() {
   }
 
   // Predict additional dependencies
-  pred = await predictDependencies(defName, fileContent, request);
+  pred = await predictDependencies(file, fileContent, request);
   pred = pred.map(dep => dep.replace(/\.ts$/, '').replace(/\/_$/, ''));
   deps = [...new Set([...deps, ...pred])];
-  deps = deps.filter(dep => !path.resolve(dep).startsWith(path.resolve(defName)));
+  deps = deps.filter(dep => !path.resolve(dep).startsWith(path.resolve(file.replace(".ts",""))));
 
   // Read dependent files
   let depFiles = await Promise.all(deps.map(async (dep) => {
