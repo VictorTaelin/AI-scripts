@@ -412,7 +412,7 @@ async function predictDependencies(name, fileContent, request) {
     return result;
   }
 
-  const allFiles = await getAllTsFiles("./");
+  const allFiles = (await getAllTsFiles("./")).filter(file => !file.name.includes('.backup') && !file.name.includes('node_modules'));
   const defsTree = buildTree(allFiles);
 
   const aiInput = [
