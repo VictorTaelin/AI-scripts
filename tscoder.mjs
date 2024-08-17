@@ -436,7 +436,7 @@ As a convention, datatypes and entry files are defined on 'TypeName/_.ts' or 'Li
 // Function to predict dependencies
 async function predictDependencies(file, fileContent, request) {
   // Function to get all Typescript files recursively
- async function getAllTsFiles(dir) {
+  async function getAllTsFiles(dir) {
     const entries = await fs.readdir(dir, { withFileTypes: true });
     const files = await Promise.all(entries.map(async (entry) => {
       const res = path.resolve(dir, entry.name);
@@ -602,7 +602,8 @@ async function main() {
   // Write a .prompt file with the system + aiInput strings
   await fs.writeFile('.tscoder', system_TsCoder + '\n\n' + aiInput, 'utf-8');
   
-  let res = await ask(aiInput, { system: system_TsCoder, model });
+  // Call the AI model
+  let res = await ask(aiInput, { system: system_TsCoder, model, system_cacheable: true });
   console.log("\n");
 
   // Extract all FILE tags from AI output
