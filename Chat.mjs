@@ -85,8 +85,6 @@ export function anthropicChat(clientClass) {
       });
     await response.finalMessage();
 
-    console.log(JSON.stringify(response));
-
     messages.push({ role: 'assistant', content: result });
 
     return result;
