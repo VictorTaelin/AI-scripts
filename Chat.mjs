@@ -69,27 +69,12 @@ export function anthropicChat(clientClass) {
       }
     });
 
-    let params = { model, temperature, max_tokens, stream, messages };
-    
-    const cached_system_message = { type: "text", text: system, cache_control: { type: "ephemeral" } };
+    messages.push({ role: "user", content: userMessage });
 
-    let message = {
-      role: "user",
-      content: [
-        {
-          type: "text",
-          text: userMessage,
-        }
-      ]
-    }
+    const cached_system = [{ type: "text", text: system, cache_control: { type: "ephemeral" } }];
 
-    if (system_cacheable) {
-      message.content.unshift(cached_system_message);
-    } else {
-      params = { ...params, system };
-    }
-
-    messages.push(message);
+    let prompt_system = system_cacheable ? cached_system : system;
+    const params = { system: prompt_system, model, temperature, max_tokens, stream };
 
     let result = "";
     const response = client.messages
@@ -99,6 +84,8 @@ export function anthropicChat(clientClass) {
         result += text;
       });
     await response.finalMessage();
+
+    console.log(JSON.stringify(response));
 
     messages.push({ role: 'assistant', content: result });
 
