@@ -585,15 +585,37 @@ async function main() {
   // Perform initial type checking
   //let initialCheck = (await typeCheck(defName)).replace(/\x1b\[[0-9;]*m/g, '');
 
+  //// Prepare AI input
+  //let aiInput = [
+    //...depFiles,
+    //`<FILE path="${file}" TARGET>`,
+    //fileContent,
+    //'</FILE>',
+    ////'<CHECKER>',
+    ////initialCheck,
+    ////'</CHECKER>',
+    //'<REQUEST>',
+    //request,
+    //'</REQUEST>'
+  //].join('\n').trim();
+
+  // TASK: refactor the commented code above to:
+  // 1. load the local ".context" file. if it doesn't exist, it must be just ""
+  // 2. include inside the aiInput array, inside <CONTEXT/> tags
+  
+  // Load the local ".context" file
+  let context = "";
+  try { context = await fs.readFile('.context', 'utf-8'); } catch (e) {};
+
   // Prepare AI input
   let aiInput = [
     ...depFiles,
     `<FILE path="${file}" TARGET>`,
     fileContent,
     '</FILE>',
-    //'<CHECKER>',
-    //initialCheck,
-    //'</CHECKER>',
+    '<CONTEXT>',
+    context,
+    '</CONTEXT>',
     '<REQUEST>',
     request,
     '</REQUEST>'
