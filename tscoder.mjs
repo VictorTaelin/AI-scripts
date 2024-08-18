@@ -623,9 +623,9 @@ async function main() {
 
   // Write a .prompt file with the system + aiInput strings
   await fs.writeFile('.tscoder', system_TsCoder + '\n\n' + aiInput, 'utf-8');
-
+  
   // Call the AI model
-  let res = await ask(aiInput, { system: system_TsCoder, model });
+  let res = await ask(aiInput, { system: system_TsCoder, model, system_cacheable: true });
   console.log("\n");
 
   // Extract all FILE tags from AI output
