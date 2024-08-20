@@ -9,9 +9,7 @@ Some AI scripts I use daily.
 
 - `chatsh`: like ChatGPT but in the terminal ([example / chatting](https://x.com/VictorTaelin/status/1655304645953089538)) ([example / intense coding](https://x.com/VictorTaelin/status/1809290888356729002))
 
-- `tscoder`: perform TypeScript refactor requests ([example](https://x.com/VictorTaelin/status/1824489509146227192))
-
-- `kindcoder`: perform Kind refactor requests ([example](https://x.com/VictorTaelin/status/1811254153655558188))
+- `koder`: perform refactor requests ([example](https://x.com/VictorTaelin/status/1824489509146227192)) ([example](https://x.com/VictorTaelin/status/1811254153655558188))
 
 For VIM integration, this is my messy [vimrc](https://github.com/VictorTaelin/OSX/blob/master/vimrc).
 Use Sonnet to extract the relevant functions for you (:

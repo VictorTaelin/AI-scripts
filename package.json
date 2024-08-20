@@ -12,7 +12,7 @@
     "kindcoder": "kindcoder.mjs",
     "aiemu": "aiemu.mjs",
     "ts-deps": "ts-deps.mjs",
-    "tscoder": "tscoder.mjs"
+    "koder": "koder.mjs"
   },
   "scripts": {},
   "keywords": [
