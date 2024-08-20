@@ -141,20 +141,22 @@ console.log("token_count:", tokens);
 console.log("model_label:", MODELS[model] || model);
 
 if (holes === "??") {
-    var prompt = "<QUERY>\n" + mini_code.replace("??", "{{FILL_HERE}}") + "\n</QUERY>";
-    var answer = await ask(prompt, {system, model, max_tokens: 4096}) + "</COMPLETION>";
-    var match = answer.match(/<COMPLETION>([\s\S]*?)<\/COMPLETION>/);
-    if (match) {
-      file_code = file_code.replace("??", match[1]);
-    } else {
-      console.error("Error: Could not find <COMPLETION> tags in the AI's response.");
-      process.exit(1);
-    }
+  var prompt = "<QUERY>\n" + mini_code.replace("??", "{{FILL_HERE}}") + "\n</QUERY>";
+  var answer = (await ask(prompt, {system, model, max_tokens: 16384/2})) + "</COMPLETION>";
+  await savePromptHistory(prompt, answer, MODELS[model] || model);
+  var match = answer.match(/<COMPLETION>([\s\S]*?)<\/COMPLETION>/);
+  if (match) {
+    file_code = file_code.replace("??", match[1]);
+  } else {
+    console.error("Error: Could not find <COMPLETION> tags in the AI's response.");
+    process.exit(1);
+  }
 } else {
   for (let hole of holes) {
     console.log("next_filled: " + hole + "...");
     var prompt = "<QUERY>\n" + mini_code + "\n</QUERY>";
-    var answer = await ask(prompt, {system, model, max_tokens: 4096}) + "</COMPLETION>";
+    var answer = (await ask(prompt, {system, model, max_tokens: 16384/2})) + "</COMPLETION>";
+    await savePromptHistory(prompt, answer, MODELS[model] || model);
     var match = answer.match(/<COMPLETION>([\s\S]*?)<\/COMPLETION>/);
     if (match) {
       file_code = file_code.replace(hole, match[1]);
@@ -163,6 +165,14 @@ if (holes === "??") {
       process.exit(1);
     }
   }
+}
+
+async function savePromptHistory(prompt, answer, model) {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const logPath = path.join(os.homedir(), '.ai', 'prompt_history', `${timestamp}_${model}.log`);
+  const logContent = `Prompt:\n${prompt}\n\nAnswer:\n${answer}\n\n`;
+  await fs.mkdir(path.dirname(logPath), { recursive: true });
+  await fs.appendFile(logPath, logContent, 'utf-8');
 }
 
 await fs.writeFile(file, file_code, 'utf-8');
