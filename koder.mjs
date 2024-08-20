@@ -17,17 +17,19 @@ const CODE_MODEL = "claude-3-5-sonnet-20240620"; // default model for coding
 const system = {
   ts: {
     koder: await fs.readFile(new URL('./koder/ts_koder.txt', import.meta.url), 'utf-8').then(content => content.trim()),
-    guess: await fs.readFile(new URL('./koder/ts_guess.txt', import.meta.url), 'utf-8').then(content => content.trim())
+    guess: await fs.readFile(new URL('./koder/ts_guess.txt', import.meta.url), 'utf-8').then(content => content.trim()),
+    dependenciesCommand: 'ts-deps'
   },
   agda: {
     koder: await fs.readFile(new URL('./koder/agda_koder.txt', import.meta.url), 'utf-8').then(content => content.trim()),
-    guess: await fs.readFile(new URL('./koder/agda_guess.txt', import.meta.url), 'utf-8').then(content => content.trim())
+    guess: await fs.readFile(new URL('./koder/agda_guess.txt', import.meta.url), 'utf-8').then(content => content.trim()),
+    dependenciesCommand: 'agda-deps'
   }
 };
 
 // Function to predict dependencies
 async function predictDependencies(file, ext, fileContent, request) {
-  // Function to get all Typescript files recursively
+  // Function to get all files recursively
   async function getAllFiles(dir) {
     const entries = await fs.readdir(dir, { withFileTypes: true });
     const files = await Promise.all(entries.map(async (entry) => {
@@ -90,6 +92,17 @@ async function predictDependencies(file, ext, fileContent, request) {
   return dependenciesMatch[1].trim().split('\n').map(dep => dep.trim());
 }
 
+async function getDependencies(depsCommand, file) {
+  let deps;
+  try {
+    let { stdout } = await execAsync(`${depsCommand} ${file}`);
+    deps = stdout.trim().split('\n');
+  } catch(e) {
+    deps = [];
+  }
+  return deps;
+}
+
 // Main function to handle the refactoring process
 async function main() {
   // Check for correct usage and parse command-line arguments
@@ -129,8 +142,10 @@ async function main() {
   var pred = await predictDependencies(file, ext, fileContent, request);
   var pred = pred.map(dep => dep.replace(/\.ts$/, '').replace(/\/_$/, ''));
 
-  // TODO: combine with actual dependency tree
-  var deps = pred;
+  // Get the actual dependencies list
+  let deps = await getDependencies(system[ext].dependenciesCommand, file);
+  deps = [...new Set([...deps, ...pred])];
+  deps = deps.filter(dep => !path.resolve(dep).startsWith(path.resolve(file.replace(ext, ""))));
 
   // Read dependency files
   let depFiles = await Promise.all(deps.map(async (dep) => {
