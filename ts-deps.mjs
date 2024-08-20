@@ -4,7 +4,12 @@ import fs from 'fs';
 import path from 'path';
 import ts from 'typescript';
 
-function extract_dependencies(file_path) {
+function extract_dependencies(file_path, visited = new Set()) {
+  if (visited.has(file_path)) {
+    return new Map();
+  }
+  visited.add(file_path);
+
   try {
     const content = fs.readFileSync(file_path, 'utf8');
     const source_file = ts.createSourceFile(
@@ -28,11 +33,22 @@ function extract_dependencies(file_path) {
               const imports = import_clause.namedBindings.elements.map(e => e.name.text);
               dependencies.set(module_specifier, `{${imports.join(', ')}}`);
             } else if (ts.isNamespaceImport(import_clause.namedBindings)) {
-              dependencies.set(module_specifier, `* as ${importClause.namedBindings.name.text}`);
+              dependencies.set(module_specifier, `* as ${import_clause.namedBindings.name.text}`);
             }
           }
         } else {
           dependencies.set(module_specifier, '');
+        }
+
+        // Recursively extract dependencies from the imported file
+        const imported_file_path = resolve_import(file_path, module_specifier);
+        if (imported_file_path) {
+          const nested_dependencies = extract_dependencies(imported_file_path, visited);
+          for (const [nested_source, nested_imported] of nested_dependencies) {
+            if (!dependencies.has(nested_source)) {
+              dependencies.set(nested_source, nested_imported);
+            }
+          }
         }
       } else if (ts.isImportEqualsDeclaration(node)) {
         if (ts.isExternalModuleReference(node.moduleReference)) {
@@ -61,6 +77,20 @@ function extract_dependencies(file_path) {
     console.error(`Error processing file: ${error.message}`);
     return new Map();
   }
+}
+
+function resolve_import(current_file, import_path) {
+  if (import_path.startsWith('.')) {
+    const resolved_path = path.resolve(path.dirname(current_file), import_path);
+    const extensions = ['.ts', '.tsx', '.js', '.jsx', '.mjs'];
+    for (const ext of extensions) {
+      const full_path = resolved_path + ext;
+      if (fs.existsSync(full_path)) {
+        return full_path;
+      }
+    }
+  }
+  return null;
 }
 
 function fix_file_path(filepath) {
