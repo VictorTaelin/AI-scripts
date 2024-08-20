@@ -4,120 +4,168 @@ import fs from 'fs';
 import path from 'path';
 import ts from 'typescript';
 
-function extract_dependencies(file_path, visited = new Set()) {
-  if (visited.has(file_path)) {
-    return new Map();
+/**
+ * Extracts dependencies from a TypeScript file.
+ * - filePath: string - Path to the TypeScript file
+ * - visited: Set<string> - Set of already visited files
+ * = Set<string> - Set of dependency file paths
+ */
+function extractDependencies(filePath, visited = new Set()) {
+  if (visited.has(filePath)) {
+    return new Set();
   }
-  visited.add(file_path);
+  visited.add(filePath);
 
   try {
-    const content = fs.readFileSync(file_path, 'utf8');
-    const source_file = ts.createSourceFile(
-      file_path,
+    const content = fs.readFileSync(filePath, 'utf8');
+    const sourceFile = ts.createSourceFile(
+      filePath,
       content,
       ts.ScriptTarget.Latest,
       true
     );
 
-    const dependencies = new Map();
-
-    function visit(node) {
-      if (ts.isImportDeclaration(node)) {
-        const module_specifier = node.moduleSpecifier.text;
-        const import_clause = node.importClause;
-        if (import_clause) {
-          if (import_clause.name) {
-            dependencies.set(module_specifier, import_clause.name.text);
-          } else if (import_clause.namedBindings) {
-            if (ts.isNamedImports(import_clause.namedBindings)) {
-              const imports = import_clause.namedBindings.elements.map(e => e.name.text);
-              dependencies.set(module_specifier, `{${imports.join(', ')}}`);
-            } else if (ts.isNamespaceImport(import_clause.namedBindings)) {
-              dependencies.set(module_specifier, `* as ${import_clause.namedBindings.name.text}`);
-            }
-          }
-        } else {
-          dependencies.set(module_specifier, '');
-        }
-
-        // Recursively extract dependencies from the imported file
-        const imported_file_path = resolve_import(file_path, module_specifier);
-        if (imported_file_path) {
-          const nested_dependencies = extract_dependencies(imported_file_path, visited);
-          for (const [nested_source, nested_imported] of nested_dependencies) {
-            if (!dependencies.has(nested_source)) {
-              dependencies.set(nested_source, nested_imported);
-            }
-          }
-        }
-      } else if (ts.isImportEqualsDeclaration(node)) {
-        if (ts.isExternalModuleReference(node.moduleReference)) {
-          const module_specifier = node.moduleReference.expression.text;
-          dependencies.set(module_specifier, node.name.text);
-        }
-      } else if (ts.isCallExpression(node) && node.expression.text === 'require') {
-        if (node.arguments.length > 0 && ts.isStringLiteral(node.arguments[0])) {
-          const module_specifier = node.arguments[0].text;
-          dependencies.set(module_specifier, '');
-        }
-      } else if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
-        if (node.arguments.length > 0 && ts.isStringLiteral(node.arguments[0])) {
-          const module_specifier = node.arguments[0].text;
-          dependencies.set(module_specifier, '');
-        }
-      }
-
-      ts.forEachChild(node, visit);
-    }
-
-    visit(source_file);
-
+    const dependencies = new Set();
+    visitNodes(sourceFile, filePath, dependencies, visited);
     return dependencies;
   } catch (error) {
     console.error(`Error processing file: ${error.message}`);
-    return new Map();
+    return new Set();
   }
 }
 
-function resolve_import(current_file, import_path) {
-  if (import_path.startsWith('.')) {
-    const resolved_path = path.resolve(path.dirname(current_file), import_path);
-    const extensions = ['.ts', '.tsx', '.js', '.jsx', '.mjs'];
-    for (const ext of extensions) {
-      const full_path = resolved_path + ext;
-      if (fs.existsSync(full_path)) {
-        return full_path;
-      }
+/**
+ * Visits nodes in the AST to extract dependencies.
+ * - node: ts.Node - The current node in the AST
+ * - filePath: string - Path to the current file
+ * - dependencies: Set<string> - Set to store dependencies
+ * - visited: Set<string> - Set of already visited files
+ */
+function visitNodes(node, filePath, dependencies, visited) {
+  if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+    handleImportExportDeclaration(node, filePath, dependencies, visited);
+  } else if (ts.isImportEqualsDeclaration(node)) {
+    handleImportEqualsDeclaration(node, filePath, dependencies);
+  } else if (ts.isCallExpression(node)) {
+    handleCallExpression(node, filePath, dependencies);
+  }
+
+  ts.forEachChild(node, child => visitNodes(child, filePath, dependencies, visited));
+}
+
+/**
+ * Handles import and export declarations.
+ * - node: ts.ImportDeclaration | ts.ExportDeclaration - The import or export node
+ * - filePath: string - Path to the current file
+ * - dependencies: Set<string> - Set to store dependencies
+ * - visited: Set<string> - Set of already visited files
+ */
+function handleImportExportDeclaration(node, filePath, dependencies, visited) {
+  const moduleSpecifier = node.moduleSpecifier?.text;
+  if (moduleSpecifier) {
+    const resolvedPath = resolveImport(filePath, moduleSpecifier);
+    if (resolvedPath) {
+      dependencies.add(resolvedPath);
+      const nestedDependencies = extractDependencies(resolvedPath, visited);
+      nestedDependencies.forEach(dep => dependencies.add(dep));
     }
   }
+}
+
+/**
+ * Handles import equals declarations.
+ * - node: ts.ImportEqualsDeclaration - The import equals node
+ * - filePath: string - Path to the current file
+ * - dependencies: Set<string> - Set to store dependencies
+ */
+function handleImportEqualsDeclaration(node, filePath, dependencies) {
+  if (ts.isExternalModuleReference(node.moduleReference)) {
+    const moduleSpecifier = node.moduleReference.expression.text;
+    const resolvedPath = resolveImport(filePath, moduleSpecifier);
+    if (resolvedPath) {
+      dependencies.add(resolvedPath);
+    }
+  }
+}
+
+/**
+ * Handles call expressions (require or dynamic import).
+ * - node: ts.CallExpression - The call expression node
+ * - filePath: string - Path to the current file
+ * - dependencies: Set<string> - Set to store dependencies
+ */
+function handleCallExpression(node, filePath, dependencies) {
+  if ((node.expression.text === 'require' || 
+       node.expression.kind === ts.SyntaxKind.ImportKeyword) &&
+      node.arguments.length > 0 && 
+      ts.isStringLiteral(node.arguments[0])) {
+    const moduleSpecifier = node.arguments[0].text;
+    const resolvedPath = resolveImport(filePath, moduleSpecifier);
+    if (resolvedPath) {
+      dependencies.add(resolvedPath);
+    }
+  }
+}
+
+/**
+ * Resolves an import path to an absolute file path.
+ * - currentFile: string - Path to the current file
+ * - importPath: string - The import path to resolve
+ * = string | null - Resolved absolute path or null if not found
+ */
+function resolveImport(currentFile, importPath) {
+  if (path.isAbsolute(importPath)) {
+    return importPath;
+  }
+  
+  const resolvedPath = path.resolve(path.dirname(currentFile), importPath);
+  const extensions = ['.ts', '.tsx', '.js', '.jsx', '.mjs'];
+  
+  for (const ext of extensions) {
+    const fullPath = resolvedPath + ext;
+    if (fs.existsSync(fullPath)) {
+      return fullPath;
+    }
+  }
+
+  // If no file with extension is found, check if it's a directory with an index file
+  for (const ext of extensions) {
+    const indexPath = path.join(resolvedPath, `index${ext}`);
+    if (fs.existsSync(indexPath)) {
+      return indexPath;
+    }
+  }
+
+  //console.warn(`Could not resolve import: ${importPath}`);
   return null;
 }
 
-function fix_file_path(filepath) {
+/**
+ * Validates and normalizes the input file path.
+ * - filepath: string - The input file path
+ * = string - Validated and normalized file path
+ */
+function validateFilePath(filepath) {
   if (!filepath) {
     console.error(`Usage: ts-deps <file.ts>`);
     process.exit(1);
   }
-  // check if is a ts file | adds .ts if its a definition
+  
   let [file, extension] = filepath.split('.');
   if (extension) {
-    // if is not a .ts file, exit
-    if (extension != "ts") {
-      console.error("File should be a typescript file or no extension def.");
+    if (extension !== "ts") {
+      console.error("File should be a TypeScript file or have no extension.");
       process.exit(1);
-    } else {
-      return filepath;
     }
+    return filepath;
   } else {
-    // adds extension to definition
-    return filepath + ".ts";
+    return `${filepath}.ts`;
   }
 }
 
-function clean_imported_output(imported) {
-  return (imported.replace("}", "")).replace("{", "");
-}
-
+/**
+ * Main function to run the script.
+ */
 function main() {
   const args = process.argv.slice(2);
   if (args.length !== 1) {
@@ -125,17 +173,14 @@ function main() {
     process.exit(1);
   }
 
-  const file_path = args[0];
-  const fixed_file_path = fix_file_path(file_path);
-  const dependencies = extract_dependencies(fixed_file_path);
+  const filePath = args[0];
+  const validatedFilePath = validateFilePath(filePath);
+  const dependencies = extractDependencies(validatedFilePath);
 
   if (dependencies.size > 0) {
-    for (const [source, imported] of dependencies) {
-      const out_imported = clean_imported_output(imported);
-      console.log(`${source}/{${out_imported}}`);
-    }
-  } else {
-    console.log('No dependencies found.');
+    dependencies.forEach(dep => {
+      console.log(dep);
+    });
   }
 }
 
