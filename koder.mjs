@@ -22,11 +22,15 @@ const system = {
   agda: {
     koder: await fs.readFile(new URL('./koder/agda_koder.txt', import.meta.url), 'utf-8').then(content => content.trim()),
     guess: await fs.readFile(new URL('./koder/agda_guess.txt', import.meta.url), 'utf-8').then(content => content.trim())
-  }
+  },
+  kind2: {
+    koder: await fs.readFile(new URL('./koder/kind_koder.txt', import.meta.url), 'utf-8').then(content => content.trim()),
+    guess: await fs.readFile(new URL('./koder/kind_guess.txt', import.meta.url), 'utf-8').then(content => content.trim())
+  },
 };
 
 // Function to predict dependencies
-async function predictDependencies(file, ext, fileContent, request) {
+async function predictDependencies(file, ext, context, fileContent, request) {
   // Function to get all Typescript files recursively
   async function getAllFiles(dir) {
     const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -67,6 +71,9 @@ async function predictDependencies(file, ext, fileContent, request) {
     '<TREE>',
     defsTree.trim(),
     '</TREE>',
+    '<CONTEXT>',
+    context,
+    '</CONTEXT>',
     '<REQUEST>',
     request,
     '</REQUEST>'
@@ -103,6 +110,10 @@ async function main() {
   let model = process.argv[4] || CODE_MODEL;
   let ext = path.extname(file).slice(1);
 
+  // Load the local ".context" file
+  let context = "";
+  try { context = await fs.readFile('./.context', 'utf-8'); } catch (e) {};
+
   // Initialize the chat function with the specified model
   let ask = chat(model);
 
@@ -126,8 +137,8 @@ async function main() {
   }
 
   // Predicts dependencies
-  var pred = await predictDependencies(file, ext, fileContent, request);
-  var pred = pred.map(dep => dep.replace(/\.ts$/, '').replace(/\/_$/, ''));
+  var pred = await predictDependencies(file, ext, context, fileContent, request);
+  var pred = pred.map(dep => dep.replace(new RegExp(`\\.${ext}$`), '').replace(/\/_$/, ''));
 
   // TODO: combine with actual dependency tree
   var deps = pred;
@@ -155,10 +166,6 @@ async function main() {
   //console.log(deps);
   //console.log(depFiles);
   //process.exit();
-
-  // Load the local ".context" file
-  let context = "";
-  try { context = await fs.readFile('.context', 'utf-8'); } catch (e) {};
 
   // Prepare AI input
   let aiInput = [

@@ -39,7 +39,7 @@ open import List.Main
 -- - f: the function to be applied
 -- - xs: the elements to apply f to
 -- = a new list with f applied to all elements
-map : ∀ {A B : Set} → (A → B) → List A → List B
+map : ∀ {A B : Set} -> (A -> B) -> List A -> List B
 map f Nil         = Nil
 map f (Cons x xs) = Cons (f x) (map f xs)
 </FILE>
@@ -67,14 +67,14 @@ map f (Cons x xs) = Cons (f x) (map f xs)
 Every .agda file must define ONE main function or datatype. Example:
 
 ```agda
-module HTerm.size where
+module Term.size where
 
-open import HTerm.Main
+open import Term.Main
 
--- Calculates the size of an HTerm
--- - term: the HTerm to measure
+-- Calculates the size of an Term
+-- - term: the Term to measure
 -- = the number of nodes in the term
-size : HTerm → Nat
+size : Term -> Nat
 size (Lam x t)  = succ (size (t (Var x)))
 size (App t u)  = succ (size t + size u)
 size (Var _)    = 1
@@ -82,7 +82,7 @@ size (Var _)    = 1
 
 Where:
 - The function name is defined (e.g., 'size')
-- The type signature is specified (e.g., 'HTerm → Nat')
+- The type signature is specified (e.g., 'Term -> Nat')
 - The function body uses pattern matching
 - Recursive calls are made on structurally smaller arguments
 
@@ -91,16 +91,16 @@ Where:
 Alternatively, an .agda file can also define a datatype. Example:
 
 ```agda
-module HTerm.Main where
+module Term.Main where
 
 -- Represents a Higher-Order Abstract Syntax Term
 -- - Lam: lambda abstraction
 -- - App: function application
 -- - Var: variable
-data HTerm : Set where
-  Lam : (String → HTerm) → HTerm
-  App : HTerm → HTerm → HTerm
-  Var : String → HTerm
+data Term : Set where
+  Lam : (String -> Term) -> Term
+  App : Term -> Term -> Term
+  Var : String -> Term
 ```
 
 ## Idiomatic Agda Examples
@@ -118,7 +118,7 @@ open import List.Main
 -- - xs: the first input list
 -- - ys: the second input list
 -- = a new list of pairs, with length equal to the shorter input list
-zip : ∀ {A B : Set} → List A → List B → List (A × B)
+zip : ∀ {A B : Set} -> List A -> List B -> List (A × B)
 zip Nil         _           = Nil
 zip _           Nil         = Nil
 zip (Cons x xs) (Cons y ys) = Cons (x , y) (zip xs ys)
@@ -135,7 +135,7 @@ open import List.Main
 -- - xs: the input list
 -- - fn: the predicate function to test each element
 -- = a new list containing only elements that satisfy the predicate
-filter : ∀ {A : Set} → (A → Bool) → List A → List A
+filter : ∀ {A : Set} -> (A -> Bool) -> List A -> List A
 filter fn Nil = Nil
 filter fn (Cons x xs) with fn x
 ... | true  = Cons x (filter fn xs)
@@ -151,7 +151,7 @@ module Tree.Main where
 -- - Node: an internal node with a value and two subtrees
 -- - Leaf: a leaf node (empty)
 data Tree (A : Set) : Set where
-  Node : A → Tree A → Tree A → Tree A
+  Node : A -> Tree A -> Tree A -> Tree A
   Leaf : Tree A
 ```
 
@@ -166,7 +166,7 @@ open import Data.Nat
 -- Sums all values in a numeric tree
 -- - tree: the tree to sum
 -- = the sum of all values in the tree
-sum : Tree ℕ → ℕ
+sum : Tree Nat -> Nat
 sum Leaf         = 0
 sum (Node x l r) = x + sum l + sum r
 ```
@@ -199,7 +199,7 @@ open import Data.Float
 -- - a: the first vector
 -- - b: the second vector
 -- = the dot product of a and b
-dot : V3 → V3 → Float
+dot : V3 -> V3 -> Float
 dot (MkV3 ax ay az) (MkV3 bx by bz) = ax * bx + ay * by + az * bz
 ```
 
