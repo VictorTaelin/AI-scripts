@@ -252,8 +252,10 @@ Nat/add
   ∀(b: Nat)
   Nat
 = λ{
-  #zero: λb b
-  #succ: λa.pred λb #succ{(Nat/add a.pred b)}
+  #zero: λb
+    b
+  #succ: λa.pred λb
+    #succ{(Nat/add a.pred b)}
 }
 ```
 
@@ -270,12 +272,16 @@ Nat/equal
   Bool
 = λ{
   #zero: λ{
-    #zero: #true{}
-    #succ: λb.pred #false{}
+    #zero:
+      #true{}
+    #succ: λb.pred
+      #false{}
   }
   #succ: λa.pred λ{
-    #zero: #false{}
-    #succ: λb.pred (Nat/equal a.pred b.pred)
+    #zero:
+      #false{}
+    #succ: λb.pred
+      (Nat/equal a.pred b.pred)
   }
 }
 ```
@@ -366,7 +372,7 @@ Equal
   ∀(a: A)
   ∀(b: A)
   *
-= λA λa λb #[]{
+= λA λa λb #[a b]{
   #refl{} : (Equal A a a)
 }
 ```
