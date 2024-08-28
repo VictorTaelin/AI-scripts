@@ -6,8 +6,8 @@ Some AI scripts I use daily.
 - `holefill`: I use it on VIM to fill code snippets
 
 - `aiemu`: emulate any game on the terminal ([example](https://x.com/VictorTaelin/status/1790183986096116189))
-
-- `chatsh`: like ChatGPT but in the terminal ([example / chatting](https://x.com/VictorTaelin/status/1655304645953089538)) ([example / intense coding](https://x.com/VictorTaelin/status/1809290888356729002))
+ 
+- `chatsh`: like ChatGPT but in the terminal ([example chat](https://x.com/VictorTaelin/status/1655304645953089538)) ([example coding](https://x.com/VictorTaelin/status/1809290888356729002)) ([example refactor](https://x.com/VictorTaelin/status/1828893898594300220))
 
 - `koder`: perform refactor requests ([example](https://x.com/VictorTaelin/status/1824489509146227192)) ([example](https://x.com/VictorTaelin/status/1811254153655558188))
 
