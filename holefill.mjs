@@ -5,6 +5,7 @@ import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 
+/*
 const system = `
 You are a HOLE FILLER. You are provided with a file containing holes, formatted
 as '{{HOLE_NAME}}'. Your TASK is to complete with a string to replace this hole
@@ -95,6 +96,11 @@ function hypothenuse(a, b) {
 
 - Answer ONLY with the <COMPLETION/> block. Do NOT include anything outside it.
 `;
+*/
+
+const SYSTEM = `You're a code completion assistant.`;
+const FILL   = "{:FILL_HERE:}";
+const TASK   = "### TASK: complete the "+FILL+" part of the file above. Write ONLY the needed text to replace "+FILL+" by the correct completion, including correct spacing and indentation. Include the answer inside a <COMPLETION></COMPLETION> tag.";
 
 var file  = process.argv[2];
 var mini  = process.argv[3];
@@ -104,7 +110,7 @@ var ask   = chat(model);
 if (!file) {
   console.log("Usage: holefill <file> [<shortened_file>] [<model_name>]");
   console.log("");
-  console.log("This will replace all {{HOLES}} in <file>, using GPT-4 / Claude-3.");
+  console.log("This will complete a HOLE, written as '.?.', in <file>, using the AI.");
   console.log("A shortened file can be used to omit irrelevant parts.");
   process.exit();
 }
@@ -130,49 +136,35 @@ while ((match = regex.exec(mini_code)) !== null) {
 await fs.writeFile(mini, mini_code, 'utf-8');
 
 var tokens = tokenCount(mini_code);
-var holes = mini_code.match(/{{\w+}}/g) || [];
+var prompt = mini_code.replace(".?.", FILL) + "\n\n" + TASK;
 
-if (holes.length === 0 && mini_code.indexOf("??") !== -1 && (mini_code.match(/\?\?/g) || []).length == 1) {
-  holes = "??";
-}
+await fs.writeFile("./.holefill", SYSTEM + "\n###\n" + prompt, "utf-8");
 
-console.log("holes_found:", holes);
 console.log("token_count:", tokens);
 console.log("model_label:", MODELS[model] || model);
 
-if (holes === "??") {
-  var prompt = "<QUERY>\n" + mini_code.replace("??", "{{FILL_HERE}}") + "\n</QUERY>";
-  var answer = (await ask(prompt, {system, model, max_tokens: 16384/2})) + "</COMPLETION>";
-  await savePromptHistory(prompt, answer, MODELS[model] || model);
-  var match = answer.match(/<COMPLETION>([\s\S]*?)<\/COMPLETION>/);
-  if (match) {
-    file_code = file_code.replace("??", match[1]);
-  } else {
-    console.error("Error: Could not find <COMPLETION> tags in the AI's response.");
-    process.exit(1);
-  }
-} else {
-  for (let hole of holes) {
-    console.log("next_filled: " + hole + "...");
-    var prompt = "<QUERY>\n" + mini_code + "\n</QUERY>";
-    var answer = (await ask(prompt, {system, model, max_tokens: 16384/2})) + "</COMPLETION>";
-    await savePromptHistory(prompt, answer, MODELS[model] || model);
-    var match = answer.match(/<COMPLETION>([\s\S]*?)<\/COMPLETION>/);
-    if (match) {
-      file_code = file_code.replace(hole, match[1]);
-    } else {
-      console.error("Error: Could not find <COMPLETION> tags in the AI's response for hole: " + hole);
-      process.exit(1);
-    }
-  }
+if (mini_code.indexOf(".?.") === -1) {
+  console.log("No hole found.");
+  process.exit();
 }
 
-async function savePromptHistory(prompt, answer, model) {
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const logPath = path.join(os.homedir(), '.ai', 'prompt_history', `${timestamp}_${model}.log`);
-  const logContent = `Prompt:\n${prompt}\n\nAnswer:\n${answer}\n\n`;
-  await fs.mkdir(path.dirname(logPath), { recursive: true });
-  await fs.appendFile(logPath, logContent, 'utf-8');
+await savePromptHistory(SYSTEM, prompt, reply, MODELS[model] || model);
+
+var reply = (await ask(prompt, {system: SYSTEM, model, max_tokens: 8192})) + "</COMPLETION>";
+var match = reply.match(/<COMPLETION>([\s\S]*?)<\/COMPLETION>/);
+if (match) {
+  file_code = file_code.replace(".?.", match[1]);
+} else {
+  console.error("Error: Could not find <COMPLETION> tags in the AI's response.");
+  process.exit(1);
 }
 
 await fs.writeFile(file, file_code, 'utf-8');
+
+async function savePromptHistory(SYSTEM, prompt, reply, model) {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const logPath = path.join(os.homedir(), '.ai', 'prompt_history', `${timestamp}_${model}.log`);
+  const logContent = `SYSTEM:\n${SYSTEM}\n\nPROMPT:\n${prompt}\n\REPLY:\n${reply}\n\n`;
+  await fs.mkdir(path.dirname(logPath), { recursive: true });
+  await fs.appendFile(logPath, logContent, 'utf-8');
+}

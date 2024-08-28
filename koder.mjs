@@ -13,21 +13,41 @@ const execAsync = promisify(exec);
 const DEPS_MODEL = "claude-3-5-sonnet-20240620"; // default model for dependency guessing
 const CODE_MODEL = "claude-3-5-sonnet-20240620"; // default model for coding
 
+//const DEPS_MODEL = "g"; // default model for dependency guessing
+//const CODE_MODEL = "g"; // default model for coding
+
 // Define a structured object for the system definitions
 const system = {
   ts: {
     koder: await fs.readFile(new URL('./koder/ts_koder.txt', import.meta.url), 'utf-8').then(content => content.trim()),
-    guess: await fs.readFile(new URL('./koder/ts_guess.txt', import.meta.url), 'utf-8').then(content => content.trim())
+    guess: await fs.readFile(new URL('./koder/ts_guess.txt', import.meta.url), 'utf-8').then(content => content.trim()),
+    deps: null,
   },
   agda: {
     koder: await fs.readFile(new URL('./koder/agda_koder.txt', import.meta.url), 'utf-8').then(content => content.trim()),
-    guess: await fs.readFile(new URL('./koder/agda_guess.txt', import.meta.url), 'utf-8').then(content => content.trim())
+    guess: await fs.readFile(new URL('./koder/agda_guess.txt', import.meta.url), 'utf-8').then(content => content.trim()),
+    deps: null,
   },
-  kind2: {
+  kind: {
     koder: await fs.readFile(new URL('./koder/kind_koder.txt', import.meta.url), 'utf-8').then(content => content.trim()),
-    guess: await fs.readFile(new URL('./koder/kind_guess.txt', import.meta.url), 'utf-8').then(content => content.trim())
+    guess: await fs.readFile(new URL('./koder/kind_guess.txt', import.meta.url), 'utf-8').then(content => content.trim()),
+    deps: name => "kind deps " + name,
   },
 };
+
+// Function to get real dependencies
+async function realDependencies(file, ext) {
+  if (system[ext] && system[ext].deps) {
+    try {
+      const { stdout } = await execAsync(system[ext].deps(file));
+      return stdout.trim().split('\n').map(dep => dep.trim() + "." + ext);
+    } catch (error) {
+      console.error(`Error getting real dependencies: ${error.message}`);
+      return [];
+    }
+  }
+  return [];
+}
 
 // Function to predict dependencies
 async function predictDependencies(file, ext, context, fileContent, request) {
@@ -71,9 +91,9 @@ async function predictDependencies(file, ext, context, fileContent, request) {
     '<TREE>',
     defsTree.trim(),
     '</TREE>',
-    '<CONTEXT>',
-    context,
-    '</CONTEXT>',
+    //'<CONTEXT>',
+    //context,
+    //'</CONTEXT>',
     '<REQUEST>',
     request,
     '</REQUEST>'
@@ -136,18 +156,21 @@ async function main() {
     fileContent = ["(empty file)"].join('\n');
   }
 
-  // Predicts dependencies
+  // Get preducted dependencies
   var pred = await predictDependencies(file, ext, context, fileContent, request);
-  var pred = pred.map(dep => dep.replace(new RegExp(`\\.${ext}$`), '').replace(/\/_$/, ''));
+  var pred = pred.map(dep => dep.replace(/\/_$/, ''));
 
-  // TODO: combine with actual dependency tree
-  var deps = pred;
+  // Get real dependencies
+  var real = await realDependencies(file, ext);
+
+  // Combine predicted and actual dependencies, removing duplicates
+  var deps = [...new Set([...pred, ...real])];
 
   // Read dependency files
   let depFiles = await Promise.all(deps.map(async (dep) => {
     let depPath, content;
-    let path0 = path.join(dir, `${dep}.${ext}`);
-    let path1 = path.join(dir, `${dep}/_.${ext}`); 
+    let path0 = path.join(dir, `${dep}`);
+    let path1 = path.join(dir, `${dep.replace(new RegExp(`\\.${ext}$`), '')}/_.${ext}`); 
     for (const pathToTry of [path0, path1]) {
       try {
         content = await fs.readFile(pathToTry, 'utf-8');

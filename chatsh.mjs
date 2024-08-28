@@ -222,6 +222,26 @@ async function prompt(query) {
 // If there are words after the 'chatsh', set them as the initialUserMessage
 var initialUserMessage = process.argv.slice(3).join(' ');
 
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+
+const HISTORY_DIR = path.join(os.homedir(), '.ai', 'chatsh_history');
+
+// Ensure the history directory exists
+if (!fs.existsSync(HISTORY_DIR)) {
+  fs.mkdirSync(HISTORY_DIR, { recursive: true });
+}
+
+// Generate a unique filename for this conversation
+const conversationFile = path.join(HISTORY_DIR, `conversation_${new Date().toISOString().replace(/[:.]/g, '-')}.txt`);
+
+// Function to append message to the conversation file
+function appendToHistory(role, message) {
+  const formattedMessage = `<${role}>\n${message}\n</${role}>\n\n`;
+  fs.appendFileSync(conversationFile, formattedMessage);
+}
+
 // Main interaction loop
 async function main() {
   let lastOutput = "";
@@ -242,9 +262,13 @@ async function main() {
         ? `<SYSTEM>\n${lastOutput.trim()}\n</SYSTEM>\n<USER>\n${userMessage}\n</USER>\n`
         : `<SYSTEM>\n${lastOutput.trim()}\n</SYSTEM>`;
 
-      const assistantMessage = await ask(fullMessage, { system: SYSTEM_PROMPT, model: MODEL });  
+      appendToHistory('USER', userMessage);
+
+      const assistantMessage = await ask(fullMessage, { system: SYSTEM_PROMPT, model: MODEL, max_tokens: 8192, system_cacheable: true });  
       console.log(); 
       
+      appendToHistory('ChatSH', assistantMessage);
+
       const codes = extractCodes(assistantMessage);
       lastOutput = "";
 
@@ -264,15 +288,18 @@ async function main() {
             const output = `${stdout.trim()}${stderr.trim()}`;
             console.log('\x1b[2m' + output.trim() + '\x1b[0m');
             lastOutput = output;
+            appendToHistory('SYSTEM', output);
           } catch(error) {
             const output = `${error.stdout?.trim()||''}${error.stderr?.trim()||''}`;
             console.log('\x1b[2m' + output.trim() + '\x1b[0m');
             lastOutput = output;
+            appendToHistory('SYSTEM', output);
           }
         }
       }
     } catch(error) {
       console.error(`Error: ${error.message}`);
+      appendToHistory('ERROR', error.message);
     }
   }
 }

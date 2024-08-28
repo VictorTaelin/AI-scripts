@@ -24,38 +24,36 @@ You must answer with:
 
 ## Suppose you're given the following file:
 
-<FILE path="/Users/v/vic/dev/kindbook/Nat/equal.kind2">
--- TODO: implement using 'compare'
-equal : Nat → Nat → Bool
-equal a b = {! TODO !}
+<FILE path="/Users/v/vic/dev/kindbook/Nat/equal.kind">
+
 </FILE>
 
 <TREE>
+- List.kind
 - List/
-  - _.kind2
-  - map.kind2
-  - fold.kind2
-  - filter.kind2
-  - equal.kind2
-  - zip.kind2
-  - length.kind2
+  - map.kind
+  - fold.kind
+  - filter.kind
+  - equal.kind
+  - zip.kind
+  - length.kind
+- Nat.kind
 - Nat/
-  - _.kind2
-  - fold.kind2
-  - compare.kind2
-  - add.kind2
-  - sub.kind2
-  - mul.kind2
-  - div.kind2
-  - mod.kind2
+  - fold.kind
+  - compare.kind
+  - add.kind
+  - sub.kind
+  - mul.kind
+  - div.kind
+  - mod.kind
+- Bool.kind
 - Bool/
-  - _.kind2
-  - fold.kind2
-  - true.kind2
-  - false.kind2
-  - not.kind2
-  - and.kind2
-  - or.kind2
+  - fold.kind
+  - true.kind
+  - false.kind
+  - not.kind
+  - and.kind
+  - or.kind
 </TREE>
 
 <REQUEST>
@@ -65,7 +63,7 @@ implement equality for Nat
 ## Then, you must answer with the following output:
 
 <REASONING>
-Nat/equal.kind2 is likely to be a pairwise comparison between Nats. As such, it
+Nat/equal.kind is likely to be a pairwise comparison between Nats. As such, it
 must include the Nat type. It returns a Bool, so, it must also include it. Since
 the source mentions 'compare', I'll also include it. For completion, I've also
 included bool AND and OR, since these are often used in comparisons. Finally,
@@ -73,48 +71,45 @@ List/equal might be a similar algorithm, so, I included it for inspiration.
 </REASONING>
 
 <DEPENDENCIES>
-Nat/_.kind2
-Nat/compare.kind2
-Bool/_.kind2
-Bool/and.kind2
-Bool/or.kind2
-List/equal.kind2
+Nat.kind
+Nat/compare.kind
+Bool.kind
+Bool/and.kind
+Bool/or.kind
+List/equal.kind
 </DEPENDENCIES>
 
 # GUIDE FOR PATHS
 
-You're in a functional Kind repository, where every file defines exactly ONE top-level definition, which can be a function, type or constant. Every definition can be found in the respective full path. For example, the List.map function is defined in the following file:
+You're in a functional Kind repository, where every file defines exactly ONE top-level definition, which can be a function, type or constant. Every definition can be found in the respective full path. For example, the List/map function is defined in the following file:
 
 ```kind
-use List/{cons,nil}
+List/map
 
-map <A> <B>
-- xs: (List A)
-- fn: A -> B
-: (List B)
+: ∀(A: *) 
+  ∀(xs: (List A))
+  ∀(fn: ∀(xs: A) A)
+  (List A)
 
-match xs {
-  cons:
-    let head = (fn xs.head)
-    let tail = (List/map _ _ xs.tail fn)
-    (cons _ head tail)
-  nil:
-    (nil _)
+= λA λ{
+  #nil: λfn
+    #nil {}
+  #cons: λhead λtail λfn
+    let head = (fn head)
+    let tail = (List/map A tail fn)
+    #cons { head tail }
 }
 ```
-
-
-The only exception is entry points. For example, the `List` type is declared on `./List/_.kind2`, NOT on `./List.kind2`.
 
 # NOTES
 
 - Attempt to include ALL files that might be relevant, directly or not.
 
 - Always include files that might be similar algorithms to the current one.
-  Example: 'Map.set' MUST include 'Map.get', because it is similar.
+  Example: 'Map/set' MUST include 'Map/get', because it is similar.
 
 - If the file is the constructor of an ADT, then, INCLUDE its type.
-  Example: 'List.cons' MUST include 'List', because it is the relevant type.
+  Example: 'List/cons' MUST include 'List', because it is the relevant type.
 
 - When in doubt, always opt to include a file. More is better.
 
