@@ -206,38 +206,37 @@ note the 'book' directory defines the root of Kind's directory tree.
 
 ```
 // Defines the natural numbers (nat) as an inductive datatype.
-// Constructors:
-// - succ: Represents the successor of a nat (n+1).
-// - zero: Represents the nat (0).
+// - s: Represents the successor of a nat (x+1).
+// - z: Represents the nat (0).
 Nat
 : *
 = #[]{
-  #zero{} : Nat
-  #succ{ pred:Nat } : Nat
+  #z{} : Nat
+  #s{ pred:Nat } : Nat
 }
 ```
 
-### Nat/zero.kind
+### Nat/s.kind
 
 ```
 // Represents the nat 0.
 // = The nat 0.
-Nat/zero
+Nat/z
 : Nat
-= #zero{}
+= #z{}
 ```
 
-### Nat/succ.kind
+### Nat/s.kind
 
 ```
 // Constructs the successor of a nat.
 // - n: The nat to which we add 1.
 // = The successor of the nat `n`.
-Nat/succ
+Nat/s
 : ∀(n: Nat)
   Nat
 = λn
-  #succ{n}
+  #s{n}
 ```
 
 ### Nat/add.kind
@@ -252,10 +251,10 @@ Nat/add
   ∀(b: Nat)
   Nat
 = λ{
-  #zero: λb
+  #z: λb
     b
-  #succ: λa.pred λb
-    #succ{(Nat/add a.pred b)}
+  #s: λa.pred λb
+    #s{(Nat/add a.pred b)}
 }
 ```
 
@@ -271,16 +270,16 @@ Nat/equal
   ∀(b: Nat)
   Bool
 = λ{
-  #zero: λ{
-    #zero:
-      #true{}
-    #succ: λb.pred
-      #false{}
+  #z: λ{
+    #z:
+      #t{}
+    #s: λb.pred
+      #f{}
   }
-  #succ: λa.pred λ{
-    #zero:
-      #false{}
-    #succ: λb.pred
+  #s: λa.pred λ{
+    #z:
+      #f{}
+    #s: λb.pred
       (Nat/equal a.pred b.pred)
   }
 }
@@ -293,13 +292,13 @@ Nat/equal
 // - A: The type of elements in the list.
 // Constructors:
 // - nil: Represents an empty list.
-// - cons: Adds an element to the front of a list.
+// - con: Adds an element to the front of a list.
 List
 : ∀(A: *)
   *
 = λA #[]{
   #nil{} : (List A)
-  #cons{ head:A tail:(List A) } : (List A)
+  #con{ head:A tail:(List A) } : (List A)
 }
 ```
 
@@ -316,7 +315,7 @@ List/nil
   #nil{}
 ```
 
-### List/cons.kind
+### List/con.kind
 
 ```
 // Constructs a new list by adding an element to the front of an existing list.
@@ -324,13 +323,13 @@ List/nil
 // - head: The element to add to the front of the list.
 // - tail: The current list.
 // = A new list with `head` as its 1st element, followed by the elements of `tail`.
-List/cons
+List/con
 : ∀(A: *)
   ∀(head: A)
   ∀(tail: (List A))
   (List A)
 = λA λhead λtail
-  #cons{head tail}
+  #con{head tail}
 ```
 
 ### List/map.kind
@@ -351,10 +350,56 @@ List/map
 = λA λB λ{
   #nil: λfn
     #nil{}
-  #cons: λxs.head λxs.tail λfn
+  #con: λxs.head λxs.tail λfn
     let head = (fn xs.head)
     let tail = (List/map A B xs.tail fn)
-    #cons{head tail}
+    #con{head tail}
+}
+```
+
+### List/filter.kind
+
+```
+// Filters a list, keeping only elements that satisfy a given predicate.
+// - A: The type of elements in the list.
+// - xs: The input list.
+// - pred: The predicate function to apply to each element.
+// = A new list containing only the elements of `xs` that satisfy `pred`.
+List/filter
+: ∀(A: *)
+  ∀(xs: (List A))
+  ∀(fn: ∀(x: A) Bool)
+  (List A)
+= λA λ{
+  #nil: λfn
+    #nil{}
+  #con: λxs.head λxs.tail λfn
+    (List/filter/go (fn xs.head) xs.head xs.tail fn)
+}
+```
+
+### List/filter/go.kind
+
+```
+// Helper function for List/filter that decides whether to include the current element.
+// - A: The type of elements in the list.
+// - cond: The result of applying the predicate to the current element.
+// - head: The current element being considered.
+// - tail: The rest of the list to be filtered.
+// - fn: The predicate function.
+// = A new list containing the filtered elements.
+List/filter/go
+: ∀(A: *)
+  ∀(cond: Bool)
+  ∀(head: A)
+  ∀(tail: (List A))
+  ∀(fn: ∀(x: A) Bool)
+  (List A)
+= λA λ{
+  #t: λhead λtail λfn
+    #con{head (List/filter A tail fn)}
+  #f: λhead λtail λfn
+    (List/filter A tail fn)
 }
 ```
 
@@ -433,6 +478,10 @@ Equal/apply
 - Do NOT use or assume the existence of files that weren't shown to you.
 
 - Include only ONE definition per file. Never more.
+
+- Remember Kind is a Lispy language. ALL applications require parentheses: '(f x y z)'.
+
+- Create auxiliary files (like 'List/filter/go') when necessary.
 
 - Be precise and careful in your modifications.
 
