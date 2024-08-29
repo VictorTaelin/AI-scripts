@@ -208,7 +208,7 @@ note the 'book' directory defines the root of Kind's directory tree.
 // Defines the natural numbers (nat) as an inductive datatype.
 // Constructors:
 // - succ: Represents the successor of a nat (n+1).
-// - zero: Represents the natural nat (0).
+// - zero: Represents the nat (0).
 Nat
 : *
 = #[]{
@@ -220,7 +220,7 @@ Nat
 ### Nat/zero.kind
 
 ```
-// Represents the zero natural number.
+// Represents the nat 0.
 // = The nat 0.
 Nat/zero
 : Nat
@@ -230,8 +230,8 @@ Nat/zero
 ### Nat/succ.kind
 
 ```
-// Constructs the successor of a natural number.
-// - n: The natural number to which we add 1.
+// Constructs the successor of a nat.
+// - n: The nat to which we add 1.
 // = The successor of the nat `n`.
 Nat/succ
 : ∀(n: Nat)
@@ -243,7 +243,7 @@ Nat/succ
 ### Nat/add.kind
 
 ```
-// Adds two natural numbers
+// Adds two nats.
 // - a: The 1st nat.
 // - b: The 2nd nat.
 // = The sum of `a` and `b`
@@ -262,7 +262,7 @@ Nat/add
 ### Nat/equal.kind
 
 ```
-// Checks if two natural numbers are equal.
+// Checks if two nats are equal.
 // - a: The 1st nat.
 // - b: The 2nt nat.
 // = True if `a` and `b` are equal.
