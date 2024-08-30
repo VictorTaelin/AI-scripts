@@ -1,5 +1,42 @@
 #!/usr/bin/env node
 
+// This script analyzes Agda files to extract and list their dependencies.
+// It takes a single Agda file as input and outputs a list of all its dependencies.
+
+// Functionality:
+// 1. Parses the input Agda file and extracts import statements.
+// 2. Recursively processes imported modules to build a complete dependency tree.
+// 3. Handles both 'import' and 'open import' statements.
+// 4. Resolves file paths for imported modules.
+// 5. Outputs a list of unique dependencies (excluding the input file itself).
+
+// Circular Dependencies:
+// - The script does check for circular dependencies by maintaining a 'visited' set.
+// - It prevents infinite recursion by not revisiting already processed files.
+// - However, it does not explicitly report or handle circular dependencies in any special way.
+
+// Indirect Imports:
+// - The script does handle indirect imports.
+// - If module A imports B, and B imports C, the script will include C in A's dependencies.
+// - This is achieved through recursive processing of each imported module.
+
+// Supported Agda Import Syntax:
+// 1. Single-line imports:
+//    - import ModuleName
+//    - open import ModuleName
+// 2. Multi-line imports (with parentheses):
+//    - import ModuleName
+//      (submodule1; submodule2)
+// 3. Qualified imports:
+//    - import Data.List as List
+// 4. Imports with 'using' clause:
+//    - import ModuleName using (definition1; definition2)
+
+// Limitations:
+// - The script may not handle all possible Agda import syntaxes or edge cases.
+// - It does not differentiate between public and private imports.
+// - It does not handle conditional imports or other advanced Agda module system features.
+
 import fs from 'fs';
 import path from 'path';
 
@@ -133,11 +170,15 @@ function main() {
   if (dependencies.size > 0) {
     for (const [source, _] of dependencies) {
       if (source !== path.resolve(fixed_file_path)) {
-        console.log(source);
+        if (source.endsWith('.agda')) {
+          console.log(source.slice(0, -5));
+        } else {
+          console.log(source);
+        }
       }
     }
   } else {
-    console.log('No dependencies found.');
+    // print nothing so the coder script handles it correctly
   }
 }
 
