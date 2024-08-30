@@ -2,6 +2,7 @@
 
 // This script analyzes Agda files to extract and list their dependencies.
 // It takes a single Agda file as input and outputs a list of all its dependencies.
+// If a dependency is resolved, it returns the absolute path. Otherwise, returns just the import string (e.g Data.String instead of the path of the String.agda file)
 
 // Functionality:
 // 1. Parses the input Agda file and extracts import statements.
