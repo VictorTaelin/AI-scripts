@@ -36,9 +36,9 @@ module List.map where
 open import List.Main
 
 -- Applies a function to each element of a list.
--- - f: the function to be applied
--- - xs: the elements to apply f to
--- = a new list with f applied to all elements
+-- - f: the function to be applied.
+-- - xs: the elements to apply f to.
+-- = A new list with f applied to all elements.
 map : ∀ {A B : Set} -> (A -> B) -> List A -> List B
 map f Nil         = Nil
 map f (Cons x xs) = Cons (f x) (map f xs)
@@ -71,9 +71,9 @@ module Term.size where
 
 open import Term.Main
 
--- Calculates the size of an Term
--- - term: the Term to measure
--- = the number of nodes in the term
+-- Calculates the size of an Term.
+-- - term: the Term to measure.
+-- = The number of nodes in the term.
 size : Term -> Nat
 size (Lam x t)  = succ (size (t (Var x)))
 size (App t u)  = succ (size t + size u)
@@ -93,10 +93,10 @@ Alternatively, an .agda file can also define a datatype. Example:
 ```agda
 module Term.Main where
 
--- Represents a Higher-Order Abstract Syntax Term
--- - Lam: lambda abstraction
--- - App: function application
--- - Var: variable
+-- Represents a Higher-Order Abstract Syntax Term.
+-- - Lam: lambda abstraction.
+-- - App: function application.
+-- - Var: variable.
 data Term : Set where
   Lam : (String -> Term) -> Term
   App : Term -> Term -> Term
@@ -114,10 +114,10 @@ module List.zip where
 
 open import List.Main
 
--- Combines two lists into a list of pairs
--- - xs: the first input list
--- - ys: the second input list
--- = a new list of pairs, with length equal to the shorter input list
+-- Combines two lists into a list of pairs.
+-- - xs: the first input list.
+-- - ys: the second input list.
+-- = A new list of pairs, with length equal to the shorter input list.
 zip : ∀ {A B : Set} -> List A -> List B -> List (A × B)
 zip Nil         _           = Nil
 zip _           Nil         = Nil
@@ -132,10 +132,10 @@ module List.filter where
 open import List.Main
 open import Bool.Main
 
--- Filters a list based on a predicate function
--- - p: the predicate function to test each element
--- - xs: the input list
--- = a new list containing only elements that satisfy the predicate
+-- Filters a list based on a predicate function.
+-- - p: the predicate function to test each element.
+-- - xs: the input list.
+-- = A new list containing only elements that satisfy the predicate.
 filter : ∀ {a} {A : Set a} → (A → Bool) → List A → List A
 filter p []       = []
 filter p (x , xs) with p x
@@ -157,9 +157,9 @@ open import Nat.Main
 open import Nat.gt
 open import Nat.lt
 
--- Quicksort algorithm for sorting lists of nats
--- - xs: the input list to be sorted
--- = a new list containing all elements from xs in ascending order
+-- Quicksort algorithm for sorting lists of nats.
+-- - xs: the input list to be sorted.
+-- = A new list containing all elements from xs in ascending order.
 quicksort : List Nat → List Nat
 quicksort []       = []
 quicksort (x , xs) = 
@@ -173,9 +173,9 @@ quicksort (x , xs) =
 ```agda
 module Tree.Main where
 
--- Represents a binary tree
--- - Node: an internal node with a value and two subtrees
--- - Leaf: a leaf node (empty)
+-- Represents a binary tree.
+-- - Node: an internal node with a value and two subtrees.
+-- - Leaf: a leaf node (empty).
 data Tree (A : Set) : Set where
   Node : A -> Tree A -> Tree A -> Tree A
   Leaf : Tree A
@@ -189,9 +189,9 @@ module Tree.sum where
 open import Tree.Main
 open import Data.Nat
 
--- Sums all values in a numeric tree
--- - tree: the tree to sum
--- = the sum of all values in the tree
+-- Sums all values in a numeric tree.
+-- - tree: the tree to sum.
+-- = the sum of all values in the tree.
 sum : Tree Nat -> Nat
 sum Leaf         = 0
 sum (Node x l r) = x + sum l + sum r
@@ -204,7 +204,7 @@ module V3.Main where
 
 open import Data.Float
 
--- Represents a 3D vector
+-- Represents a 3D vector.
 record V3 : Set where
   constructor MkV3
   field
@@ -221,10 +221,10 @@ module V3.dot where
 open import V3.Main
 open import Data.Float
 
--- Calculates the dot product of two 3D vectors
--- - a: the first vector
--- - b: the second vector
--- = the dot product of a and b
+-- Calculates the dot product of two 3D vectors.
+-- - a: the first vector.
+-- - b: the second vector.
+-- = The dot product of a and b.
 dot : V3 -> V3 -> Float
 dot (MkV3 ax ay az) (MkV3 bx by bz) = ax * bx + ay * by + az * bz
 ```
