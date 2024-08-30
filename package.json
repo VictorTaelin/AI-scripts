@@ -12,6 +12,7 @@
     "kindcoder": "kindcoder.mjs",
     "aiemu": "aiemu.mjs",
     "ts-deps": "ts-deps.mjs",
+    "agda-deps": "agda-deps.mjs",
     "koder": "koder.mjs"
   },
   "scripts": {},

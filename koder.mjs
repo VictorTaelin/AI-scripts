@@ -26,7 +26,7 @@ const system = {
   agda: {
     koder: await fs.readFile(new URL('./koder/agda_koder.txt', import.meta.url), 'utf-8').then(content => content.trim()),
     guess: await fs.readFile(new URL('./koder/agda_guess.txt', import.meta.url), 'utf-8').then(content => content.trim()),
-    deps: null,
+    deps: name => "agda-deps " + name,
   },
   kind: {
     koder: await fs.readFile(new URL('./koder/kind_koder.txt', import.meta.url), 'utf-8').then(content => content.trim()),
@@ -40,6 +40,9 @@ async function realDependencies(file, ext) {
   if (system[ext] && system[ext].deps) {
     try {
       const { stdout } = await execAsync(system[ext].deps(file));
+      if (stdout == "") {
+        return [];
+      }
       return stdout.trim().split('\n').map(dep => dep.trim() + "." + ext);
     } catch (error) {
       console.error(`Error getting real dependencies: ${error.message}`);
