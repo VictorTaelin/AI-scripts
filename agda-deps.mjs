@@ -23,9 +23,20 @@ function extract_dependencies(file_path, visited = new Set(), all_dependencies =
 }
 
 function process_lines(lines, file_path, visited, all_dependencies) {
+  let multiline_import = '';
   for (const line of lines) {
-    if (is_import_line(line)) {
-      handle_import_line(line, file_path, visited, all_dependencies);
+    if (multiline_import) {
+      multiline_import += ' ' + line.trim();
+      if (line.includes(')')) {
+        handle_import_line(multiline_import, file_path, visited, all_dependencies);
+        multiline_import = '';
+      }
+    } else if (is_import_line(line)) {
+      if (line.includes('(') && !line.includes(')')) {
+        multiline_import = line.trim();
+      } else {
+        handle_import_line(line, file_path, visited, all_dependencies);
+      }
     } else if (is_open_line(line)) {
       handle_open_line(line, file_path, visited, all_dependencies);
     }
@@ -62,7 +73,13 @@ function handle_open_line(line, file_path, visited, all_dependencies) {
 
 function extract_module_name(line) {
   const parts = line.trim().split(/\s+/);
-  return parts[parts.length - 1];
+  let module_name = parts[parts.indexOf('import') + 1];
+  // Remove everything after 'using' keyword
+  const using_index = module_name.indexOf('using');
+  if (using_index !== -1) {
+    module_name = module_name.slice(0, using_index).trim();
+  }
+  return module_name;
 }
 
 function resolve_import(current_file, module_name) {
