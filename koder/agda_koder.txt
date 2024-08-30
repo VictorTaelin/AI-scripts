@@ -130,16 +130,42 @@ zip (Cons x xs) (Cons y ys) = Cons (x , y) (zip xs ys)
 module List.filter where
 
 open import List.Main
+open import Bool.Main
 
 -- Filters a list based on a predicate function
+-- - p: the predicate function to test each element
 -- - xs: the input list
--- - fn: the predicate function to test each element
 -- = a new list containing only elements that satisfy the predicate
-filter : ∀ {A : Set} -> (A -> Bool) -> List A -> List A
-filter fn Nil = Nil
-filter fn (Cons x xs) with fn x
-... | true  = Cons x (filter fn xs)
-... | false = filter fn xs
+filter : ∀ {a} {A : Set a} → (A → Bool) → List A → List A
+filter p []       = []
+filter p (x , xs) with p x
+... | true  = x , filter p xs
+... | false = filter p xs
+```
+
+### List/quicksort.agda
+
+```agda
+module List.quicksort where
+
+open import Bool.Main
+open import Bool.not
+open import List.Main
+open import List.append
+open import List.filter
+open import Nat.Main
+open import Nat.gt
+open import Nat.lt
+
+-- Quicksort algorithm for sorting lists of nats
+-- - xs: the input list to be sorted
+-- = a new list containing all elements from xs in ascending order
+quicksort : List Nat → List Nat
+quicksort []       = []
+quicksort (x , xs) = 
+  let min = filter (λ y → y < x) xs
+      max = filter (λ y → y > x) xs
+  in quicksort min ++ (x , quicksort max)
 ```
 
 ### Tree/Main.agda
