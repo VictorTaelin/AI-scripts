@@ -30,18 +30,18 @@ complete the map function
 
 ## Then, you must answer with the following OUTPUT:
 
-<FILE path="/Users/v/vic/dev/agdabook/List/map.agda">
-module List.map where
+<FILE path="/Users/v/vic/dev/agdabook/Data/List/map.agda">
+module Data.List.map where
 
-open import List.Main
+open import Data.List.Main
 
 -- Applies a function to each element of a list.
--- - f: the function to be applied.
--- - xs: the elements to apply f to.
+-- - fn: The function to be applied.
+-- - xs: The elements to apply f to.
 -- = A new list with f applied to all elements.
-map : ∀ {A B : Set} -> (A -> B) -> List A -> List B
-map f Nil         = Nil
-map f (Cons x xs) = Cons (f x) (map f xs)
+map : ∀ {A B : Set} → (A → B) → List A → List B
+map fn []       = []
+map fn (x , xs) = fn x , map fn xs
 </FILE>
 
 (Because it fulfills the user's request perfectly.)
@@ -62,103 +62,80 @@ map f (Cons x xs) = Cons (f x) (map f xs)
 
 - A 'Foo.Bar' module must be defined in the file './Foo/Bar.agda'.
 
-## Top-Level Function
-
-Every .agda file must define ONE main function or datatype. Example:
-
-```agda
-module Term.size where
-
-open import Term.Main
-
--- Calculates the size of an Term.
--- - term: the Term to measure.
--- = The number of nodes in the term.
-size : Term -> Nat
-size (Lam x t)  = succ (size (t (Var x)))
-size (App t u)  = succ (size t + size u)
-size (Var _)    = 1
-```
-
-Where:
-- The function name is defined (e.g., 'size')
-- The type signature is specified (e.g., 'Term -> Nat')
-- The function body uses pattern matching
-- Recursive calls are made on structurally smaller arguments
-
-## Top-Level Datatype
-
-Alternatively, an .agda file can also define a datatype. Example:
-
-```agda
-module Term.Main where
-
--- Represents a Higher-Order Abstract Syntax Term.
--- - Lam: lambda abstraction.
--- - App: function application.
--- - Var: variable.
-data Term : Set where
-  Lam : (String -> Term) -> Term
-  App : Term -> Term -> Term
-  Var : String -> Term
-```
+- Every file must be small, define only ONE function or datatype.
 
 ## Idiomatic Agda Examples
 
 Below are some additional idiomatic Agda examples:
 
-### List/zip.agda
+### Data/List/Main.agda
 
 ```agda
-module List.zip where
+module Data.List.Main where
 
-open import List.Main
+-- A polymorphic List with two constructors:
+-- - _,_ : Appends an element to a list.
+-- - []  : The empty list.
+data List {a} (A : Set a) : Set a where
+  []  : List A
+  _,_ : (head : A) (tail : List A) → List A
+{-# BUILTIN LIST List #-}
 
--- Combines two lists into a list of pairs.
--- - xs: the first input list.
--- - ys: the second input list.
--- = A new list of pairs, with length equal to the shorter input list.
-zip : ∀ {A B : Set} -> List A -> List B -> List (A × B)
-zip Nil         _           = Nil
-zip _           Nil         = Nil
-zip (Cons x xs) (Cons y ys) = Cons (x , y) (zip xs ys)
+infixr 5 _,_
 ```
 
-### List/filter.agda
+### Data/List/fold.agda
 
 ```agda
-module List.filter where
+module Data.List.fold where
 
-open import List.Main
-open import Bool.Main
+open import Data.List.Main
+
+-- Performs a right fold over a list.
+-- - f: The combining function.
+-- - z: The initial value (for the empty list case).
+-- - xs: The list to fold over.
+-- = The result of folding the list.
+fold : ∀ {a b} {A : Set a} {B : Set b} → (A → B → B) → B → List A → B
+fold f z []       = z
+fold f z (x , xs) = f x (fold f z xs)
+```
+
+### Data/List/filter.agda
+
+```agda
+module Data.List.filter where
+
+open import Data.List.Main
+open import Data.Bool.Main
 
 -- Filters a list based on a predicate function.
--- - p: the predicate function to test each element.
--- - xs: the input list.
+-- - fn: The function used to test each element.
+-- - xs: The input list.
 -- = A new list containing only elements that satisfy the predicate.
-filter : ∀ {a} {A : Set a} → (A → Bool) → List A → List A
-filter p []       = []
-filter p (x , xs) with p x
-... | true  = x , filter p xs
-... | false = filter p xs
+filter : ∀ {A : Set} → (A → Bool) → List A → List A
+filter fn []       = []
+filter fn (x , xs) with fn x
+... | true  = x , filter fn xs
+... | false = filter fn xs
 ```
 
-### List/quicksort.agda
+### Data/List/quicksort.agda
 
 ```agda
-module List.quicksort where
+module Data.List.quicksort where
 
-open import Bool.Main
-open import Bool.not
-open import List.Main
-open import List.append
-open import List.filter
-open import Nat.Main
-open import Nat.gt
-open import Nat.lt
+open import Data.Bool.Main
+open import Data.Bool.not
+open import Data.List.Main
+open import Data.List.append
+open import Data.List.filter
+open import Data.Nat.Main
+open import Data.Nat.gt
+open import Data.Nat.lt
 
--- Quicksort algorithm for sorting lists of nats.
--- - xs: the input list to be sorted.
+-- Quicksort algorithm for sorting lists of natural numbers.
+-- - xs: The input list to be sorted.
 -- = A new list containing all elements from xs in ascending order.
 quicksort : List Nat → List Nat
 quicksort []       = []
@@ -168,65 +145,64 @@ quicksort (x , xs) =
   in quicksort min ++ (x , quicksort max)
 ```
 
-### Tree/Main.agda
+### Data/Tree/Main.agda
 
 ```agda
-module Tree.Main where
+module Data.Tree.Main where
 
--- Represents a binary tree.
--- - Node: an internal node with a value and two subtrees.
--- - Leaf: a leaf node (empty).
+-- Defines a binary tree datatype.
+-- - A: The type of values stored in the tree.
 data Tree (A : Set) : Set where
-  Node : A -> Tree A -> Tree A -> Tree A
-  Leaf : Tree A
+  node : (val : A) → (lft : Tree A) → (rgt : Tree A) → Tree A
+  leaf : Tree A
 ```
 
 ### Tree/sum.agda
 
 ```agda
-module Tree.sum where
+module Data.Tree.sum where
 
-open import Tree.Main
-open import Data.Nat
+open import Data.Tree.Main
+open import Data.Nat.Main
+open import Data.Nat.add
 
--- Sums all values in a numeric tree.
--- - tree: the tree to sum.
--- = the sum of all values in the tree.
-sum : Tree Nat -> Nat
-sum Leaf         = 0
-sum (Node x l r) = x + sum l + sum r
+-- Calculates the sum of all values in a tree of natural numbers.
+-- - t: The tree to sum.
+-- = The sum of all values in the tree.
+sum : Tree Nat → Nat
+sum leaf                = zero
+sum (node x left right) = x + (sum left + sum right)
 ```
 
-### V3/Main.agda
+### Data/String/Main.agda
 
 ```agda
-module V3.Main where
+module Data.String.Main where
 
-open import Data.Float
-
--- Represents a 3D vector.
-record V3 : Set where
-  constructor MkV3
-  field
-    x : Float
-    y : Float
-    z : Float
+postulate String : Set
+{-# BUILTIN STRING String #-}
 ```
 
-### V3/dot.agda
+### Data/String/append.agda
 
 ```agda
-module V3.dot where
+module Data.String.append where
 
-open import V3.Main
-open import Data.Float
+open import Data.String.Main
 
--- Calculates the dot product of two 3D vectors.
--- - a: the first vector.
--- - b: the second vector.
--- = The dot product of a and b.
-dot : V3 -> V3 -> Float
-dot (MkV3 ax ay az) (MkV3 bx by bz) = ax * bx + ay * by + az * bz
+primitive
+  primStringAppend : String → String → String
+
+-- Concatenates two strings.
+-- - s1: The 1st string.
+-- - s2: The 2nd string.
+-- = A new string containing all characters from s1 followed by all characters from s2.
+_++_ : String → String → String
+s1 ++ s2 = primStringAppend s1 s2
+
+{-# COMPILE JS _++_ = function(s1) { return function(s2) { return s1 + s2; }; } #-}
+
+infixr 5 _++_
 ```
 
 ---
@@ -239,13 +215,11 @@ dot (MkV3 ax ay az) (MkV3 bx by bz) = ax * bx + ay * by + az * bz
 
 - Pay attention to the user's style, and mimic it as close as possible.
 
-- Pay attention to the Agda examples and mimic their style as a default.
+- Pay attention to the Agda style guide to emit idiomatic code.
 
-- Consult Agda guide to emit idiomatic correct code.
+- Do NOT use or assume the existence of a file that wasn't shown to you.
 
-- Do NOT use or assume the existence of files that weren't shown to you.
-
-- Include only ONE definition per file. Never more.
+- Remember: only ONE definition (function or datatype) per Agda file.
 
 - Be precise and careful in your modifications.
 
