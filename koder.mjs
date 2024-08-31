@@ -208,8 +208,9 @@ async function main() {
   ].join('\n').trim();
 
   // Write a .prompt file with the system + aiInput strings
-  await fs.writeFile('.koder', system[ext].koder + '\n\n' + aiInput, 'utf-8');
-  
+  await fs.mkdir(path.join(os.homedir(), '.ai'), { recursive: true });
+  await fs.writeFile(path.join(os.homedir(), '.ai', '.koder'), system[ext].koder + '\n\n' + aiInput, 'utf-8');
+
   // Call the AI model
   let res = await ask(aiInput, { system: system[ext].koder, model, system_cacheable: true });
   console.log("\n");
@@ -236,7 +237,7 @@ async function main() {
 
     try {
       // Create backup directory if it doesn't exist
-      const backupDir = path.join(currentDir, '.backup');
+      const backupDir = path.join(os.homedir(), '.ai', '.backup');
       await fs.mkdir(backupDir, { recursive: true });
 
       // Create backup file path

@@ -16,10 +16,10 @@ You must answer with one or more <FILE/> tags, including files to be overwritten
 
 ## Suppose you're given the following INPUT:
 
-<FILE path="/Users/v/vic/dev/agdabook/List/Main.agda">
+<FILE path="/Users/v/vic/dev/agdabook/Data/List/Type.agda">
 module List.map where
 
-open import List.Main
+open import Data.List.Type
 
 ?
 </FILE>
@@ -33,7 +33,7 @@ complete the map function
 <FILE path="/Users/v/vic/dev/agdabook/Data/List/map.agda">
 module Data.List.map where
 
-open import Data.List.Main
+open import Data.List.Type
 
 -- Applies a function to each element of a list.
 -- - fn: The function to be applied.
@@ -68,10 +68,10 @@ map fn (x , xs) = fn x , map fn xs
 
 Below are some additional idiomatic Agda examples:
 
-### Data/List/Main.agda
+### Data/List/Type.agda
 
 ```agda
-module Data.List.Main where
+module Data.List.Type where
 
 -- A polymorphic List with two constructors:
 -- - _,_ : Appends an element to a list.
@@ -89,7 +89,7 @@ infixr 5 _,_
 ```agda
 module Data.List.fold where
 
-open import Data.List.Main
+open import Data.List.Type
 
 -- Performs a right fold over a list.
 -- - f: The combining function.
@@ -106,8 +106,8 @@ fold f z (x , xs) = f x (fold f z xs)
 ```agda
 module Data.List.filter where
 
-open import Data.List.Main
-open import Data.Bool.Main
+open import Data.List.Type
+open import Data.Bool.Type
 
 -- Filters a list based on a predicate function.
 -- - fn: The function used to test each element.
@@ -125,12 +125,12 @@ filter fn (x , xs) with fn x
 ```agda
 module Data.List.quicksort where
 
-open import Data.Bool.Main
+open import Data.Bool.Type
 open import Data.Bool.not
-open import Data.List.Main
+open import Data.List.Type
 open import Data.List.append
 open import Data.List.filter
-open import Data.Nat.Main
+open import Data.Nat.Type
 open import Data.Nat.gt
 open import Data.Nat.lt
 
@@ -145,10 +145,10 @@ quicksort (x , xs) =
   in quicksort min ++ (x , quicksort max)
 ```
 
-### Data/Tree/Main.agda
+### Data/Tree/Type.agda
 
 ```agda
-module Data.Tree.Main where
+module Data.Tree.Type where
 
 -- Defines a binary tree datatype.
 -- - A: The type of values stored in the tree.
@@ -162,8 +162,8 @@ data Tree (A : Set) : Set where
 ```agda
 module Data.Tree.sum where
 
-open import Data.Tree.Main
-open import Data.Nat.Main
+open import Data.Tree.Type
+open import Data.Nat.Type
 open import Data.Nat.add
 
 -- Calculates the sum of all values in a tree of natural numbers.
@@ -174,10 +174,10 @@ sum leaf                = zero
 sum (node x left right) = x + (sum left + sum right)
 ```
 
-### Data/String/Main.agda
+### Data/String/Type.agda
 
 ```agda
-module Data.String.Main where
+module Data.String.Type where
 
 postulate String : Set
 {-# BUILTIN STRING String #-}
@@ -188,7 +188,7 @@ postulate String : Set
 ```agda
 module Data.String.append where
 
-open import Data.String.Main
+open import Data.String.Type
 
 primitive
   primStringAppend : String → String → String

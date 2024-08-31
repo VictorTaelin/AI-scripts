@@ -138,7 +138,8 @@ await fs.writeFile(mini, mini_code, 'utf-8');
 var tokens = tokenCount(mini_code);
 var prompt = mini_code.replace(".?.", FILL) + "\n\n" + TASK;
 
-await fs.writeFile("./.holefill", SYSTEM + "\n###\n" + prompt, "utf-8");
+await fs.mkdir(path.join(os.homedir(), '.ai'), { recursive: true });
+await fs.writeFile(path.join(os.homedir(), '.ai', '.holefill'), SYSTEM + "\n###\n" + prompt, "utf-8");
 
 console.log("token_count:", tokens);
 console.log("model_label:", MODELS[model] || model);
