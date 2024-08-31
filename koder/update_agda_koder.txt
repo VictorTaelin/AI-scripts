@@ -1,0 +1,74 @@
+# Guide to Update agda_koder.txt
+
+## What is agda_koder.txt?
+agda_koder.txt is a guide for an AI that assists with coding in Agda. It contains instructions, examples, and guidelines for the AI to follow when helping users with Agda programming tasks.
+
+## Importance of Syncing Examples
+The examples in agda_koder.txt must be kept in sync with the canonical Agda files. This ensures that the AI provides up-to-date and accurate assistance based on the current state of the Agda codebase.
+
+## Location of Canonical Agda Files
+The canonical Agda files are located in the ~/vic/dev/monobook directory and its subdirectories. These files represent the most current and correct implementations of Agda code for the project.
+
+## Instructions for Updating agda_koder.txt
+
+1. Review the current agda_koder.txt file to understand its structure and content.
+
+2. Examine the Agda files in ~/vic/dev/monobook to identify any changes or new implementations.
+
+3. Update the examples in agda_koder.txt to match the current state of the canonical Agda files. Focus on the following sections:
+   - GUIDE FOR THE AGDA LANGUAGE
+   - Idiomatic Agda Examples
+
+4. Ensure that the updated examples follow the same style and format as the original guide.
+
+5. Do not modify any other content in agda_koder.txt. Only update the examples to reflect the current state of the Agda files.
+
+6. After updating the examples, review the entire agda_koder.txt to ensure consistency and accuracy.
+
+7. Save the updated agda_koder.txt file.
+
+## Specific Example of Updating
+
+Let's take the List module as an example:
+
+1. Locate the canonical Agda file:
+   ~/vic/dev/monobook/Data/List/Type.agda
+
+2. Open and review the content of this file.
+
+3. Find the corresponding example in agda_koder.txt. It might look like this:
+
+   ### Data/List/Type.agda
+
+   ```agda
+   module Data.List.Type where
+
+   data List {a} (A : Set a) : Set a where
+     []  : List A
+     _,_ : (head : A) (tail : List A) → List A
+   {-# BUILTIN LIST List #-}
+
+   infixr 5 _,_
+   ```
+
+4. Compare the content of the canonical file with the example in agda_koder.txt.
+
+5. If there are any differences, update the example in agda_koder.txt to match the canonical file exactly.
+
+6. Repeat this process for all examples in the guide, ensuring each one matches its corresponding canonical file in ~/vic/dev/monobook.
+
+Remember: The goal is to keep the examples in sync with the canonical Agda files while preserving the overall structure and content of the guide.
+
+# TASK
+
+Let's now update agda_koder.txt in 3 steps.
+
+- 1: read agda_koder.txt (i.e., perform 'cat agda_koder.txt').
+
+- 2: read ALL relevant canonical Agda files (using 'cat' for each example used inside agda_koder.txt').
+
+- 3. rewrite the ENTIRE agda_koder.txt in order to update the examples. don't change anything else.
+
+Remember: use an 'sh' block to overwrite agda_koder.txt from the terminal, completing the task.
+
+Let's do it now.

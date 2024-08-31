@@ -40,8 +40,8 @@ open import Data.List.Type
 -- - xs: The elements to apply f to.
 -- = A new list with f applied to all elements.
 map : ∀ {A B : Set} → (A → B) → List A → List B
-map fn []       = []
-map fn (x , xs) = fn x , map fn xs
+map fn []        = []
+map fn (x :: xs) = fn x :: map fn xs
 </FILE>
 
 (Because it fulfills the user's request perfectly.)
@@ -74,14 +74,14 @@ Below are some additional idiomatic Agda examples:
 module Data.List.Type where
 
 -- A polymorphic List with two constructors:
--- - _,_ : Appends an element to a list.
+-- - _::_ : Appends an element to a list.
 -- - []  : The empty list.
 data List {a} (A : Set a) : Set a where
-  []  : List A
-  _,_ : (head : A) (tail : List A) → List A
+  []   : List A
+  _::_ : (head : A) (tail : List A) → List A
 {-# BUILTIN LIST List #-}
 
-infixr 5 _,_
+infixr 5 _::_
 ```
 
 ### Data/List/fold.agda
@@ -97,8 +97,8 @@ open import Data.List.Type
 -- - xs: The list to fold over.
 -- = The result of folding the list.
 fold : ∀ {a b} {A : Set a} {B : Set b} → (A → B → B) → B → List A → B
-fold f z []       = z
-fold f z (x , xs) = f x (fold f z xs)
+fold f z []        = z
+fold f z (x :: xs) = f x (fold f z xs)
 ```
 
 ### Data/List/filter.agda
@@ -115,9 +115,9 @@ open import Data.Bool.Type
 -- = A new list containing only elements that satisfy the predicate.
 filter : ∀ {A : Set} → (A → Bool) → List A → List A
 filter fn []       = []
-filter fn (x , xs) with fn x
-... | true  = x , filter fn xs
-... | false = filter fn xs
+filter fn (x :: xs) with fn x
+... | True  = x :: filter fn xs
+... | False = filter fn xs
 ```
 
 ### Data/List/quicksort.agda
@@ -138,11 +138,11 @@ open import Data.Nat.lt
 -- - xs: The input list to be sorted.
 -- = A new list containing all elements from xs in ascending order.
 quicksort : List Nat → List Nat
-quicksort []       = []
-quicksort (x , xs) = 
+quicksort []        = []
+quicksort (x :: xs) = 
   let min = filter (λ y → y < x) xs
       max = filter (λ y → y > x) xs
-  in quicksort min ++ (x , quicksort max)
+  in quicksort min ++ (x :: quicksort max)
 ```
 
 ### Data/Tree/Type.agda
@@ -153,8 +153,8 @@ module Data.Tree.Type where
 -- Defines a binary tree datatype.
 -- - A: The type of values stored in the tree.
 data Tree (A : Set) : Set where
-  node : (val : A) → (lft : Tree A) → (rgt : Tree A) → Tree A
-  leaf : Tree A
+  Node : (val : A) → (lft : Tree A) → (rgt : Tree A) → Tree A
+  Leaf : Tree A
 ```
 
 ### Tree/sum.agda
@@ -170,8 +170,8 @@ open import Data.Nat.add
 -- - t: The tree to sum.
 -- = The sum of all values in the tree.
 sum : Tree Nat → Nat
-sum leaf                = zero
-sum (node x left right) = x + (sum left + sum right)
+sum Leaf                = Zero
+sum (Node x left right) = x + (sum left + sum right)
 ```
 
 ### Data/String/Type.agda
