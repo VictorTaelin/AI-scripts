@@ -200,6 +200,8 @@ Done.
 
 - REMEMBER: you are NOT limited to system tasks or shell commands. You must answer ANY question or request by the user.
 
+- When asked to write a file, remember to use a sh block for it to take effect.
+
 - The system shell in use is: ${await get_shell()}.`;
 
 // Create readline interface for user input/output
@@ -264,7 +266,7 @@ async function main() {
 
       appendToHistory('USER', userMessage);
 
-      const assistantMessage = await ask(fullMessage, { system: SYSTEM_PROMPT, model: MODEL, max_tokens: 8192, system_cacheable: true });  
+      const assistantMessage = await ask(fullMessage, { system: SYSTEM_PROMPT, model: MODEL, max_tokens: 8192, cache: true });  
       console.log(); 
       
       appendToHistory('ChatSH', assistantMessage);
