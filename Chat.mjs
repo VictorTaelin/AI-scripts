@@ -60,7 +60,7 @@ export function openAIChat(clientClass) {
 export function anthropicChat(clientClass) {
   const messages = [];
 
-  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 8192, stream = true, cache = false }) {
+  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 4096, stream = true, system_cacheable = false }) {
     model = MODELS[model] || model;
     const client = new clientClass({ 
       apiKey: await getToken(clientClass.name.toLowerCase()),
@@ -69,32 +69,22 @@ export function anthropicChat(clientClass) {
       }
     });
 
-    let cachedMessages = [];
-    if (cache) {
-      cachedMessages = messages.map(msg => ({
-        role: msg.role,
-        content: [{ type: "text", text: msg.content, cache_control: { type: "ephemeral" } }]
-      }));
-    } else {
-      cachedMessages = messages;
-    }
+    messages.push({ role: "user", content: userMessage });
 
-    cachedMessages.push({ role: "user", content: [{ type: "text", text: userMessage, cache_control: cache ? { type: "ephemeral" } : undefined }] });
+    const cached_system = [{ type: "text", text: system, cache_control: { type: "ephemeral" } }];
 
-    const cachedSystem = cache ? [{ type: "text", text: system, cache_control: { type: "ephemeral" } }] : system;
-
-    const params = { system: cachedSystem, model, temperature, max_tokens, stream };
+    let prompt_system = system_cacheable ? cached_system : system;
+    const params = { system: prompt_system, model, temperature, max_tokens, stream };
 
     let result = "";
     const response = client.messages
-      .stream({ ...params, messages: cachedMessages })
+      .stream({ ...params, messages })
       .on('text', (text) => {
         process.stdout.write(text);
         result += text;
       });
     await response.finalMessage();
 
-    messages.push({ role: 'user', content: userMessage });
     messages.push({ role: 'assistant', content: result });
 
     return result;

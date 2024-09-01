@@ -103,7 +103,7 @@ async function predictDependencies(file, ext, context, fileContent, request) {
   ].join('\n').trim();
 
   const ask = chat(DEPS_MODEL);
-  const res = await ask(aiInput, { system: system[ext].guess, model: DEPS_MODEL, cache: true });
+  const res = await ask(aiInput, { system: system[ext].guess, model: DEPS_MODEL, system_cacheable: true });
   console.log("");
   console.log("");
   //console.log(aiInput);
