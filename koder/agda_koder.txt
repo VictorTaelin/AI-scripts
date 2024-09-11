@@ -58,7 +58,7 @@ map fn (x :: xs) = fn x :: map fn xs
 
 - Avoid mixfix operators and Unicode symbols as much as possible.
 
-- Use CamelCase for types and underscore_case for functions and variables.
+- Use CamelCase for types and hyphen-case for functions and variables.
 
 - A 'Foo.Bar' module must be defined in the file './Foo/Bar.agda'.
 
