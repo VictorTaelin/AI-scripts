@@ -54,7 +54,7 @@ export function openAIChat(clientClass) {
       max_tokens = undefined;
     }
 
-    if (messages.length === 0) {
+    if (messages.length === 0 && system) {
       // FIXME: update when OAI's o1 API flexibilizes
       if (is_o1) {
         messages.push({ role: "user", content: system });
@@ -75,6 +75,7 @@ export function openAIChat(clientClass) {
     };
 
     let result = "";
+    console.log(params);
     const response = await client.chat.completions.create(params);
     if (stream) {
       for await (const chunk of response) {
@@ -207,7 +208,7 @@ export function openRouterChat(clientClass) {
       },
     });
 
-    if (messages.length === 0) {
+    if (messages.length === 0 && system) {
       messages.push({ role: "system", content: system });
     }
 
