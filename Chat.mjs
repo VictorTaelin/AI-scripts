@@ -127,8 +127,6 @@ export function anthropicChat(clientClass) {
 
     messages.push({ role: 'assistant', content: result });
 
-    console.log("->", result);
-
     return result;
   }
 
