@@ -75,7 +75,6 @@ export function openAIChat(clientClass) {
     };
 
     let result = "";
-    console.log(params);
     const response = await client.chat.completions.create(params);
     if (stream) {
       for await (const chunk of response) {
