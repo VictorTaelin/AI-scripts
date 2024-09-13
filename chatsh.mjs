@@ -8,7 +8,7 @@ import { chat, MODELS } from './Chat.mjs';
 const execAsync = promisify(exec);
 
 // Default model if not specified
-const DEFAULT_MODEL = "s";  
+const DEFAULT_MODEL = "c";  
 // Get model from environment variable or use default
 const MODEL = process.argv[2] || DEFAULT_MODEL;
 

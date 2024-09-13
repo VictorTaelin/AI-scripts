@@ -104,7 +104,7 @@ const TASK   = "### TASK: complete the "+FILL+" part of the file above. Write ON
 
 var file  = process.argv[2];
 var mini  = process.argv[3];
-var model = process.argv[4] || "s";
+var model = process.argv[4] || "c";
 var ask   = chat(model);
 
 if (!file) {
@@ -123,7 +123,7 @@ var regex = /\/\/\.\/(.*?)\/\//g;
 var match;
 while ((match = regex.exec(mini_code)) !== null) {
   var import_path = path.resolve(path.dirname(file), match[1]);
-  if (await fs.stat(import_path).then(() => true).catch(() => false)) {
+  if (await fs.stat(import_path).then(() => true).catch((e) => false)) {
     var import_text = await fs.readFile(import_path, 'utf-8');
     console.log("import_file:", match[0]);
     mini_code = mini_code.replace(match[0], '\n' + import_text);
@@ -151,7 +151,9 @@ if (mini_code.indexOf(".?.") === -1) {
 
 await savePromptHistory(SYSTEM, prompt, reply, MODELS[model] || model);
 
-var reply = (await ask(prompt, {system: SYSTEM, model, max_tokens: 8192})) + "</COMPLETION>";
+var reply = (await ask(prompt, {system: SYSTEM, model, max_tokens: 8192}));
+var reply = reply.indexOf("<COMPLETION>")  === -1 ? "<COMPLETION>" + reply  : reply;
+var reply = reply.indexOf("</COMPLETION>") === -1 ? reply + "</COMPLETION>" : reply;
 var match = reply.match(/<COMPLETION>([\s\S]*?)<\/COMPLETION>/);
 if (match) {
   file_code = file_code.replace(".?.", match[1]);

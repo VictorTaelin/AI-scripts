@@ -1,51 +1,91 @@
+//./openrouter_api.txt//
+
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { OpenAI } from "openai";
 import { Anthropic } from '@anthropic-ai/sdk';
-import { Groq } from "groq-sdk";
+import { OpenRouter } from "@openrouter/ai-sdk-provider";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { encode } from "gpt-tokenizer/esm/model/davinci-codex"; // tokenizer
 
 // Map of model shortcodes to full model names
 export const MODELS = {
+  // GPT by OpenAI
+  gm: 'gpt-4o-mini',
   g: 'gpt-4o-2024-08-06',
-  //g: 'chatgpt-4o-latest', 
   G: 'gpt-4-32k-0314',
-  h: 'claude-3-haiku-20240307',
-  s: 'claude-3-5-sonnet-20240620',
-  o: 'claude-3-opus-20240229',
-  l: 'llama-3.1-8b-instant',
-  L: 'llama-3.1-70b-versatile',
+
+  // o1 by OpenAI
+  om: 'o1-mini',
+  o: 'o1-preview',
+
+  // Claude by Anthropic
+  cm: 'claude-3-haiku-20240307',
+  c: 'claude-3-5-sonnet-20240620',
+  C: 'claude-3-opus-20240229',
+
+  // Llama by Meta
+  lm: 'meta-llama/llama-3.1-8b-instruct',
+  l: 'meta-llama/llama-3.1-70b-instruct',
+  L: 'meta-llama/llama-3.1-405b-instruct',
+
+  // Gemini by Google
   i: 'gemini-1.5-flash-latest',
-  //I: 'gemini-1.5-pro-latest'
   I: 'gemini-1.5-pro-exp-0801'
-  // openrouter models are not included here
 };
 
 // Factory function to create a stateful OpenAI chat
 export function openAIChat(clientClass) {
   const messages = [];
 
-  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 4096, stream = true }) {
+  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 8192, stream = true }) {
     model = MODELS[model] || model;
     const client = new clientClass({ apiKey: await getToken(clientClass.name.toLowerCase()) });
 
+    const is_o1 = model.startsWith("o1");
+
+    // FIXME: update when OAI's o1 API flexibilizes
+    var max_completion_tokens = undefined;
+    if (is_o1) {
+      stream = false;
+      temperature = 1;
+      max_completion_tokens = max_tokens;
+      max_tokens = undefined;
+    }
+
     if (messages.length === 0) {
-      messages.push({ role: "system", content: system });
+      // FIXME: update when OAI's o1 API flexibilizes
+      if (is_o1) {
+        messages.push({ role: "user", content: system });
+      } else {
+        messages.push({ role: "system", content: system });
+      }
     }
 
     messages.push({ role: "user", content: userMessage });
 
-    const params = { messages, model, temperature, max_tokens, stream };
+    const params = {
+      messages,
+      model,
+      temperature,
+      max_tokens,
+      max_completion_tokens,
+      stream,
+    };
 
     let result = "";
     const response = await client.chat.completions.create(params);
-
-    for await (const chunk of response) {
-      const text = chunk.choices[0]?.delta?.content || "";
+    if (stream) {
+      for await (const chunk of response) {
+        const text = chunk.choices[0]?.delta?.content || "";
+        process.stdout.write(text);
+        result += text;
+      }
+    } else {
+      const text = response.choices[0]?.message?.content || "";
       process.stdout.write(text);
-      result += text;
+      result = text;
     }
 
     messages.push({ role: 'assistant', content: result });
@@ -60,7 +100,7 @@ export function openAIChat(clientClass) {
 export function anthropicChat(clientClass) {
   const messages = [];
 
-  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 4096, stream = true, system_cacheable = false }) {
+  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 8192, stream = true, system_cacheable = false }) {
     model = MODELS[model] || model;
     const client = new clientClass({ 
       apiKey: await getToken(clientClass.name.toLowerCase()),
@@ -86,6 +126,8 @@ export function anthropicChat(clientClass) {
     await response.finalMessage();
 
     messages.push({ role: 'assistant', content: result });
+
+    console.log("->", result);
 
     return result;
   }
@@ -153,16 +195,18 @@ export function geminiChat(clientClass) {
   return ask;
 }
 
-// Factory function to create a stateful Openrouter chat
+// Factory function to create a stateful OpenRouter chat
 export function openRouterChat(clientClass) {
   const messages = [];
 
-  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 4096, stream = true }) {
-
-    [, model] = model.split(':');
-    const client = new clientClass({
+  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 8192, stream = true }) {
+    model = MODELS[model] || model;
+    const openai = new OpenAI({
       baseURL: "https://openrouter.ai/api/v1",
       apiKey: await getToken('openrouter'),
+      defaultHeaders: {
+        "HTTP-Referer": "https://github.com/OpenRouterTeam/openrouter-examples",
+      },
     });
 
     if (messages.length === 0) {
@@ -171,15 +215,26 @@ export function openRouterChat(clientClass) {
 
     messages.push({ role: "user", content: userMessage });
 
-    const params = { messages, model, temperature, max_tokens, stream };
+    const params = {
+      messages,
+      model,
+      temperature,
+      max_tokens,
+      stream,
+    };
 
     let result = "";
-    const response = await client.chat.completions.create(params);
-
-    for await (const chunk of response) {
-      const text = chunk.choices[0]?.delta?.content || "";
+    const response = await openai.chat.completions.create(params);
+    if (stream) {
+      for await (const chunk of response) {
+        const text = chunk.choices[0]?.delta?.content || "";
+        process.stdout.write(text);
+        result += text;
+      }
+    } else {
+      const text = response.choices[0]?.message?.content || "";
       process.stdout.write(text);
-      result += text;
+      result = text;
     }
 
     messages.push({ role: 'assistant', content: result });
@@ -195,16 +250,16 @@ export function chat(model) {
   model = MODELS[model] || model;
   if (model.startsWith('gpt')) {
     return openAIChat(OpenAI);
+  } else if (model.startsWith('o1')) {
+    return openAIChat(OpenAI);
   } else if (model.startsWith('chatgpt')) {
     return openAIChat(OpenAI);
   } else if (model.startsWith('claude')) {
     return anthropicChat(Anthropic);
-  } else if (model.startsWith('llama')) {
-    return openAIChat(Groq);
+  } else if (model.startsWith('meta')) {
+    return openRouterChat(OpenRouter);
   } else if (model.startsWith('gemini')) {
     return geminiChat(GoogleGenerativeAI);
-  } else if (model.startsWith('openrouter:')) {
-    return openRouterChat(OpenAI);
   } else {
     throw new Error(`Unsupported model: ${model}`);
   }
