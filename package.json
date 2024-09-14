@@ -11,6 +11,7 @@
     "refactor": "refactor.mjs",
     "kindcoder": "kindcoder.mjs",
     "aiemu": "aiemu.mjs",
+    "aieval": "aieval.mjs",
     "ts-deps": "ts-deps.mjs",
     "agda-deps": "agda-deps.mjs",
     "koder": "koder.mjs"
