@@ -5,99 +5,6 @@ import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 
-/*
-const system = `
-You are a HOLE FILLER. You are provided with a file containing holes, formatted
-as '{{HOLE_NAME}}'. Your TASK is to complete with a string to replace this hole
-with, inside a <COMPLETION/> XML tag, including context-aware indentation, if
-needed. All completions MUST be truthful, accurate, well-written and correct.
-
-## EXAMPLE QUERY:
-
-<QUERY>
-function sum_evens(lim) {
-  var sum = 0;
-  for (var i = 0; i < lim; ++i) {
-    {{FILL_HERE}}
-  }
-  return sum;
-}
-</QUERY>
-
-## CORRECT COMPLETION
-
-<COMPLETION>if (i % 2 === 0) {
-      sum += i;
-    }</COMPLETION>
-
-## EXAMPLE QUERY:
-
-<QUERY>
-def sum_list(lst):
-  total = 0
-  for x in lst:
-  {{FILL_HERE}}
-  return total
-
-print sum_list([1, 2, 3])
-</QUERY>
-
-## CORRECT COMPLETION:
-
-<COMPLETION>  total += x</COMPLETION>
-
-## EXAMPLE QUERY:
-
-<QUERY>
-// data Tree a = Node (Tree a) (Tree a) | Leaf a
-
-// sum :: Tree Int -> Int
-// sum (Node lft rgt) = sum lft + sum rgt
-// sum (Leaf val)     = val
-
-// convert to TypeScript:
-{{FILL_HERE}}
-</QUERY>
-
-## CORRECT COMPLETION:
-
-<COMPLETION>type Tree<T>
-  = {$:"Node", lft: Tree<T>, rgt: Tree<T>}
-  | {$:"Leaf", val: T};
-
-function sum(tree: Tree<number>): number {
-  switch (tree.$) {
-    case "Node":
-      return sum(tree.lft) + sum(tree.rgt);
-    case "Leaf":
-      return tree.val;
-  }
-}</COMPLETION>
-
-## EXAMPLE QUERY:
-
-The 2nd {{FILL_HERE}} is Saturn.
-
-## CORRECT COMPLETION:
-
-<COMPLETION>gas giant</COMPLETION>
-
-## EXAMPLE QUERY:
-
-function hypothenuse(a, b) {
-  return Math.sqrt({{FILL_HERE}}b ** 2);
-}
-
-## CORRECT COMPLETION:
-
-<COMPLETION>a ** 2 + </COMPLETION>
-
-## IMPORTANT:
-
-- Answer ONLY with the <COMPLETION/> block. Do NOT include anything outside it.
-`;
-*/
-
 const SYSTEM = `You're a code completion assistant.`;
 const FILL   = "{:FILL_HERE:}";
 const TASK   = "### TASK: complete the "+FILL+" part of the file above. Write ONLY the needed text to replace "+FILL+" by the correct completion, including correct spacing and indentation. Include the answer inside a <COMPLETION></COMPLETION> tag.";
@@ -156,7 +63,7 @@ var reply = reply.indexOf("<COMPLETION>")  === -1 ? "<COMPLETION>" + reply  : re
 var reply = reply.indexOf("</COMPLETION>") === -1 ? reply + "</COMPLETION>" : reply;
 var match = reply.match(/<COMPLETION>([\s\S]*?)<\/COMPLETION>/);
 if (match) {
-  file_code = file_code.replace(".?.", match[1]);
+  file_code = file_code.replace(".?.", match[1].replace(/\$/g, '$$$$'));
 } else {
   console.error("Error: Could not find <COMPLETION> tags in the AI's response.");
   process.exit(1);
