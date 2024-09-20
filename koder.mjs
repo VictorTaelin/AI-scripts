@@ -10,18 +10,16 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
-const DEPS_MODEL = "claude-3-5-sonnet-20240620"; // default model for dependency guessing
-const CODE_MODEL = "claude-3-5-sonnet-20240620"; // default model for coding
-
-//const DEPS_MODEL = "g"; // default model for dependency guessing
-//const CODE_MODEL = "g"; // default model for coding
+const DEPS_MODEL  = "claude-3-5-sonnet-20240620"; // default model for dependency guessing
+const DRAFT_MODEL = "claude-3-5-sonnet-20240620"; // default model for drafting
+const CODE_MODEL  = "claude-3-5-sonnet-20240620"; // default model for coding
 
 // Define a structured object for the system definitions
 const system = {
   ts: {
     koder: await fs.readFile(new URL('./koder/ts_koder.txt', import.meta.url), 'utf-8').then(content => content.trim()),
     guess: await fs.readFile(new URL('./koder/ts_guess.txt', import.meta.url), 'utf-8').then(content => content.trim()),
-    deps: null,
+    deps: name => "ts-deps " + name,
   },
   agda: {
     koder: await fs.readFile(new URL('./koder/agda_koder.txt', import.meta.url), 'utf-8').then(content => content.trim()),
@@ -43,7 +41,14 @@ async function realDependencies(file, ext) {
       if (stdout == "") {
         return [];
       }
-      return stdout.trim().split('\n').map(dep => dep.trim() + "." + ext);
+      return stdout.trim().split('\n').map(dep => {
+        // Convert file path to module name
+        const moduleName = dep
+          .replace(new RegExp(`\\.${ext}$`), '') // Remove file extension
+          .split('/') // Split path into components
+          .join('.'); // Join components with dots
+        return moduleName + "." + ext; // Add extension back
+      });
     } catch (error) {
       console.error(`Error getting real dependencies: ${error.message}`);
       return [];
@@ -94,9 +99,6 @@ async function predictDependencies(file, ext, context, fileContent, request) {
     '<TREE>',
     defsTree.trim(),
     '</TREE>',
-    //'<CONTEXT>',
-    //context,
-    //'</CONTEXT>',
     '<REQUEST>',
     request,
     '</REQUEST>'
@@ -104,12 +106,7 @@ async function predictDependencies(file, ext, context, fileContent, request) {
 
   const ask = chat(DEPS_MODEL);
   const res = await ask(aiInput, { system: system[ext].guess, model: DEPS_MODEL, system_cacheable: true });
-  console.log("");
-  console.log("");
-  //console.log(aiInput);
-  //console.log(res);
-  //process.exit();
-  //console.clear();
+  console.log("\n");
 
   const dependenciesMatch = res.match(/<DEPENDENCIES>([\s\S]*)<\/DEPENDENCIES>/);
   if (!dependenciesMatch) {
@@ -118,6 +115,12 @@ async function predictDependencies(file, ext, context, fileContent, request) {
   }
 
   return dependenciesMatch[1].trim().split('\n').map(dep => dep.trim());
+}
+
+// Function to extract FILE tags from AI output
+function extractFileTags(output) {
+  const fileMatches = output.matchAll(/<FILE path="([^"]+)">([\s\S]*?)<\/FILE>/g);
+  return Array.from(fileMatches, match => ({path: match[1], content: match[2].trim()}));
 }
 
 // Main function to handle the refactoring process
@@ -159,7 +162,7 @@ async function main() {
     fileContent = ["(empty file)"].join('\n');
   }
 
-  // Get preducted dependencies
+  // Get predicted dependencies
   var pred = await predictDependencies(file, ext, context, fileContent, request);
   var pred = pred.map(dep => dep.replace(/\/_$/, ''));
 
@@ -188,11 +191,6 @@ async function main() {
     }
   }));
 
-  //console.log(pred);
-  //console.log(deps);
-  //console.log(depFiles);
-  //process.exit();
-
   // Prepare AI input
   let aiInput = [
     ...depFiles,
@@ -211,13 +209,23 @@ async function main() {
   await fs.mkdir(path.join(os.homedir(), '.ai'), { recursive: true });
   await fs.writeFile(path.join(os.homedir(), '.ai', '.koder'), system[ext].koder + '\n\n' + aiInput, 'utf-8');
 
-  // Call the AI model
-  let res = await ask(aiInput, { system: system[ext].koder, model, system_cacheable: true });
-  console.log("\n");
+  // Call the AI model for the draft
+  let draftAsk = chat(DRAFT_MODEL);
+  let draftRes = await draftAsk(aiInput, { system: system[ext].koder, model: DRAFT_MODEL, system_cacheable: true });
+  console.log("\nDraft generated.\n");
 
-  // Extract all FILE tags from AI output
-  let fileMatches = res.matchAll(/<FILE path="([^"]+)">([\s\S]*?)<\/FILE>/g);
-  let filesToWrite = Array.from(fileMatches, match => ({path: match[1], content: match[2].trim()}));
+  // Extract FILE tags from draft output
+  let draftFiles = extractFileTags(draftRes);
+
+  // Prepare input for final version
+  let finalInput = aiInput + '\n\nDRAFT:\n' + draftRes + '\n\nPlease review the draft above and provide a final version, correcting any errors or oversights:';
+
+  // Call the AI model for the final version
+  let finalRes = await ask(finalInput, { system: system[ext].koder, model, system_cacheable: true });
+  console.log("\nFinal version generated.\n");
+
+  // Extract all FILE tags from final AI output
+  let filesToWrite = extractFileTags(finalRes);
 
   if (filesToWrite.length === 0) {
     console.error("Error: AI output does not contain any valid FILE tags.");

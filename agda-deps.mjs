@@ -2,7 +2,7 @@
 
 // This script analyzes Agda files to extract and list their dependencies.
 // It takes a single Agda file as input and outputs a list of all its dependencies.
-// If a dependency is resolved, it returns the absolute path. Otherwise, returns just the import string (e.g Data.String instead of the path of the String.agda file)
+// If a dependency is resolved, it returns the absolute path. Otherwise, returns the import string as a file path (e.g Data/String.agda instead of Data.String)
 
 // Functionality:
 // 1. Parses the input Agda file and extracts import statements.
@@ -96,7 +96,7 @@ function handle_import_line(line, file_path, visited, all_dependencies) {
     all_dependencies.set(imported_file_path, []);
     extract_dependencies(imported_file_path, visited, all_dependencies);
   } else {
-    all_dependencies.set(module_name, []);
+    all_dependencies.set(module_name_to_file_path(module_name), []);
   }
 }
 
@@ -139,6 +139,10 @@ function resolve_import(current_file, module_name) {
   return null;
 }
 
+function module_name_to_file_path(module_name) {
+  return module_name.replace(/\./g, '/') + '.agda';
+}
+
 function fix_file_path(filepath) {
   if (!filepath) {
     console.error(`Usage: agda-deps <file.agda>`);
@@ -171,11 +175,7 @@ function main() {
   if (dependencies.size > 0) {
     for (const [source, _] of dependencies) {
       if (source !== path.resolve(fixed_file_path)) {
-        if (source.endsWith('.agda')) {
-          console.log(source.slice(0, -5));
-        } else {
-          console.log(source);
-        }
+        console.log(source);
       }
     }
   } else {
@@ -184,3 +184,4 @@ function main() {
 }
 
 main();
+

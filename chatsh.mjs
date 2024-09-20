@@ -246,6 +246,10 @@ function appendToHistory(role, message) {
 async function main() {
   let lastOutput = "";
 
+  if (MODEL === "o" || MODEL === "om") {
+    console.log("NOTE: disabling system prompt.");
+  }
+
   while (true) {
     let userMessage;
     if (initialUserMessage) {
@@ -264,7 +268,13 @@ async function main() {
 
       appendToHistory('USER', userMessage);
 
-      const assistantMessage = await ask(fullMessage, { system: SYSTEM_PROMPT, model: MODEL, max_tokens: 8192, system_cacheable: true });  
+      // FIXME: we're disabling o1's system message
+      let assistantMessage;
+      if (MODEL === "o" || MODEL === "om") {
+        assistantMessage = await ask(fullMessage, { system: undefined, model: MODEL, max_tokens: 8192, system_cacheable: true });  
+      } else {
+        assistantMessage = await ask(fullMessage, { system: SYSTEM_PROMPT, model: MODEL, max_tokens: 8192, system_cacheable: true });  
+      }
       console.log(); 
       
       appendToHistory('ChatSH', assistantMessage);

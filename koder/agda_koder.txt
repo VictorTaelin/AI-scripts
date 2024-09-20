@@ -64,6 +64,20 @@ map fn (x :: xs) = fn x :: map fn xs
 
 - Every file must be small, define only ONE function or datatype.
 
+- Do NOT use apostrophes (`'`) in variable names. Instead, overshadow. Example:
+
+    let map = M.set map k0 v0
+    let map = M.set map k1 v1
+    let map = M.set map k2 v2
+
+- Do NOT use 'let .. in'. Instead, use a do-block to enable 'let' without 'in'. Example:
+
+    foo = do
+      let a = ...
+      let b = ...
+      let c = ...
+      result
+
 ## Idiomatic Agda Examples
 
 Below are some additional idiomatic Agda examples:
@@ -139,10 +153,10 @@ open import Data.Nat.lt
 -- = A new list containing all elements from xs in ascending order.
 quicksort : List Nat → List Nat
 quicksort []        = []
-quicksort (x :: xs) = 
+quicksort (x :: xs) = do
   let min = filter (λ y → y < x) xs
-      max = filter (λ y → y > x) xs
-  in quicksort min ++ (x :: quicksort max)
+  let max = filter (λ y → y > x) xs
+  quicksort min ++ (x :: quicksort max)
 ```
 
 ### Data/Tree/Type.agda
@@ -205,6 +219,29 @@ s1 ++ s2 = primStringAppend s1 s2
 infixr 5 _++_
 ```
 
+### Data/String/drop.agda
+
+```agda
+module Data.String.drop where
+
+open import Data.List.Type
+open import Data.Nat.Type
+open import Data.String.Type
+open import Data.String.from-list
+open import Data.String.to-list
+
+-- Drops the first n characters from a string.
+-- If n is greater than or equal to the length of the string, returns an empty string.
+-- - n: The number of characters to drop.
+-- - s: The input string.
+-- = The string with the first n characters removed.
+drop : Nat -> String -> String
+drop Zero     s = s
+drop (Succ n) s with to-list s
+... | []        = ""
+... | (_ :: xs) = drop n (from-list xs)
+```
+
 ---
 
 # NOTES
@@ -217,11 +254,33 @@ infixr 5 _++_
 
 - Pay attention to the Agda style guide to emit idiomatic code.
 
+- Pay attention to import ALL individual definitions you use in your code.
+
 - Do NOT use or assume the existence of a file that wasn't shown to you.
+
+- Avoid using if-then-else and case-of. Use Agda's 'with' instead.
 
 - Remember: only ONE definition (function or datatype) per Agda file.
 
-- Be precise and careful in your modifications.
+---
+
+# COMMON IMPORTS
+
+Remember: EVERY used definition you use must be imported, including common types
+like Bool, Nat, and operations like if-then-else, case-of. Common ones include:
+
+- Data.Bool.Type (ctors: 'True' and 'False')
+- Data.Bool.if (enables 'if _ then _ else _')
+- Data.Empty.Type (no ctor)
+- Data.Equal.Type (enables 'a === b', ctor: 'refl')
+- Data.Function.case (enables 'case _ of _ λ where { ... cases ... }')
+- Data.List.Type (ctors: '[]' and 'head :: tail')
+- Data.List.bind and Data.List.pure (enables the do-notation for List)
+- Data.Map.Type (based on trees; operations are 'M.set', 'M.get', 'M.mut')
+- Data.Maybe.Type (ctors: 'None' and 'Some')
+- Data.Maybe.bind and Data.Maybe.pure (enables the do-notation for Maybe)
+- Data.Pair.Type (enables '_ , _')
+- Data.Unit.Type (ctor: 'unit')
 
 ---
 

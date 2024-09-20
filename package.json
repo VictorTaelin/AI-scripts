@@ -5,16 +5,17 @@
   "type": "module",
   "main": "main.js",
   "bin": {
-    "holefill": "holefill.mjs",
-    "chatsh": "chatsh.mjs",
-    "csh": "chatsh.mjs",
-    "refactor": "refactor.mjs",
-    "kindcoder": "kindcoder.mjs",
+    "agda-deps": "agda-deps.mjs",
+    "agda2ts": "agda2ts.mjs",
     "aiemu": "aiemu.mjs",
     "aieval": "aieval.mjs",
-    "ts-deps": "ts-deps.mjs",
-    "agda-deps": "agda-deps.mjs",
-    "koder": "koder.mjs"
+    "chatsh": "chatsh.mjs",
+    "csh": "chatsh.mjs",
+    "holefill": "holefill.mjs",
+    "kindcoder": "kindcoder.mjs",
+    "koder": "koder.mjs",
+    "refactor": "refactor.mjs",
+    "ts-deps": "ts-deps.mjs"
   },
   "scripts": {},
   "keywords": [
