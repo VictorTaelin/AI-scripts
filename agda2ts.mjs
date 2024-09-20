@@ -18,6 +18,7 @@ You are an expert Agda <-> TypeScript compiler. Your task is to translate Agda t
 Avoid the following common errors:
 
 - Do NOT use use special characters in TypeScript variable names (invalid syntax).
+- Do NOT translate infix operators to TypeScript. Just skip them entirely.
 
 Examples:
 
@@ -198,7 +199,9 @@ export const xor = (a: Bits) => (b: Bits) => $xor(a, b);
 
 ---
 
-Your goal is to generate each (missing) file, in the following format:
+Note that, sometimes, a draft will be provided. When that is the case, review it
+for errors and oversights that violate the guides, and provide a final version.
+Your goal is to generate each (missing)/(draft) file, in the following format:
 
 # <missing_file_path>
 
@@ -251,11 +254,9 @@ async function main() {
   }
 
   const deps = await getDeps(inputFile);
-  console.log("->", deps);
   let context = '';
 
   for (const dep of deps) {
-    console.log("- dep: " + dep);
     const fileContent = await readFileContent(dep);
     const ext = path.extname(dep);
     const language = ext === '.agda' ? 'agda' : 'ts';
@@ -274,49 +275,37 @@ async function main() {
   const mainLanguage = mainExt === '.agda' ? 'agda' : 'ts';
   context += `# ${inputFile}\n\n\`\`\`${mainLanguage}\n${mainFileContent}\n\`\`\`\n\n`;
 
-  // Add the corresponding file for the input file as (missing)
+  // Add the corresponding file for the input file as a draft if it exists, otherwise as (missing)
   const otherInputExt = mainExt === '.agda' ? '.ts' : '.agda';
   const otherInputFile = inputFile.replace(/\.[^.]+$/, otherInputExt);
   const otherInputLanguage = otherInputExt === '.agda' ? 'agda' : 'ts';
-  context += `# ${otherInputFile}\n\n\`\`\`${otherInputLanguage}\n(missing)\n\`\`\`\n\n`;
+  const otherInputContent = await readFileContent(otherInputFile);
+  
+  if (otherInputContent !== '(missing)') {
+    context += `# ${otherInputFile} (draft)\n\n\`\`\`${otherInputLanguage}\n${otherInputContent}\n\`\`\`\n\n`;
+  } else {
+    context += `# ${otherInputFile} (missing)\n\n\`\`\`${otherInputLanguage}\n...\n\`\`\`\n\n`;
+  }
 
   const ask = chat(model);
-  const prompt = `${context}\n\nTranslate all (missing) files to their corresponding language now:`;
+  const prompt = `${context}\n\nTranslate all (missing) and (draft) files to their corresponding language. Do NOT touch files not explicitly marked as (missing) or (draft). Do it now:`;
 
-  // First step: Generate initial draft
-  const initialResponse = await ask(prompt, { system: SYSTEM_PROMPT, model, system_cacheable: true });
+  // Generate and save the compiled outputs
+  const response = await ask(prompt, { system: SYSTEM_PROMPT, model, system_cacheable: true });
   console.log("\n");
 
-  // Parse the initial response
-  const initialFiles = parseResponse(initialResponse);
+  const files = parseResponse(response);
 
-  // Construct the context for the second step
-  let draftContext = 'To help you, here is a DRAFT of the missing files compilation:\n\n';
-  for (const file of initialFiles) {
-    draftContext += `# ${file.path}\n\n\`\`\`${file.language}\n${file.code}\n\`\`\`\n\n`;
-  }
-  draftContext += 'Note that this draft may contain errors and oversights\n';
-  draftContext += 'Use it as an inspiration to provide your final answer.\n';
-  draftContext += 'Do it now:\n';
-
-  // Second step: Generate final answer
-  const finalPrompt = `${prompt}\n\n${draftContext}`;
-  const finalResponse = await ask(finalPrompt, { system: SYSTEM_PROMPT, model, system_cacheable: true });
-  console.log("\n");
-
-  // Parse the final response and save the compiled outputs
-  const finalFiles = parseResponse(finalResponse);
-
-  for (const file of finalFiles) {
+  for (const file of files) {
     const dirPath = path.dirname(file.path);
     await fs.mkdir(dirPath, { recursive: true });
     await fs.writeFile(file.path, file.code);
-    console.log(`Generated: ${file.path}`);
+    console.log(`Saved: ${file.path}`);
   }
 
-  const outputContent = `${finalPrompt}\n\n${finalResponse}`;
-  await fs.writeFile(`.output.txt`, outputContent);
-  console.log(`Generated: .output.txt`);
+  //const outputContent = `${prompt}\n\n${response}`;
+  //await fs.writeFile(`.output.txt`, outputContent);
+  //console.log(`Generated: .output.txt`);
 }
 
 function parseResponse(response) {
