@@ -11,6 +11,8 @@ Some AI scripts I use daily.
 
 - `koder`: perform refactor requests ([example](https://x.com/VictorTaelin/status/1824489509146227192)) ([example](https://x.com/VictorTaelin/status/1811254153655558188))
 
+- `agda2ts`: compile Agda to/from TypeScript ([example](https://x.com/VictorTaelin/status/1837256721850306746))
+
 For VIM integration, this is my messy [vimrc](https://github.com/VictorTaelin/OSX/blob/master/vimrc).
 Use Sonnet to extract the relevant functions for you (:
 
