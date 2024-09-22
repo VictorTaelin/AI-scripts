@@ -18,12 +18,12 @@ const system = {
   ts: {
     koder: await fs.readFile(new URL('./koder/ts_koder.txt', import.meta.url), 'utf-8').then(content => content.trim()),
     guess: await fs.readFile(new URL('./koder/ts_guess.txt', import.meta.url), 'utf-8').then(content => content.trim()),
-    deps: name => "ts-deps " + name,
+    deps: name => "ts-deps " + name + " --recursive",
   },
   agda: {
     koder: await fs.readFile(new URL('./koder/agda_koder.txt', import.meta.url), 'utf-8').then(content => content.trim()),
     guess: await fs.readFile(new URL('./koder/agda_guess.txt', import.meta.url), 'utf-8').then(content => content.trim()),
-    deps: name => "agda-deps " + name,
+    deps: name => "agda-deps " + name + " --recursive",
   },
   kind: {
     koder: await fs.readFile(new URL('./koder/kind_koder.txt', import.meta.url), 'utf-8').then(content => content.trim()),

@@ -25,6 +25,8 @@ Avoid the following common errors:
 - Do NOT forget to import ALL terms you use, including constructors like '$Cons'.
 - Do NOT attempt to emulate dependent types (with 'ReturnType') on TypeScript.
 - Do NOT use CamelCase (except for types) on TypeScript. Vars use snake_case.
+  NOTE: that file names are always kebab-case, even on TypeScript.
+  Example: the 'Foo/Bar/do-thing.ts' file must export the 'do_thing' function.
 
 Native types must NOT be compiled to JSON.
 
@@ -243,6 +245,63 @@ export const $head = <A>(xs: List<A>): Maybe<A> => {
 export const head = <A>(xs: List<A>) => $head(xs);
 \`\`\`
 
+# Base/String/Type.agda
+
+\`\`\`agda
+module Base.String.Type where
+  
+open import Base.Bool.Type
+
+postulate String : Set
+{-# BUILTIN STRING String #-}
+\`\`\`
+
+# Base/String/Type.ts
+
+\`\`\`ts
+// Represents a string of characters.
+export type String = string;
+
+// NOTE: Using native string to represent String.
+\`\`\`
+
+# Base/String/from-char.agda
+
+\`\`\`agda
+module Base.String.from-char where
+
+open import Base.Char.Type
+open import Base.List.Type
+open import Base.String.Type
+open import Base.String.from-list
+
+-- Converts a character to a string
+-- - c: The input character.
+-- = A string containing only the input character.
+from-char : Char → String
+from-char c = from-list (c :: [])
+\`\`\`
+
+# Base/String/from-char.ts
+
+\`\`\`ts
+import { Char } from '../../Base/Char/Type';
+import { String } from '../../Base/String/Type';
+import { $Cons, $Nil } from '../../Base/List/Type';
+import { $from_list } from '../../Base/String/from-list';
+
+// Converts a character to a string
+// - c: The input character.
+// = A string containing only the input character.
+export const $$from_char = (c: Char): String => {
+  return $from_list($Cons(c, $Nil));
+};
+
+// NOTE: Return the character directly for efficiency.
+export const $from_char = (c: Char): String => c;
+export const  from_char = (c: Char) => c;
+\`\`\`
+
 # Base/Bits/Type.agda
 
 \`\`\`agda
@@ -440,9 +499,9 @@ async function getDeps(file) {
   let command = '';
 
   if (ext === '.agda') {
-    command = `agda-deps ${file}`;
+    command = `agda-deps ${file} --recursive`;
   } else if (ext === '.ts') {
-    command = `ts-deps ${file}`;
+    command = `ts-deps ${file} --recursive`;
   } else {
     throw new Error(`Unsupported file type: ${ext}`);
   }
@@ -490,6 +549,8 @@ async function main() {
 
     const sourceContent = await readFileContent(sourceFile);
     const targetContent = await readFileContent(targetFile);
+
+    //console.log(dep, !!sourceContent, !!targetContent);
 
     if (sourceContent === '(missing)') {
       missingDeps.push(sourceFile);
