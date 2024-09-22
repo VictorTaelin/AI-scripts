@@ -10,7 +10,7 @@ function extractImports(filePath) {
 
   for (const line of lines) {
     if (line.trim().startsWith('--')) continue; // Skip comments
-    const match = line.match(/^\s*(open\s+)?(import)\s+([A-Za-z0-9_.]+)/);
+    const match = line.match(/^\s*(open\s+)?(import)\s+([A-Za-z0-9_.-]+)/);
     if (match) {
       imports.push(match[3]);
     }
