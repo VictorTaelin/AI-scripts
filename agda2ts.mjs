@@ -16,7 +16,12 @@ You are an expert Agda <-> TypeScript compiler. Your task is to translate Agda t
 - Preserve type annotations, comments, names, and coding style as much as possible.
 - Use 'var' instead of 'let', to preserve Agda's variable shadowing behavior.
 - TypeScript names are snake_case. Use '_' instead of '-' in variable names.
-- On ES6 imports, for consistency, always use '..' to reach the root path.
+- On ES6 imports, always use '..' to cd from current file to root path. Example:
+  - 'Base/Foo/Bar/term.agda' needs '../../../' to reach root (depth 3).
+  - 'Base/Foo/term.agda' needs '../../' to reach root (depth 2).
+  - 'HVM1/Main.agda' needs '../' to reach root (depth 1).
+  - 'Main.agda' is already on root (depth 0).
+- Compile do-notation blocks to a flat chain of bind and pure calls.
 
 Avoid the following common errors:
 
@@ -460,7 +465,7 @@ _+_ = add
 # Base/Nat/add.ts
 
 \`\`\`ts
-import { Nat, $Succ, $Zero } from './../../Base/Nat/Type';
+import { Nat, $Succ, $Zero } from '../../Base/Nat/Type';
 
 // Addition of nats.
 // - m: The 1st nat.
@@ -478,6 +483,94 @@ export const $$add = (m: Nat, n: Nat): Nat => {
 // NOTE: Native BigInt addition used for efficiency.
 export const $add = (m: Nat, n: Nat): Nat => m + n;
 export const  add = (m: Nat) => (n: Nat) => m + n;
+\`\`\`
+
+# Base/Parser/Examples/LambdaTerm/parse.agda
+
+\`\`\`agda
+module Base.Parser.Examples.LambdaTerm.parse where
+
+open import Base.Function.case
+open import Base.Maybe.Type
+open import Base.Parser.Examples.LambdaTerm.Type
+open import Base.Parser.Monad.bind
+open import Base.Parser.Monad.pure
+open import Base.Parser.State
+open import Base.Parser.Type
+open import Base.Parser.consume
+open import Base.Parser.parse-name
+open import Base.Parser.peek-one
+open import Base.Parser.skip-trivia
+open import Base.String.Type
+
+parse : Parser Term
+parse = do
+  skip-trivia
+  one ← peek-one
+  case one of λ where
+    (Some 'λ') → do
+      consume "λ"
+      name ← parse-name
+      body ← parse
+      pure (Lam name body)
+    (Some '(') → do
+      consume "("
+      func ← parse
+      argm ← parse
+      consume ")"
+      pure (App func argm)
+    _ → do
+      name ← parse-name
+      pure (Var name)
+\`\`\`
+
+# Base/Parser/Examples/LambdaTerm/parse.agda
+
+\`\`\`ts
+import { Maybe, $Some, $None } from '../../../../Base/Maybe/Type';
+import { Term, $Lam, $App, $Var } from '../../../../Base/Parser/Examples/LambdaTerm/Type';
+import { $bind, bind } from '../../../../Base/Parser/Monad/bind';
+import { $pure } from '../../../../Base/Parser/Monad/pure';
+import { State } from '../../../../Base/Parser/State';
+import { Parser } from '../../../../Base/Parser/Type';
+import { $consume } from '../../../../Base/Parser/consume';
+import { $parse_name } from '../../../../Base/Parser/parse-name';
+import { $peek_one } from '../../../../Base/Parser/peek-one';
+import { $skip_trivia } from '../../../../Base/Parser/skip-trivia';
+import { String } from '../../../../Base/String/Type';
+
+export const $parse: Parser<Term> = 
+  $bind($skip_trivia, () =>
+  $bind($peek_one, (one: Maybe<String>) => {
+    switch (one.$) {
+      case 'Some':
+        switch (one.value) {
+          case 'λ':
+            return (
+              $bind($consume('λ'), () =>
+              $bind($parse_name, (name: String) =>
+              $bind($parse, (body: Term) =>
+              $pure($Lam(name, body))))));
+          case '(':
+            return (
+              $bind($consume('('), () =>
+              $bind($parse, (func: Term) =>
+              $bind($parse, (argm: Term) =>
+              $bind($consume(')'), () =>
+              $pure($App(func, argm)))))));
+          default:
+            return (
+              $bind($parse_name, (name: String) =>
+              $pure($Var(name))));
+        }
+      case 'None':
+        return (
+          $bind($parse_name, (name: String) =>
+          $pure($Var(name))));
+    }
+  }));
+
+export const parse: Parser<Term> = (s: State) => $parse(s);
 \`\`\`
 
 ---
