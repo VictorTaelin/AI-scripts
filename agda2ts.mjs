@@ -22,6 +22,7 @@ You are an expert Agda <-> TypeScript compiler. Your task is to translate Agda t
   - 'HVM1/Main.agda' needs '../' to reach root (depth 1).
   - 'Main.agda' is already on root (depth 0).
 - Compile do-notation blocks to a flat chain of bind and pure calls.
+- For the IO monad specifically, use async functions (it is just a Promise).
 
 Avoid the following common errors:
 
@@ -573,6 +574,36 @@ export const $parse: Parser<Term> =
 export const parse: Parser<Term> = (s: State) => $parse(s);
 \`\`\`
 
+# Main.agda
+
+\`\`\`agda
+module Main where
+
+open import Base.ALL
+
+loop : Nat -> IO Unit
+loop i = do
+  IO.print ("Hello " <> show i)
+  loop (i + 1)
+
+main : IO Unit
+main = loop 0
+\`\`\`
+
+# Main.ts
+
+\`\`\`agda
+import { Nat, IO, Unit, String } from './Base/ALL';
+
+const $loop = (i: Nat): IO<Unit> => async () => {
+  await IO.$print(String.$append("Hello ", Nat.$show(i)))();
+  return $loop(Nat.$add(i, 1n))();
+};
+
+export const $main: IO<Unit> = $loop(0n);
+export const  main: IO<Unit> = $main;
+\`\`\`
+
 ---
 
 Note that, sometimes, a draft will be provided. When that is the case, review it
@@ -614,6 +645,42 @@ async function readFileContent(filePath) {
   } catch (error) {
     return '(missing)';
   }
+}
+
+function parseResponse(response) {
+  const files = [];
+  const lines = response.split('\n');
+  let currentFile = null;
+  let currentCode = '';
+  let inCodeBlock = false;
+  let currentLanguage = '';
+
+  for (const line of lines) {
+    if (line.startsWith('# ')) {
+      if (currentFile) {
+        files.push({ path: currentFile, code: currentCode.trim(), language: currentLanguage });
+      }
+      currentFile = line.slice(2).trim();
+      currentCode = '';
+      inCodeBlock = false;
+    } else if (line.startsWith('```ts')) {
+      inCodeBlock = true;
+      currentLanguage = 'ts';
+    } else if (line.startsWith('```agda')) {
+      inCodeBlock = true;
+      currentLanguage = 'agda';
+    } else if (line.startsWith('```') && inCodeBlock) {
+      inCodeBlock = false;
+    } else if (inCodeBlock) {
+      currentCode += line + '\n';
+    }
+  }
+
+  if (currentFile) {
+    files.push({ path: currentFile, code: currentCode.trim(), language: currentLanguage });
+  }
+
+  return files;
 }
 
 async function main() {
@@ -697,42 +764,14 @@ async function main() {
       console.log(`Saved: ${file.path}`);
     }
   }
-}
-
-function parseResponse(response) {
-  const files = [];
-  const lines = response.split('\n');
-  let currentFile = null;
-  let currentCode = '';
-  let inCodeBlock = false;
-  let currentLanguage = '';
-
-  for (const line of lines) {
-    if (line.startsWith('# ')) {
-      if (currentFile) {
-        files.push({ path: currentFile, code: currentCode.trim(), language: currentLanguage });
-      }
-      currentFile = line.slice(2).trim();
-      currentCode = '';
-      inCodeBlock = false;
-    } else if (line.startsWith('```ts')) {
-      inCodeBlock = true;
-      currentLanguage = 'ts';
-    } else if (line.startsWith('```agda')) {
-      inCodeBlock = true;
-      currentLanguage = 'agda';
-    } else if (line.startsWith('```') && inCodeBlock) {
-      inCodeBlock = false;
-    } else if (inCodeBlock) {
-      currentCode += line + '\n';
-    }
-  }
-
-  if (currentFile) {
-    files.push({ path: currentFile, code: currentCode.trim(), language: currentLanguage });
-  }
-
-  return files;
+  
+  // Save the final prompt to a log file
+  const logDir = path.join(process.env.HOME || process.env.USERPROFILE, '.ai', 'agda2ts_history');
+  await fs.mkdir(logDir, { recursive: true });
+  const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
+  const logFile = path.join(logDir, `${timestamp}_${model}.log`);
+  await fs.writeFile(logFile, prompt);
+  console.log(`Saved prompt log: ${logFile}`);
 }
 
 main().catch(console.error);

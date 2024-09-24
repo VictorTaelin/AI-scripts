@@ -24,6 +24,10 @@ Just `npm install -g` and run the given command the terminal.
 
 You'll need to add Anthropic/OpenAI keys to a location. The CLI will inform where.
 
+## Note
+
+Most of this scripts will save a log to `~/.ai`. If you don't want this behavior, edit the scripts to suit your needs. (TODO: add a proper option.)
+
 ## Using OpenRouter
 
 To add [fzf](https://github.com/junegunn/fzf) completion for openrouter models, put this in .bashrc or similar:
@@ -42,3 +46,7 @@ Then type:
 ```bash
 $ chatsh **<tab>
 ```
+
+## LICENSE
+
+Everything here is MIT-licensed.

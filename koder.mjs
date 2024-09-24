@@ -21,7 +21,7 @@ const system = {
     deps: name => "ts-deps " + name + " --recursive",
   },
   agda: {
-    koder: await fs.readFile(new URL('./koder/agda_koder.txt', import.meta.url), 'utf-8').then(content => content.trim()),
+    koder: await fs.readFile(new URL('./koder/agda_koder_2.txt', import.meta.url), 'utf-8').then(content => content.trim()),
     guess: await fs.readFile(new URL('./koder/agda_guess.txt', import.meta.url), 'utf-8').then(content => content.trim()),
     deps: name => "agda-deps " + name + " --recursive",
   },
@@ -148,7 +148,7 @@ async function main() {
 
   // If the request is empty, replace it by a default request.
   if (request.trim() === '') {
-    request = ["Complete the TARGET file."].join('\n');
+    request = ["Implement or update the TARGET file."].join('\n');
   }
 
   // If the file is empty, ask the AI to fill with an initial template
