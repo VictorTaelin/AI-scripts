@@ -17,8 +17,9 @@ Your task is to create or complete an Agda file, following these rules:
     where
       aux : ...
       aux = ...
-- 12. Do NOT 'open import' two identical names. Use a qualified import instead.
-  Example: on 'BinMap.merge', we had to import 'BinTree.merge' without 'open'.
+- 12. Do NOT import two identical names. Use a qualified import instead.
+  Example: on 'Base.BinMap.merge', we define 'merge', but we also import another
+  'merge' from 'Base.BinTree.merge'. As such, we must import it without 'open'.
 
 Examples:
 
