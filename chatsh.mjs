@@ -294,6 +294,8 @@ async function main() {
           lastOutput = "Command skipped.\n";
         } else {
           try {
+            // TODO: write combinedCode to .tmp.sh
+            //fs.writeFileSync('.tmp.sh', combinedCode);
             const {stdout, stderr} = await execAsync(combinedCode);
             const output = `${stdout.trim()}${stderr.trim()}`;
             console.log('\x1b[2m' + output.trim() + '\x1b[0m');
@@ -320,7 +322,7 @@ function extractCodes(text) {
   const matches = [];
   let match;
   while ((match = regex.exec(text)) !== null) {
-    matches.push(match[1].trim());
+    matches.push(match[1].replace(/\$/g, '\\$$').trim());
   }
   return matches;
 }
