@@ -9,6 +9,7 @@ const SYSTEM_PROMPT = `
 You are an expert Agda <-> Kind compiler. Your task is to translate Agda to/from Kind, following these rules:
 
 - Kind has implicit imports: just use the full name of a function to call it.
+- Represent Agda's 'Char' as a Kind 'U32', and Agda's 'String' as a Kind '(List Char)'.
 
 Avoid the following common errors:
 
@@ -81,9 +82,9 @@ use Base/Bool/ as B/
 // Represents a Boolean value.
 // - True: Represents logical truth.
 // - False: Represents logical falsehood.
-Base/Bool/Bool : * = #[]{
-  #t{} : B/Bool
-  #f{} : B/Bool
+B/Bool : * = #[]{
+  #True{} : B/Bool
+  #False{} : B/Bool
 }
 \`\`\`
 
@@ -117,13 +118,54 @@ use Base/Bool/ as B/
 // - a: The first boolean value.
 // - b: The second boolean value.
 // = True if both 'a' and 'b' are true, false otherwise.
-Base/Bool/and
+B/and
 : ∀(a: B/Bool)
   ∀(b: B/Bool)
   B/Bool
 = λ{
-  #t: λb b
-  #f: λb #f{}
+  #True: λb b
+  #False: λb #False{}
+}
+\`\`\`
+
+# Base/Bool/if.agda
+
+\`\`\`agda
+module Base.Bool.if where
+
+open import Base.Bool.Bool
+
+-- Conditional expression.
+-- - x: The boolean condition to evaluate.
+-- - t: The value to return if the condition is true.
+-- - f: The value to return if the condition is false.
+-- = Either t or f, depending on the condition.
+if_then_else_ : ∀ {a} {A : Set a} → Bool → A → A → A
+if True  then t else _ = t
+if False then _ else f = f
+
+infix 0 if_then_else_
+\`\`\`
+
+# Base/Bool/if.kind
+
+\`\`\`kind
+use Base/Bool/ as B/
+
+// Conditional expression.
+// - x: The boolean condition to evaluate.
+// - t: The value to return if the condition is true.
+// - f: The value to return if the condition is false.
+// = Either t or f, depending on the condition.
+B/if
+: ∀(A: *)
+  ∀(x: B/Bool)
+  ∀(t: A)
+  ∀(f: A)
+  A
+= λA λ{
+  #True: λt λf t
+  #False: λt λf f
 }
 \`\`\`
 
@@ -146,12 +188,12 @@ use Base/Maybe/ as M/
 // Represents an optional value.
 // - None: Represents the absence of a value.
 // - Some: Represents the presence of a value.
-Base/Maybe/Maybe
+M/Maybe
 : ∀(A: *)
   *
 = λA #[]{
-  #none{} : (M/Maybe A)
-  #some{ value:A } : (M/Maybe A)
+  #None{} : (M/Maybe A)
+  #Some{ value:A } : (M/Maybe A)
 }
 \`\`\`
 
@@ -178,13 +220,13 @@ use Base/List/ as L/
 
 // A polymorphic List with two constructors:
 // - cons: Appends an element to a list.
-// - nil: The empty list.
-Base/List/List
+// - #Nil: The empty list.
+L/List
 : ∀(A: *)
   *
 = λA #[]{
-  #nil{} : (L/List A)
-  #cons{ head:A tail:(L/List A) } : (L/List A)
+  ##Nil{} : (L/List A)
+  #Cons{ head:A tail:(L/List A) } : (L/List A)
 }
 \`\`\`
 
@@ -215,13 +257,13 @@ use Base/Maybe/ as M/
 // - xs: The input list.
 // = Some x if the list is non-empty (where x is the first element),
 //   None if the list is empty.
-Base/List/head
+L/head
 : ∀(A: *)
   ∀(xs: (L/List A))
   (M/Maybe A)
 = λA λ{
-  #nil: #none{}
-  #cons: λhead λtail #some{head}
+  ##Nil: #None{}
+  #Cons: λhead λtail #Some{head}
 }
 \`\`\`
 
@@ -230,8 +272,6 @@ Base/List/head
 \`\`\`agda
 module Base.String.String where
   
-open import Base.Bool.Bool
-
 postulate String : Set
 {-# BUILTIN STRING String #-}
 \`\`\`
@@ -239,30 +279,11 @@ postulate String : Set
 # Base/String/String.kind
 
 \`\`\`kind
-...TODO...
-\`\`\`
+use Base/List/ as L/
+use Base/String/ as S/
 
-# Base/String/from-char.agda
-
-\`\`\`agda
-module Base.String.from-char where
-
-open import Base.Char.Char
-open import Base.List.List
-open import Base.String.String
-open import Base.String.from-list
-
--- Converts a character to a string
--- - c: The input character.
--- = A string containing only the input character.
-from-char : Char → String
-from-char c = from-list (c :: [])
-\`\`\`
-
-# Base/String/from-char.kind
-
-\`\`\`kind
-...TODO...
+// Represents a string of characters
+S/String : * = (L/List U32)
 \`\`\`
 
 # Base/Bits/Bits.agda
@@ -289,10 +310,10 @@ use Base/Bits/ as B/
 // - O: Represents a zero bit.
 // - I: Represents a one bit.
 // - E: Represents the end of the binary string.
-Base/Bits/Bits : * = #[]{
-  #o{ tail: B/Bits } : B/Bits
-  #i{ tail: B/Bits } : B/Bits
-  #e{} : B/Bits
+B/Bits : * = #[]{
+  #O{ tail: B/Bits } : B/Bits
+  #I{ tail: B/Bits } : B/Bits
+  #E{} : B/Bits
 }
 
 \`\`\`
@@ -333,21 +354,21 @@ use Base/Bits/ as B/
 // - a: The 1st Bits value.
 // - b: The 2nd Bits value.
 // = A new Bits value representing the bitwise XOR of a and b.
-Base/Bits/xor
+B/xor
 : ∀(a: B/Bits)
   ∀(b: B/Bits)
   B/Bits
 = λ{
-  #e: λb b
-  #o: λ{
-    #e: λa.tail #o{a.tail}
-    #o: λa.tail λb.tail #o{(Base/Bits/xor a.tail b.tail)}
-    #i: λa.tail λb.tail #i{(Base/Bits/xor a.tail b.tail)}
+  #E: λb b
+  #O: λ{
+    #E: λa.tail #O{a.tail}
+    #O: λa.tail λb.tail #O{(Base/Bits/xor a.tail b.tail)}
+    #I: λa.tail λb.tail #I{(Base/Bits/xor a.tail b.tail)}
   }
-  #i: λ{
-    #e: λa.tail #i{a.tail}
-    #o: λa.tail λb.tail #i{(Base/Bits/xor a.tail b.tail)}
-    #i: λa.tail λb.tail #o{(Base/Bits/xor a.tail b.tail)}
+  #I: λ{
+    #E: λa.tail #I{a.tail}
+    #O: λa.tail λb.tail #I{(Base/Bits/xor a.tail b.tail)}
+    #I: λa.tail λb.tail #O{(Base/Bits/xor a.tail b.tail)}
   }
 }
 \`\`\`
@@ -372,9 +393,9 @@ use Base/Nat/ as N/
 // Represents natural numbers.
 // - Zero: The zero natural number.
 // - Succ: The successor of a natural number.
-Base/Nat/Nat : * = #[]{
-  #zero{} : N/Nat
-  #succ{ pred: N/Nat } : N/Nat
+N/Nat : * = #[]{
+  #Zero{} : N/Nat
+  #Succ{ pred: N/Nat } : N/Nat
 }
 \`\`\`
 
@@ -408,13 +429,13 @@ use Base/Nat/ as N/
 // - m: The 1st nat.
 // - n: The 2nd nat.
 // = The sum of m and n.
-Base/Nat/add
+N/add
 : ∀(m: N/Nat)
   ∀(n: N/Nat)
   N/Nat
 = λ{
-  #zero: λn n
-  #succ: λm.pred λn #succ{(Base/Nat/add m.pred n)}
+  #Zero: λn n
+  #Succ: λm.pred λn #Succ{(Base/Nat/add m.pred n)}
 }
 \`\`\`
 
