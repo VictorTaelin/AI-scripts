@@ -373,7 +373,57 @@ B/xor
 }
 \`\`\`
 
-# Base/Nat/Nat.agda:
+# Base/Bits/eq.agda
+
+\`\`\`agda
+open import Base.Bits.Bits
+open import Base.Bool.Bool
+
+eq : Bits -> Bits -> Bool
+eq E     E     = True
+eq (O x) (O y) = eq x y
+eq (I x) (I y) = eq x y
+eq _     _     = False
+
+infix 4 _==_
+_==_ : Bits -> Bits -> Bool
+_==_ = eq
+\`\`\`
+
+# Base/Bits/eq.kind
+
+\`\`\`agda
+use Base/Bits/ as B/
+use Base/Bool/ as Bool/
+
+// Checks if two Bits values are equal.
+// - a: The first Bits value.
+// - b: The second Bits value.
+// = True if a and b are equal, False otherwise.
+B/eq
+: ∀(a: B/Bits)
+  ∀(b: B/Bits)
+  Bool/Bool
+= λ{
+  #E: λ{
+    #E: #True{}
+    #O: λb.tail #False{}
+    #I: λb.tail #False{}
+  }
+  #O: λ{
+    #E: λa.tail #False{}
+    #O: λa.tail λb.tail (Base/Bits/eq a.tail b.tail)
+    #I: λa.tail λb.tail #False{}
+  }
+  #I: λ{
+    #E: λa.tail #False{}
+    #O: λa.tail λb.tail #False{}
+    #I: λa.tail λb.tail (Base/Bits/eq a.tail b.tail)
+  }
+}
+\`\`\`
+
+# Base/Nat/Nat.agda
 
 \`\`\`agda
 module Base.Nat.Nat where
