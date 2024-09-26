@@ -23,10 +23,10 @@ Your task is to create or complete an Agda file, following these rules:
 
 Examples:
 
-# Base/Bool/Type.agda
+# Base/Bool/Bool.agda
 
 \`\`\`agda
-module Base.Bool.Type where
+module Base.Bool.Bool where
 
 -- Represents a Boolean value.
 -- - True: Represents logical truth.
@@ -44,7 +44,7 @@ data Bool : Set where
 \`\`\`agda
 module Base.Bool.and where
 
-open import Base.Bool.Type
+open import Base.Bool.Bool
 
 -- Performs logical AND operation on two boolean values.
 -- - a: The 1st boolean value.
@@ -60,10 +60,10 @@ _&&_ = and
 infixr 6 _&&_
 \`\`\`
 
-# Base/Maybe/Type.agda
+# Base/Maybe/Maybe.agda
 
 \`\`\`agda
-module Base.Maybe.Type where
+module Base.Maybe.Maybe where
 
 -- A type representing an optional value.
 -- - A: The type of the value that may or may not be present.
@@ -76,10 +76,10 @@ data Maybe {a} (A : Set a) : Set a where
 {-# BUILTIN MAYBE Maybe #-}
 \`\`\`
 
-# Base/List/Type.agda
+# Base/List/List.agda
 
 \`\`\`agda
-module Base.List.Type where
+module Base.List.List where
 
 -- A polymorphic List with two constructors:
 -- - []  : The empty list.
@@ -97,8 +97,8 @@ infixr 5 _::_
 \`\`\`agda
 module Base.List.head where
 
-open import Base.List.Type
-open import Base.Maybe.Type
+open import Base.List.List
+open import Base.Maybe.Maybe
 
 -- Safely retrieves the 1st element of a list.
 -- - xs: The input list.
@@ -113,7 +113,7 @@ head (x :: _) = Some x
 \`\`\`agda
 module Base.List.foldr where
 
-open import Base.List.Type
+open import Base.List.List
 
 -- Performs a right fold over a list.
 -- - f: The combining function.
@@ -130,8 +130,8 @@ foldr f z (x :: xs) = f x (foldr f z xs)
 \`\`\`agda
 module Base.List.take-while where
 
-open import Base.Bool.Type
-open import Base.List.Type
+open import Base.Bool.Bool
+open import Base.List.List
 
 -- Takes elements from the front of the list as long as they satisfy the predicate.
 -- - fn: The predicate function.
@@ -149,7 +149,7 @@ take-while fn (x :: xs) with fn x
 \`\`\`agda
 module Base.List.Monad.bind where
 
-open import Base.List.Type
+open import Base.List.List
 open import Base.List.append
 
 -- The bind function for the List monad.
@@ -172,10 +172,10 @@ infixl 1 _>>=_
 \`\`\`agda
 module Base.List.quicksort where
 
-open import Base.List.Type
+open import Base.List.List
 open import Base.List.append
 open import Base.List.filter
-open import Base.Nat.Type
+open import Base.Nat.Nat
 open import Base.Nat.gt
 open import Base.Nat.lt
 
@@ -190,21 +190,21 @@ quicksort (x :: xs) = do
   quicksort min ++ (x :: quicksort max)
 \`\`\`
 
-# Base/String/Type.agda
+# Base/String/String.agda
 
 \`\`\`agda
-module Base.String.Type where
+module Base.String.String where
   
-open import Base.Bool.Type
+open import Base.Bool.Bool
 
 postulate String : Set
 {-# BUILTIN STRING String #-}
 \`\`\`
 
-# Base/Bits/Type.agda
+# Base/Bits/Bits.agda
 
 \`\`\`agda
-module Base.Bits.Type where
+module Base.Bits.Bits where
 
 -- Represents a binary string.
 -- - O: Represents a zero bit.
@@ -221,7 +221,7 @@ data Bits : Set where
 \`\`\`agda
 module Base.Bits.xor where
 
-open import Base.Bits.Type
+open import Base.Bits.Bits
 
 -- Performs bitwise XOR operation on two Bits values.
 -- - a: The 1st Bits value.
@@ -243,10 +243,10 @@ _^_ = xor
 infixr 5 _^_
 \`\`\`
 
-# Base/Nat/Type.agda:
+# Base/Nat/Nat.agda:
 
 \`\`\`agda
-module Base.Nat.Type where
+module Base.Nat.Nat where
 
 -- A natural number with two constructors:
 -- - Zero: Represents the number zero.
@@ -263,7 +263,7 @@ data Nat : Set where
 \`\`\`agda
 module Base.Nat.add where
 
-open import Base.Nat.Type
+open import Base.Nat.Nat
 
 -- Addition of nats.
 -- - m: The 1st nat.
@@ -282,7 +282,7 @@ _+_ = add
 # Base/Nat/Equal.agda
 
 \`\`\`agda
-module Base.Equal.Type where
+module Base.Equal.Equal where
 
 infix 4 _===_
 
@@ -296,7 +296,7 @@ data _===_ {a} {A : Set a} (x : A) : A -> Set a where
 \`\`\`agda
 module Base.Equal.subst where
 
-open import Base.Equal.Type
+open import Base.Equal.Equal
 
 -- Substitution property of equality:
 -- If x is equal to y, then a predicate P holding for x also holds for y.
@@ -313,7 +313,7 @@ subst P refl p = p
 # Base/F64/type.agda
 
 \`\`\`agda
-module Base.F64.Type where
+module Base.F64.F64 where
 
 postulate F64 : Set
 {-# BUILTIN FLOAT F64 #-}
@@ -324,7 +324,7 @@ postulate F64 : Set
 \`\`\`agda
 module Base.F64.add where
 
-open import Base.F64.Type
+open import Base.F64.F64
 
 primitive primF64 : F64 -> F64 -> F64
 
@@ -342,13 +342,13 @@ _+_ = add
 infixl 6 _+_
 \`\`\`
 
-# Base/U64/Type.agda
+# Base/U64/U64.agda
 
 \`\`\`
-module Base.U64.Type where
+module Base.U64.U64 where
 
-open import Base.Nat.Type
-open import Base.Bool.Type
+open import Base.Nat.Nat
+open import Base.Bool.Bool
 
 -- Represents a 64-bit machine word.
 postulate U64 : Set
@@ -361,7 +361,7 @@ postulate U64 : Set
 module Base.U64.add where
 
 import Base.Nat.add as Nat
-open import Base.U64.Type
+open import Base.U64.U64
 open import Base.U64.from-nat
 open import Base.U64.to-nat
 
@@ -380,10 +380,10 @@ _+_ = add
 infixl 6 _+_
 \`\`\`
 
-# Base/Pair/Type.agda
+# Base/Pair/Pair.agda
 
 \`\`\`agda
-module Base.Pair.Type where
+module Base.Pair.Pair where
 
 open import Agda.Primitive
 
@@ -408,15 +408,15 @@ Pair : ∀ {a b} (A : Set a) (B : Set b) → Set (a ⊔ b)
 Pair A B = Sigma A (λ _ → B)
 \`\`\`
 
-# Base/Parser/Type.agda
+# Base/Parser/Parser.agda
 
 \`\`\`agda
-module Base.Parser.Type where
+module Base.Parser.Parser where
 
 open import Base.Parser.Error
 open import Base.Parser.Reply
 open import Base.Parser.State
-open import Base.Result.Type
+open import Base.Result.Result
 
 -- Represents a parser as a function from State to Result.
 -- - A: The type of the value to be parsed.
@@ -432,10 +432,10 @@ Parser A = State → Result (Reply A) Error
 \`\`\`agda
 module Base.Parser.Monad.bind where
 
-open import Base.Parser.Type
+open import Base.Parser.Parser
 open import Base.Parser.State
 open import Base.Parser.Reply
-open import Base.Result.Type
+open import Base.Result.Result
 open import Base.Function.case
 
 -- Binds two parsers together
@@ -460,17 +460,17 @@ infixl 1 _>>=_
 module Base.Parser.Examples.LambdaTerm.parse where
 
 open import Base.Function.case
-open import Base.Maybe.Type
-open import Base.Parser.Examples.LambdaTerm.Type
+open import Base.Maybe.Maybe
+open import Base.Parser.Examples.LambdaTerm.LambdaTerm
 open import Base.Parser.Monad.bind
 open import Base.Parser.Monad.pure
 open import Base.Parser.State
-open import Base.Parser.Type
+open import Base.Parser.Parser
 open import Base.Parser.consume
 open import Base.Parser.parse-name
 open import Base.Parser.peek-one
 open import Base.Parser.skip-trivia
-open import Base.String.Type
+open import Base.String.String
 
 parse : Parser Term
 parse = do
@@ -493,13 +493,13 @@ parse = do
       pure (Var name)
 \`\`\`
 
-# Base/BinMap/Type.agda
+# Base/BinMap/BinMap.agda
 
 \`\`\`agda
-module Base.BinMap.Type where
+module Base.BinMap.BinMap where
 
-open import Base.BinTree.Type
-open import Base.Maybe.Type
+open import Base.BinTree.BinTree
+open import Base.Maybe.Maybe
 
 -- Represents a BinMap as a BinTree of Maybe values.
 -- - A: The type of values stored in the map.
@@ -515,12 +515,12 @@ open BinTree public
 \`\`\`agda
 module Base.BinMap.set where
 
-open import Base.BinMap.Type
-open import Base.Bits.Type
-open import Base.Bool.Type
+open import Base.BinMap.BinMap
+open import Base.Bits.Bits
+open import Base.Bool.Bool
 open import Base.Bool.if
-open import Base.Maybe.Type
-open import Base.BinTree.Type
+open import Base.Maybe.Maybe
+open import Base.BinTree.BinTree
 
 -- Inserts a key-value pair into the BinMap.
 -- - m: The BinMap to insert into.
@@ -542,8 +542,8 @@ set Leaf               (I k) v = Node None Leaf (set Leaf k v)
 module Base.BinMap.merge where
 
 import Base.BinTree.merge as BinTree
-open import Base.BinMap.Type
-open import Base.Maybe.Type
+open import Base.BinMap.BinMap
+open import Base.Maybe.Maybe
 
 -- Merges two BinMaps, favoring the second BinMap when both have a value.
 -- - m1: The 1st BinMap.
@@ -559,13 +559,13 @@ merge = BinTree.merge (λ x -> x) (λ x -> x) (λ _ y -> y)
 \`\`\`agda
 module Base.BinMap.Examples.mutation where
 
-open import Base.BinMap.Type
+open import Base.BinMap.BinMap
 open import Base.BinMap.empty
 open import Base.BinMap.set
-open import Base.Bits.Type
+open import Base.Bits.Bits
 open import Base.Bits.from-nat
-open import Base.Nat.Type
-open import Base.String.Type
+open import Base.Nat.Nat
+open import Base.String.String
 
 -- Example of mutation with pure maps
 -- Creates a BinMap of Nat to String and adds key-value pairs

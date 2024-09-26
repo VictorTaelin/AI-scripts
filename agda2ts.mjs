@@ -26,7 +26,7 @@ You are an expert Agda <-> TypeScript compiler. Your task is to translate Agda t
 
 Avoid the following common errors:
 
-- Do NOT use use special characters in TypeScript variable names (invalid syntax).
+- Do NOT use special characters in TypeScript variable names (invalid syntax).
 - Do NOT translate infix operators to TypeScript. Just skip them entirely.
 - Do NOT forget to import ALL terms you use, including constructors like '$Cons'.
 - Do NOT attempt to emulate dependent types (with 'ReturnType') on TypeScript.
@@ -73,10 +73,10 @@ The original algorithm must be preserved as '$$foo'.
 
 Examples:
 
-# Base/Bool/Type.agda
+# Base/Bool/Bool.agda
 
 \`\`\`agda
-module Base.Bool.Type where
+module Base.Bool.Bool where
 
 -- Represents a Boolean value.
 -- - True: Represents logical truth.
@@ -89,7 +89,7 @@ data Bool : Set where
 {-# BUILTIN FALSE False #-}
 \`\`\`
 
-# Base/Bool/Type.ts
+# Base/Bool/Bool.ts
 
 \`\`\`ts
 // Represents a Boolean value.
@@ -111,7 +111,7 @@ export const  False: Bool = false;
 \`\`\`agda
 module Base.Bool.and where
 
-open import Base.Bool.Type
+open import Base.Bool.Bool
 
 -- Performs logical AND operation on two boolean values.
 -- - a: The first boolean value.
@@ -130,7 +130,7 @@ infixr 6 _&&_
 # Base/Bool/and.ts
 
 \`\`\`ts
-import { Bool, $True, $False } from '../../Base/Bool/Type';
+import { Bool, $True, $False } from '../../Base/Bool/Bool';
 
 // Performs logical AND operation on two boolean values.
 // - a: The first boolean value.
@@ -151,10 +151,10 @@ export const  and = (a: Bool) => (b: Bool) => a && b;
 // NOTE: Operator omitted: '_&&_'.
 \`\`\`
 
-# Base/Maybe/Type.agda
+# Base/Maybe/Maybe.agda
 
 \`\`\`agda
-module Base.Maybe.Type where
+module Base.Maybe.Maybe where
 
 data Maybe {a} (A : Set a) : Set a where
   None : Maybe A
@@ -162,7 +162,7 @@ data Maybe {a} (A : Set a) : Set a where
 {-# BUILTIN MAYBE Maybe #-}
 \`\`\`
 
-# Base/Maybe/Type.ts
+# Base/Maybe/Maybe.ts
 
 \`\`\`ts
 export type Maybe<A>
@@ -176,10 +176,10 @@ export const $Some = <A>(value: A): Maybe<A> => ({ $: 'Some', value });
 export const  Some = <A>(value: A) => $Some(value);
 \`\`\`
 
-# Base/List/Type.agda
+# Base/List/List.agda
 
 \`\`\`agda
-module Base.List.Type where
+module Base.List.List where
 
 -- A polymorphic List with two constructors:
 -- - _::_ : Appends an element to a list.
@@ -192,7 +192,7 @@ data List {a} (A : Set a) : Set a where
 infixr 5 _::_
 \`\`\`
 
-# Base/List/Type.ts
+# Base/List/List.ts
 
 \`\`\`ts
 // A polymorphic List with two constructors:
@@ -217,8 +217,8 @@ export const  Cons = <A>(head: A) => (tail: List<A>) => $Cons(head, tail);
 \`\`\`agda
 module Base.List.head where
 
-open import Base.List.Type
-open import Base.Maybe.Type
+open import Base.List.List
+open import Base.Maybe.Maybe
 
 -- Safely retrieves the first element of a list.
 -- - xs: The input list.
@@ -232,8 +232,8 @@ head (x :: _) = Some x
 # Base/List/head.ts
 
 \`\`\`ts
-import { List, $Cons, $Nil } from '../../Base/List/Type';
-import { Maybe, $None, $Some } from '../../Base/Maybe/Type';
+import { List, $Cons, $Nil } from '../../Base/List/List';
+import { Maybe, $None, $Some } from '../../Base/Maybe/Maybe';
 
 // Safely retrieves the first element of a list.
 // - xs: The input list.
@@ -251,18 +251,18 @@ export const $head = <A>(xs: List<A>): Maybe<A> => {
 export const head = <A>(xs: List<A>) => $head(xs);
 \`\`\`
 
-# Base/String/Type.agda
+# Base/String/String.agda
 
 \`\`\`agda
-module Base.String.Type where
+module Base.String.String where
   
-open import Base.Bool.Type
+open import Base.Bool.Bool
 
 postulate String : Set
 {-# BUILTIN STRING String #-}
 \`\`\`
 
-# Base/String/Type.ts
+# Base/String/String.ts
 
 \`\`\`ts
 // Represents a string of characters.
@@ -276,9 +276,9 @@ export type String = string;
 \`\`\`agda
 module Base.String.from-char where
 
-open import Base.Char.Type
-open import Base.List.Type
-open import Base.String.Type
+open import Base.Char.Char
+open import Base.List.List
+open import Base.String.String
 open import Base.String.from-list
 
 -- Converts a character to a string
@@ -291,9 +291,9 @@ from-char c = from-list (c :: [])
 # Base/String/from-char.ts
 
 \`\`\`ts
-import { Char } from '../../Base/Char/Type';
-import { String } from '../../Base/String/Type';
-import { $Cons, $Nil } from '../../Base/List/Type';
+import { Char } from '../../Base/Char/Char';
+import { String } from '../../Base/String/String';
+import { $Cons, $Nil } from '../../Base/List/List';
 import { $from_list } from '../../Base/String/from-list';
 
 // Converts a character to a string
@@ -308,10 +308,10 @@ export const $from_char = (c: Char): String => c;
 export const  from_char = (c: Char) => c;
 \`\`\`
 
-# Base/Bits/Type.agda
+# Base/Bits/Bits.agda
 
 \`\`\`agda
-module Base.Bits.Type where
+module Base.Bits.Bits where
 
 -- Represents a binary string.
 -- - O: Represents a zero bit.
@@ -323,7 +323,7 @@ data Bits : Set where
   E : Bits
 \`\`\`
 
-# Base/Bits/Type.ts
+# Base/Bits/Bits.ts
 
 \`\`\`ts
 // Represents a binary string.
@@ -350,7 +350,7 @@ export const  E: Bits = $E;
 \`\`\`agda
 module Base.Bits.xor where
 
-open import Base.Bits.Type
+open import Base.Bits.Bits
 
 -- Performs bitwise XOR operation on two Bits values.
 -- - a: The 1st Bits value.
@@ -375,7 +375,7 @@ infixr 5 _^_
 # Base/Bits/xor.ts
 
 \`\`\`ts
-import { Bits, $O, $I, $E } from '../../Base/Bits/Type';
+import { Bits, $O, $I, $E } from '../../Base/Bits/Bits';
 
 // Performs bitwise XOR operation on two Bits values.
 // - a: The 1st Bits value.
@@ -416,10 +416,10 @@ export const xor = (a: Bits) => (b: Bits) => $xor(a, b);
 // NOTE: Operator omitted: '_^_'.
 \`\`\`
 
-# Base/Nat/Type.agda:
+# Base/Nat/Nat.agda:
 
 \`\`\`agda
-module Base.Nat.Type where
+module Base.Nat.Nat where
 
 data Nat : Set where
   Zero : Nat
@@ -428,7 +428,7 @@ data Nat : Set where
 {-# BUILTIN NATURAL Nat #-}
 \`\`\`
 
-# Base/Nat/Type.ts
+# Base/Nat/Nat.ts
 
 \`\`\`ts
 export type Nat = bigint;
@@ -447,7 +447,7 @@ export const  Succ = (n: Nat) => $Succ(n);
 \`\`\`agda
 module Base.Nat.add where
 
-open import Base.Nat.Type
+open import Base.Nat.Nat
 
 -- Addition of nats.
 -- - m: The 1st nat.
@@ -466,7 +466,7 @@ _+_ = add
 # Base/Nat/add.ts
 
 \`\`\`ts
-import { Nat, $Succ, $Zero } from '../../Base/Nat/Type';
+import { Nat, $Succ, $Zero } from '../../Base/Nat/Nat';
 
 // Addition of nats.
 // - m: The 1st nat.
@@ -492,17 +492,17 @@ export const  add = (m: Nat) => (n: Nat) => m + n;
 module Base.Parser.Examples.LambdaTerm.parse where
 
 open import Base.Function.case
-open import Base.Maybe.Type
-open import Base.Parser.Examples.LambdaTerm.Type
+open import Base.Maybe.Maybe
+open import Base.Parser.Examples.LambdaTerm.LambdaTerm
 open import Base.Parser.Monad.bind
 open import Base.Parser.Monad.pure
 open import Base.Parser.State
-open import Base.Parser.Type
+open import Base.Parser.Parser
 open import Base.Parser.consume
 open import Base.Parser.parse-name
 open import Base.Parser.peek-one
 open import Base.Parser.skip-trivia
-open import Base.String.Type
+open import Base.String.String
 
 parse : Parser Term
 parse = do
@@ -528,17 +528,17 @@ parse = do
 # Base/Parser/Examples/LambdaTerm/parse.agda
 
 \`\`\`ts
-import { Maybe, $Some, $None } from '../../../../Base/Maybe/Type';
-import { Term, $Lam, $App, $Var } from '../../../../Base/Parser/Examples/LambdaTerm/Type';
+import { Maybe, $Some, $None } from '../../../../Base/Maybe/Maybe';
+import { Term, $Lam, $App, $Var } from '../../../../Base/Parser/Examples/LambdaTerm/LambdaTerm';
 import { $bind, bind } from '../../../../Base/Parser/Monad/bind';
 import { $pure } from '../../../../Base/Parser/Monad/pure';
 import { State } from '../../../../Base/Parser/State';
-import { Parser } from '../../../../Base/Parser/Type';
+import { Parser } from '../../../../Base/Parser/Parser';
 import { $consume } from '../../../../Base/Parser/consume';
 import { $parse_name } from '../../../../Base/Parser/parse-name';
 import { $peek_one } from '../../../../Base/Parser/peek-one';
 import { $skip_trivia } from '../../../../Base/Parser/skip-trivia';
-import { String } from '../../../../Base/String/Type';
+import { String } from '../../../../Base/String/String';
 
 export const $parse: Parser<Term> = 
   $bind($skip_trivia, () =>
@@ -592,7 +592,7 @@ main = loop 0
 
 # Main.ts
 
-\`\`\`agda
+\`\`\`ts
 import { Nat, IO, Unit, String } from './Base/ALL';
 
 const $loop = (i: Nat): IO<Unit> => async () => {
