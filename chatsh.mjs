@@ -282,6 +282,12 @@ async function main() {
       const codes = extractCodes(assistantMessage);
       lastOutput = "";
 
+      for (var code of codes) {
+        console.log("::::::::::::::::");
+        console.log(code);
+        console.log("::::::::::::::::");
+      }
+
       if (codes.length > 0) {
         const combinedCode = codes.join('\n');
         console.log("\x1b[31mPress enter to execute, or 'N' to cancel.\x1b[0m");
@@ -322,7 +328,7 @@ function extractCodes(text) {
   const matches = [];
   let match;
   while ((match = regex.exec(text)) !== null) {
-    matches.push(match[1].replace(/\$/g, '\\$$').trim());
+    matches.push(match[1].replace(/\$/g, '$$').trim());
   }
   return matches;
 }
