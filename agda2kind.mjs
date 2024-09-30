@@ -10,14 +10,17 @@ You are an expert Agda <-> Kind compiler. Your task is to translate Agda to/from
 
 Follow these rules:
 
+- Preserve the source algorithm form and structure as closely as possible.
 - Represent Agda's 'Char' as a Kind 'U32', and Agda's 'String' as a Kind '(List U32)'.
 - Always use holes ('_') for type parameters, since these can be inferred.
 - Do not compile infix operators (like '+') to Kind. Just skip them completely.
 - Always translate Agda's pattern-matching equations to nested λ-matches.
+- Do not assume the existence of syntaxes in Kind that weren't shown below.
+- Always use kebab-case on Kind, just as in Agda. Do not use snake_case.
 
 Avoid the following common errors:
 
-(TODO)
+- In Kind, do not start names with '_'. That parses as a hole. (No 'λ_' either.)
 
 About Kind:
 
@@ -611,6 +614,159 @@ BS/eq
     #O: λa.tail λb.tail #False{}
     #I: λa.tail λb.tail (Base/Bits/eq a.tail b.tail)
   }
+}
+\`\`\`
+
+# Base/Trait/Monad.agda
+
+\`\`\`agda
+module Base.Trait.Monad where
+
+record Monad (M : Set -> Set) : Set₁ where
+  field
+    bind : ∀ {A B : Set} -> M A -> (A -> M B) -> M B
+    pure : ∀ {A : Set} -> A -> M A
+
+open Monad {{...}} public
+
+_>>=_ : ∀ {M : Set -> Set} {{monadM : Monad M}} {A B : Set} -> M A -> (A -> M B) -> M B
+_>>=_ {{monadM}} = bind {{monadM}}
+
+infixl 1 _>>=_ _>>_
+
+seq : ∀ {M : Set -> Set} {{monadM : Monad M}} {A B : Set} -> M A -> M B -> M B
+seq ma mb = ma >>= λ _ -> mb
+
+_>>_ : ∀ {M : Set -> Set} {{monadM : Monad M}} {A B : Set} -> M A -> M B -> M B
+_>>_ = seq
+\`\`\`
+
+# Base/Trait/Monad.kind
+
+\`\`\`kind
+use Base/Trait/ as T/
+
+// Represents the Monad trait for a type constructor M
+T/Monad
+: ∀(M: ∀(A: *) *)
+  *
+= λM #[]{
+  #Monad{
+    bind: ∀(A: *) ∀(B: *) ∀(ma: (M A)) ∀(f: ∀(a: A) (M B)) (M B)
+    pure: ∀(A: *) ∀(a: A) (M A)
+  } : (T/Monad M)
+}
+
+// Accessor for the bind field
+T/Monad/bind
+: ∀(M: ∀(A: *) *)
+  ∀(m: (T/Monad M))
+  ∀(A: *)
+  ∀(B: *)
+  ∀(ma: (M A))
+  ∀(f: ∀(a: A) (M B))
+  (M B)
+= λM λ{
+  #Monad: λm.bind λm.pure λA λB λma λf (m.bind _ _ ma f)
+}
+
+// Accessor for the pure field
+T/Monad/pure
+: ∀(M: ∀(A: *) *)
+  ∀(m: (T/Monad M))
+  ∀(A: *)
+  ∀(a: A)
+  (M A)
+= λM λ{
+  #Monad: λm.bind λm.pure λA λa (m.pure _ a)
+}
+
+// Sequence operator (>>)
+T/Monad/seq
+: ∀(M: ∀(A: *) *)
+  ∀(m: (T/Monad M))
+  ∀(A: *)
+  ∀(B: *)
+  ∀(ma: (M A))
+  ∀(mb: (M B))
+  (M B)
+= λM λm λA λB λma λmb
+  (T/Monad/bind M m _ _ ma (λx mb))
+\`\`\`
+
+# Base/Trait/Eq.agda
+
+\`\`\`agda
+module Base.Trait.Eq where
+
+open import Agda.Primitive
+open import Base.Bool.Bool
+open import Base.Bool.not
+
+record Eq {a} (A : Set a) : Set (lsuc a) where
+  constructor MkEq
+  field
+    eq  : A → A → Bool
+    neq : A → A → Bool
+
+  _==_ = eq
+  _!=_ = neq
+
+  infix 4 _==_ _!=_
+
+open Eq {{...}} public
+
+derive-eq : ∀ {a} {A : Set a} → (A → A → Bool) → Eq A
+derive-eq eq = MkEq eq (λ x y → ! (eq x y))
+\`\`\`
+
+# Base/Trait/Eq.kind
+
+\`\`\`kind
+use Base/Trait/ as T/
+use Base/Bool/ as B/
+
+// Represents the Eq trait for a type A
+T/Eq
+: ∀(A: *)
+  *
+= λA #[]{
+  #Eq{
+    eq: ∀(x: A) ∀(y: A) B/Bool
+    neq: ∀(x: A) ∀(y: A) B/Bool
+  } : (T/Eq A)
+}
+
+// Accessor for the eq field
+T/Eq/eq
+: ∀(A: *)
+  ∀(e: (T/Eq A))
+  ∀(x: A)
+  ∀(y: A)
+  B/Bool
+= λA λ{
+  #Eq: λe.eq λe.neq λx λy (e.eq x y)
+}
+
+// Accessor for the neq field
+T/Eq/neq
+: ∀(A: *)
+  ∀(e: (T/Eq A))
+  ∀(x: A)
+  ∀(y: A)
+  B/Bool
+= λA λ{
+  #Eq: λe.eq λe.neq λx λy (e.neq x y)
+}
+
+// Derives an Eq instance from an equality function
+T/Eq/derive
+: ∀(A: *)
+  ∀(eq: ∀(x: A) ∀(y: A) B/Bool)
+  (T/Eq A)
+= λA λeq #Eq{
+  eq: eq
+  neq: λx λy (B/not (eq x y))
 }
 \`\`\`
 
