@@ -617,6 +617,100 @@ BS/eq
 }
 \`\`\`
 
+# Base/Bits/match.agda
+
+\`\`\`agda
+module Base.Bits.match where
+
+open import Base.Bits.Bits
+
+-- Elimination principle for Bits.
+-- - P: A type family indexed by Bits.
+-- - e: The case for the empty bit string (E).
+-- - o: The case for a bit string starting with 0 (O).
+-- - i: The case for a bit string starting with 1 (I).
+-- - b: The Bits value to match against.
+-- = A value of type (P b), determined by the structure of b.
+match : ∀ {a} {P : Bits → Set a}
+  → (e : P E)
+  → (i : (t : Bits) → P (O t))
+  → (o : (t : Bits) → P (I t))
+  → (b : Bits)
+  → P b
+match e o i E     = e
+match e o i (O t) = o t
+match e o i (I t) = i t
+\`\`\`
+
+# Base/Bits/match.kind
+
+\`\`\`kind
+use Base/Bits/ as BS/
+
+// Elimination principle for Bits.
+// - P: A type family indexed by Bits.
+// - e: The case for the empty bit string (E).
+// - o: The case for a bit string starting with 0 (O).
+// - i: The case for a bit string starting with 1 (I).
+// - b: The Bits value to match against.
+// = A value of type (P b), determined by the structure of b.
+BS/match
+: ∀(P: ∀(b: BS/Bits) *)
+  ∀(e: (P #E{}))
+  ∀(o: ∀(t: BS/Bits) (P (#O{t})))
+  ∀(i: ∀(t: BS/Bits) (P (#I{t})))
+  ∀(b: BS/Bits)
+  (P b)
+= λP λe λo λi λ{
+  #E: e
+  #O: λb.tail (o b.tail)
+  #I: λb.tail (i b.tail)
+}
+\`\`\`
+
+# Base/Bits/normal.agda
+
+\`\`\`agda
+module Base.Bits.normal where
+
+open import Base.Bits.Bits
+
+-- Normalizes a Bits representation by removing trailing zeros from the right side.
+-- - bits: The input Bits value to normalize.
+-- = A new Bits value with trailing zeros removed.
+normal : Bits → Bits
+normal E        = E
+normal (I bits) = I (normal bits)
+normal (O bits) with normal bits
+... | E = E
+... | s = O s
+\`\`\`
+
+# Base/Bits/normal.kind
+
+\`\`\`kind
+use Base/Bits/ as BS/
+
+// Normalizes a Bits representation by removing trailing zeros from the right side.
+// - bits: The input Bits value to normalize.
+// = A new Bits value with trailing zeros removed.
+BS/normal
+: ∀(bits: BS/Bits)
+  BS/Bits
+= λ{
+  #E:
+    #E{}
+  #I: λbits.tail
+    #I{(BS/normal bits.tail)}
+  #O: λbits.tail
+    use expr = (BS/normal bits.tail)
+    use if_e = #E{}
+    use if_o = λexpr.pred #O{#O{expr.pred}}
+    use if_i = λexpr.pred #O{#I{expr.pred}}
+    (BS/match λx(BS/Bits) case_e case_o case_i expr)
+}
+\`\`\`
+
 # Base/Trait/Monad.agda
 
 \`\`\`agda
@@ -767,6 +861,90 @@ T/Eq/derive
 = λA λeq #Eq{
   eq: eq
   neq: λx λy (B/not (eq x y))
+}
+\`\`\`
+
+# Base/BinTree/BinTree.agda
+
+\`\`\`agda
+module Base.BinTree.BinTree where
+
+-- Defines a binary tree datatype.
+-- - Node: Contains a value and two subtrees.
+-- - Leaf: Represents an empty tree.
+data BinTree (A : Set) : Set where
+  Node : (val : A) → (lft : BinTree A) → (rgt : BinTree A) → BinTree A
+  Leaf : BinTree A
+\`\`\`
+
+# Base/BinTree/BinTree.kind
+
+\`\`\`kind
+use Base/BinTree/ as BT/
+
+// Defines a binary tree datatype.
+// - Node: Contains a value and two subtrees.
+// - Leaf: Represents an empty tree.
+BT/BinTree
+: ∀(A: *)
+  *
+= λA #[]{
+  #Node{ val:A lft:(BT/BinTree A) rgt:(BT/BinTree A) } : (BT/BinTree A)
+  #Leaf{} : (BT/BinTree A)
+}
+\`\`\`
+
+# Base/BinTree/count.agda
+
+\`\`\`agda
+module Base.BinTree.count where
+
+open import Base.BinTree.BinTree
+open import Base.Bool.Bool
+open import Base.Bool.if
+open import Base.Nat.Nat
+open import Base.Nat.add
+open import Base.Trait.Eq
+
+-- Counts the occurrences of a given value in a binary tree.
+-- - A: The type of elements in the tree.
+-- - e: An equality function for type A.
+-- - x: The value to count.
+-- - t: The binary tree to search.
+-- = The number of occurrences of the given value in the tree.
+count : ∀ {A : Set} {{EqA : Eq A}} → A → BinTree A → Nat
+count _ Leaf         = Zero
+count x (Node y l r) = (if x == y then 1 else 0) + (count x l + count x r)
+\`\`\`
+
+# Base/BinTree/count.kind 
+
+\`\`\`agda
+use Base/BinTree/ as BT/
+use Base/Bool/ as B/
+use Base/Nat/ as N/
+use Base/Trait/ as T/
+
+// Counts the occurrences of a given value in a binary tree.
+// - A: The type of elements in the tree.
+// - e: An equality function for type A.
+// - x: The value to count.
+// - t: The binary tree to search.
+// = The number of occurrences of the given value in the tree.
+BT/count
+: ∀(A: *)
+  ∀(e: (T/Eq A))
+  ∀(x: A)
+  ∀(t: (BT/BinTree A))
+  N/Nat
+= λA λe λx λ{
+  #Leaf:
+    #Zero{}
+  #Node: λt.val λt.lft λt.rgt
+    let val = (B/if N/Nat (T/Eq/eq _ e x t.val) #Succ{#Zero{}} #Zero{})
+    let lft = (BT/count _ e x t.lft)
+    let rgt = (BT/count _ e x t.rgt)
+    (N/add val (N/add lft rgt))
 }
 \`\`\`
 
