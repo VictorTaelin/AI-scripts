@@ -36,8 +36,9 @@ export const MODELS = {
 // Factory function to create a stateful OpenAI chat
 export function openAIChat(clientClass) {
   const messages = [];
+  let extendFunction = null;
 
-  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 8192, stream = true, shorten = (x => x) }) {
+  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 8192, stream = true, shorten = (x => x), extend = null }) {
     if (userMessage === null) {
       return { messages };
     }
@@ -65,10 +66,14 @@ export function openAIChat(clientClass) {
       }
     }
 
+    let extendedUserMessage = extendFunction ? extendFunction(userMessage) : userMessage;
+    extendFunction = extend; // Set for next call
+
+    const messagesCopy = [...messages, { role: "user", content: extendedUserMessage }];
     messages.push({ role: "user", content: userMessage });
 
     const params = {
-      messages,
+      messages: messagesCopy,
       model,
       temperature,
       max_tokens,
@@ -102,7 +107,7 @@ export function openAIChat(clientClass) {
 export function anthropicChat(clientClass) {
   const messages = [];
 
-  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 8192, stream = true, system_cacheable = false, shorten = (x => x) }) {
+  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 8192, stream = true, system_cacheable = false, shorten = (x => x), extend = null }) {
     if (userMessage === null) {
       return { messages };
     }
@@ -115,6 +120,9 @@ export function anthropicChat(clientClass) {
       }
     });
 
+    let extendedUserMessage = extend ? extend(userMessage) : userMessage;
+
+    const messagesCopy = [...messages, { role: "user", content: extendedUserMessage }];
     messages.push({ role: "user", content: userMessage });
 
     const cached_system = [{ type: "text", text: system, cache_control: { type: "ephemeral" } }];
@@ -122,9 +130,11 @@ export function anthropicChat(clientClass) {
     let prompt_system = system_cacheable ? cached_system : system;
     const params = { system: prompt_system, model, temperature, max_tokens, stream };
 
+    //console.log("->", extend, JSON.stringify(messagesCopy, null, 2));
+
     let result = "";
     const response = client.messages
-      .stream({ ...params, messages })
+      .stream({ ...params, messages: messagesCopy })
       .on('text', (text) => {
         process.stdout.write(text);
         result += text;
@@ -141,8 +151,9 @@ export function anthropicChat(clientClass) {
 
 export function geminiChat(clientClass) {
   const messages = [];
+  let extendFunction = null;
 
-  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 4096, stream = true, shorten = (x => x) }) {
+  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 4096, stream = true, shorten = (x => x), extend = null }) {
     if (userMessage === null) {
       return { messages };
     }
@@ -174,24 +185,28 @@ export function geminiChat(clientClass) {
       },
     ];
 
+    let extendedUserMessage = extendFunction ? extendFunction(userMessage) : userMessage;
+    extendFunction = extend; // Set for next call
+
+    const messagesCopy = [...messages, { role: "user", parts: [{ text: extendedUserMessage }] }];
+    messages.push({ role: "user", parts: [{ text: userMessage }] });
+
     const chat = client.getGenerativeModel({ model, generationConfig })
       .startChat({
-        history: messages,
+        history: messagesCopy,
         safetySettings: safetySettings,
       });
 
-    messages.push({ role: "user", parts: [{ text: userMessage }] });
-
     let result = "";
     if (stream) {
-      const response = await chat.sendMessageStream(userMessage);
+      const response = await chat.sendMessageStream(extendedUserMessage);
       for await (const chunk of response.stream) {
         const text = chunk.text();
         process.stdout.write(text);
         result += text;
       }
     } else {
-      const response = await chat.sendMessage(userMessage);
+      const response = await chat.sendMessage(extendedUserMessage);
       result = (await response.response).text();
     }
 
@@ -206,8 +221,9 @@ export function geminiChat(clientClass) {
 // Factory function to create a stateful OpenRouter chat
 export function openRouterChat(clientClass) {
   const messages = [];
+  let extendFunction = null;
 
-  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 8192, stream = true, shorten = (x => x) }) {
+  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 8192, stream = true, shorten = (x => x), extend = null }) {
     if (userMessage === null) {
       return { messages };
     }
@@ -225,10 +241,14 @@ export function openRouterChat(clientClass) {
       messages.push({ role: "system", content: system });
     }
 
+    let extendedUserMessage = extendFunction ? extendFunction(userMessage) : userMessage;
+    extendFunction = extend; // Set for next call
+
+    const messagesCopy = [...messages, { role: "user", content: extendedUserMessage }];
     messages.push({ role: "user", content: userMessage });
 
     const params = {
-      messages,
+      messages: messagesCopy,
       model,
       temperature,
       max_tokens,
@@ -298,12 +318,4 @@ export function tokenCount(inputText) {
   // Return the number of tokens
   return numberOfTokens;
 }
-
-
-
-
-
-
-
-
 

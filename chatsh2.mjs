@@ -340,21 +340,42 @@ const showStats = async () => {
   shownPaths.forEach(path => {
     console.log('\x1b[33m%s\x1b[0m', `  - ${path}`);
   });
-  console.log('\x1b[33m%s\x1b[0m', `sys_tokens: ${systemPromptTokenCount}`);
-  console.log('\x1b[33m%s\x1b[0m', `msg_tokens: ${totalChatTokenCount}`);
   console.log('\x1b[33m%s\x1b[0m', `msg_number: ${totalMessages}`);
+  console.log('\x1b[33m%s\x1b[0m', `msg_tokens: ${totalChatTokenCount}`);
+  console.log('\x1b[33m%s\x1b[0m', `sys_tokens: ${systemPromptTokenCount}`);
+  console.log('\x1b[33m%s\x1b[0m', `tot_tokens: ${systemPromptTokenCount + totalChatTokenCount}`);
   console.log('');
 };
 
 
 const shortenAIResponse = (text) => {
-  return text.replace(/<WRITE[\s\S]*?<\/WRITE>/g, '<WRITE>(omitted)</WRITE>');
+  return text.replace(/<WRITE[\s\S]*?<\/WRITE>/g, '<WRITE/>');
 };
 
 const ask = chat(MODEL);
 
+const loadFunctionCall = (command) => {
+  const localPath = `./${command}.csh`;
+  const cshPath = `./CSH/${command}.csh`;
+  
+  if (fs.existsSync(localPath)) {
+    return fs.readFileSync(localPath, 'utf-8');
+  } else if (fs.existsSync(cshPath)) {
+    return fs.readFileSync(cshPath, 'utf-8');
+  }
+  
+  return null;
+};
+
 const main = async () => {
   console.log(`Welcome to ChatSH. Model: ${MODELS[MODEL]||MODEL}\n`);
+
+  // Check for direct call
+  if (process.argv.length > 3) {
+    const directMessage = process.argv.slice(3).join(' ');
+    await processUserInput(directMessage);
+    process.exit(0);
+  }
 
   while (true) {
     process.stdout.write('\x1b[1m');  // Start bold
@@ -365,42 +386,59 @@ const main = async () => {
       continue;
     }
 
-    appendToHistory('USER', userInput);
+    await processUserInput(userInput);
+  }
+};
 
-    if (await executeUserCommand(userInput)) {
-      continue;
+const processUserInput = async (userInput) => {
+  appendToHistory('USER', userInput);
+
+  if (await executeUserCommand(userInput)) {
+    return;
+  }
+
+  let fullMessage = userInput;
+  if (lastOutput) {
+    fullMessage = `\`\`\`sh\n${lastOutput.trim()}\n\`\`\`\n\n${userInput}`;
+    lastOutput = "";
+  }
+
+  const systemPrompt = buildSystemPrompt();
+
+  try {
+    let extend = null;
+    if (userInput.startsWith('/')) {
+      const [command, ...rest] = userInput.slice(1).split(' ');
+      const functionContent = loadFunctionCall(command);
+      if (functionContent) {
+        extend = msg => functionContent + "\n" + msg;
+        fullMessage = rest.join(' ');
+        //console.log("->->->->->->->", extend(fullMessage));
+      }
     }
 
-    var fullMessage = userInput;
-    if (lastOutput) {
-      fullMessage = `\`\`\`sh\n${lastOutput.trim()}\n\`\`\`\n\n${userInput}`;
-      lastOutput = "";
-    }
+    //console.log("->->->->", extend);
 
-    const systemPrompt = buildSystemPrompt();
+    const assistantMessage = await ask(fullMessage, {
+      system: systemPrompt,
+      model: MODEL,
+      max_tokens: 8192,
+      system_cacheable: true,
+      shorten: shortenAIResponse,
+      extend: extend
+    });
+    console.log("");
+    appendToHistory('CHATSH', assistantMessage);
 
-    try {
-      const assistantMessage = await ask(fullMessage, {
-        system: systemPrompt,
-        model: MODEL,
-        max_tokens: 8192,
-        system_cacheable: true,
-        shorten: shortenAIResponse
-      });
-      console.log("");
-      appendToHistory('CHATSH', assistantMessage);
+    fs.appendFileSync('.log.txt', fullMessage + '\n##########################################\n');
+    fs.writeFileSync('.sys.txt', systemPrompt);
+    fs.writeFileSync('.msg.txt', JSON.stringify(await ask(null, {}), null, 2));
 
-      fs.appendFileSync('.log.txt', fullMessage + '\n##########################################\n');
-      fs.writeFileSync('.sys.txt', systemPrompt);
-      fs.writeFileSync('.msg.txt', JSON.stringify(await ask(null, {}), null, 2));
-
-      await processAIResponse(assistantMessage);
-    } catch (error) {
-      console.error(`Error: ${error.message}`);
-      appendToHistory('ERROR', error.message);
-    }
+    await processAIResponse(assistantMessage);
+  } catch (error) {
+    console.error(`Error: ${error.message}`);
+    appendToHistory('ERROR', error.message);
   }
 };
 
 main();
-
