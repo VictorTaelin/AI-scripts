@@ -71,7 +71,13 @@ Use this command to hide irrelevant files bloating the context.
 Always use this command when the user asks to "write", "create", "modify", "edit", "replace", "refactor" (etc.) a file.
 When modifying an existing file, rewrite it fully, without omitting parts.
 
-4. To perform any other task:
+4. To remove a file or directory:
+
+<REMOVE path="/Path/to/file/or/dir"/>
+
+Use this command when the user asks to "delete", "remove", "erase" (etc.) a file or directory.
+
+5. To perform any other task:
 
 <RUN>
 (shell script with arbitrary commands, EXCEPT for file editing and displaying commands such as 'cat', 'touch', and similar)
@@ -115,11 +121,17 @@ banana
 strawberry
 </WRITE>
 
+::: USER
+remove file_1.txt
+
+::: CHATSH
+<REMOVE path="file_1.txt"/>
+
 # Avoid these common errors:
 
 - Do NOT use <RUN/> to EDIT files. Always use <WRITE/> for that.
 - Do NOT use <RUN/> to VIEW files. Always use <SHOW/> for that.
-- Do NOT use 'cat' or similar shell commands. Use <SHOW/> instead.
+- Do NOT use <RUN/> to REMOVE files. Always use <REMOVE/> for that.
 - Do NOT add any explanatory text or comments before or after XML commands.
 - Do NOT output anything other XML Commands to complete a task on "command mode".
 
@@ -285,6 +297,22 @@ const processAIResponse = async (response) => {
               appendToHistory('ERROR', 'Invalid HIDE command');
             }
             break;
+          case 'REMOVE':
+            if (attrs.path) {
+              attrs.path = path.resolve(attrs.path);
+              try {
+                fs.rmSync(attrs.path, { recursive: true, force: true });
+                console.log(`Removed: ${attrs.path}`);
+                appendToHistory('SYSTEM', `Removed: ${attrs.path}`);
+                shownPaths.delete(attrs.path);
+              } catch (error) {
+                console.error(`Error removing ${attrs.path}: ${error.message}`);
+                appendToHistory('ERROR', `Error removing ${attrs.path}: ${error.message}`);
+              }
+            } else {
+              appendToHistory('ERROR', 'Invalid REMOVE command');
+            }
+            break;
           default:
             console.error(`Unknown command: ${tag}`);
         }
@@ -375,3 +403,4 @@ const main = async () => {
 };
 
 main();
+
