@@ -1,5 +1,3 @@
-//./openrouter_api.txt//
-
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
@@ -39,7 +37,11 @@ export const MODELS = {
 export function openAIChat(clientClass) {
   const messages = [];
 
-  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 8192, stream = true }) {
+  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 8192, stream = true, shorten = (x => x) }) {
+    if (userMessage === null) {
+      return { messages };
+    }
+
     model = MODELS[model] || model;
     const client = new clientClass({ apiKey: await getToken(clientClass.name.toLowerCase()) });
 
@@ -88,7 +90,7 @@ export function openAIChat(clientClass) {
       result = text;
     }
 
-    messages.push({ role: 'assistant', content: result });
+    messages.push({ role: 'assistant', content: await shorten(result) });
 
     return result;
   }
@@ -100,7 +102,11 @@ export function openAIChat(clientClass) {
 export function anthropicChat(clientClass) {
   const messages = [];
 
-  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 8192, stream = true, system_cacheable = false }) {
+  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 8192, stream = true, system_cacheable = false, shorten = (x => x) }) {
+    if (userMessage === null) {
+      return { messages };
+    }
+
     model = MODELS[model] || model;
     const client = new clientClass({ 
       apiKey: await getToken(clientClass.name.toLowerCase()),
@@ -125,7 +131,7 @@ export function anthropicChat(clientClass) {
       });
     await response.finalMessage();
 
-    messages.push({ role: 'assistant', content: result });
+    messages.push({ role: 'assistant', content: await shorten(result) });
 
     return result;
   }
@@ -136,7 +142,11 @@ export function anthropicChat(clientClass) {
 export function geminiChat(clientClass) {
   const messages = [];
 
-  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 4096, stream = true }) {
+  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 4096, stream = true, shorten = (x => x) }) {
+    if (userMessage === null) {
+      return { messages };
+    }
+
     model = MODELS[model] || model;
     const client = new clientClass(await getToken(clientClass.name.toLowerCase()));
 
@@ -185,7 +195,7 @@ export function geminiChat(clientClass) {
       result = (await response.response).text();
     }
 
-    messages.push({ role: 'model', parts: [{ text: result }] });
+    messages.push({ role: 'model', parts: [{ text: await shorten(result) }] });
 
     return result;
   }
@@ -197,7 +207,11 @@ export function geminiChat(clientClass) {
 export function openRouterChat(clientClass) {
   const messages = [];
 
-  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 8192, stream = true }) {
+  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 8192, stream = true, shorten = (x => x) }) {
+    if (userMessage === null) {
+      return { messages };
+    }
+
     model = MODELS[model] || model;
     const openai = new OpenAI({
       baseURL: "https://openrouter.ai/api/v1",
@@ -235,7 +249,7 @@ export function openRouterChat(clientClass) {
       result = text;
     }
 
-    messages.push({ role: 'assistant', content: result });
+    messages.push({ role: 'assistant', content: await shorten(result) });
 
     return result;
   }
@@ -284,3 +298,12 @@ export function tokenCount(inputText) {
   // Return the number of tokens
   return numberOfTokens;
 }
+
+
+
+
+
+
+
+
+
