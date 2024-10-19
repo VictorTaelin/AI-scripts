@@ -104,7 +104,7 @@ export function openAIChat(clientClass) {
 }
 
 // Factory function to create a stateful Anthropic chat
-export function anthropicChat(clientClass) {
+export function anthropicChat(clientClass, MODEL) {
   const messages = [];
 
   async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 8192, stream = true, system_cacheable = false, shorten = (x => x), extend = null }) {
@@ -112,6 +112,7 @@ export function anthropicChat(clientClass) {
       return { messages };
     }
 
+    model = model || MODEL;
     model = MODELS[model] || model;
     const client = new clientClass({ 
       apiKey: await getToken(clientClass.name.toLowerCase()),
@@ -136,7 +137,9 @@ export function anthropicChat(clientClass) {
     const response = client.messages
       .stream({ ...params, messages: messagesCopy })
       .on('text', (text) => {
-        process.stdout.write(text);
+        if (stream) {
+          process.stdout.write(text);
+        }
         result += text;
       });
     await response.finalMessage();
@@ -281,17 +284,17 @@ export function openRouterChat(clientClass) {
 export function chat(model) {
   model = MODELS[model] || model;
   if (model.startsWith('gpt')) {
-    return openAIChat(OpenAI);
+    return openAIChat(OpenAI, model);
   } else if (model.startsWith('o1')) {
-    return openAIChat(OpenAI);
+    return openAIChat(OpenAI, model);
   } else if (model.startsWith('chatgpt')) {
-    return openAIChat(OpenAI);
+    return openAIChat(OpenAI, model);
   } else if (model.startsWith('claude')) {
-    return anthropicChat(Anthropic);
+    return anthropicChat(Anthropic, model);
   } else if (model.startsWith('meta')) {
-    return openRouterChat(OpenRouter);
+    return openRouterChat(OpenRouter, model);
   } else if (model.startsWith('gemini')) {
-    return geminiChat(GoogleGenerativeAI);
+    return geminiChat(GoogleGenerativeAI, model);
   } else {
     throw new Error(`Unsupported model: ${model}`);
   }
