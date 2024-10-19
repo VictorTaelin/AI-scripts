@@ -26,7 +26,7 @@ const system = {
     deps: name => "agda-deps " + name + " --recursive",
   },
   kind: {
-    koder: await fs.readFile(new URL('./koder/kind_koder.txt', import.meta.url), 'utf-8').then(content => content.trim()),
+    koder: await fs.readFile(new URL('./koder/kind_koder_2.txt', import.meta.url), 'utf-8').then(content => content.trim()),
     guess: await fs.readFile(new URL('./koder/kind_guess.txt', import.meta.url), 'utf-8').then(content => content.trim()),
     deps: name => "kind deps " + name,
   },
@@ -42,7 +42,7 @@ async function realDependencies(file, ext) {
       }
       return stdout.trim().split('\n').map(dep => dep.trim() + "." + ext);
     } catch (error) {
-      console.error(`Error getting real dependencies: ${error.message}`);
+      //console.error(`Error getting real dependencies: ${error.message}`);
       return [];
     }
   }
