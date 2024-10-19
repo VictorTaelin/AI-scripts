@@ -134,6 +134,7 @@ remove file_1.txt
 - Do NOT use <RUN/> to REMOVE files. Always use <REMOVE/> for that.
 - Do NOT add any explanatory text or comments before or after XML commands.
 - Do NOT output anything other XML Commands to complete a task on "command mode".
+- We will EDIT your response to omit <WRITE/> tags, but you should NEVER omit them yourself.
 
 # Context:
 
@@ -256,40 +257,47 @@ const processAIResponse = async (response) => {
     if (await confirmAction(confirmMessage)) {
       for (const { tag, attrs, content } of commands) {
         switch (tag) {
-          case 'WRITE':
+          case 'WRITE': {
             if (attrs.path && content != null) {
               attrs.path = path.resolve(attrs.path);
-              fs.writeFileSync(attrs.path, content);
-              //appendToHistory('SYSTEM', `File written: ${attrs.path}`);
+              fs.writeFileSync(attrs.path, content.trim());
               shownPaths.add(attrs.path);
             } else {
               appendToHistory('ERROR', 'Invalid WRITE command');
             }
             break;
-          case 'RUN':
+          }
+          case 'RUN': {
             if (content != null) {
               await executeCommand(content);
             } else {
               appendToHistory('ERROR', 'Invalid RUN command');
             }
             break;
-          case 'SHOW':
+          }
+          case 'SHOW': {
             if (attrs.path) {
               attrs.path = path.resolve(attrs.path);
               shownPaths.add(attrs.path);
               try {
-                const content = fs.readFileSync(attrs.path, 'utf-8');
-                console.log('\x1b[34m%s\x1b[0m', content.trim());  // Blue color for system outputs
-                //appendToHistory('SYSTEM', `Showed contents of ${attrs.path}`);
+                const stat = fs.statSync(attrs.path);
+                if (stat.isDirectory()) {
+                  const files = fs.readdirSync(attrs.path);
+                  console.log('\x1b[34m%s\x1b[0m', files.join('\n'));  // Blue color for system outputs
+                } else if (stat.isFile()) {
+                  const content = fs.readFileSync(attrs.path, 'utf-8');
+                  console.log('\x1b[34m%s\x1b[0m', content.trim());  // Blue color for system outputs
+                }
               } catch (error) {
-                console.error(`Error reading file ${attrs.path}: ${error.message}`);
-                appendToHistory('ERROR', `Error reading file ${attrs.path}: ${error.message}`);
+                console.error(`Error reading path ${attrs.path}: ${error.message}`);
+                appendToHistory('ERROR', `Error reading path ${attrs.path}: ${error.message}`);
               }
             } else {
               appendToHistory('ERROR', 'Invalid SHOW command');
             }
             break;
-          case 'HIDE':
+          }
+          case 'HIDE': {
             if (attrs.path) {
               attrs.path = path.resolve(attrs.path);
               shownPaths.delete(attrs.path);
@@ -297,7 +305,8 @@ const processAIResponse = async (response) => {
               appendToHistory('ERROR', 'Invalid HIDE command');
             }
             break;
-          case 'REMOVE':
+          }
+          case 'REMOVE': {
             if (attrs.path) {
               attrs.path = path.resolve(attrs.path);
               try {
@@ -313,8 +322,10 @@ const processAIResponse = async (response) => {
               appendToHistory('ERROR', 'Invalid REMOVE command');
             }
             break;
-          default:
+          }
+          default: {
             console.error(`Unknown command: ${tag}`);
+          }
         }
       }
     } else {
@@ -349,7 +360,7 @@ const showStats = async () => {
 
 
 const shortenAIResponse = (text) => {
-  return text.replace(/<WRITE[\s\S]*?<\/WRITE>/g, '<WRITE/>');
+  return text.replace(/<WRITE[\s\S]*?<\/WRITE>/g, '(omitted)');
 };
 
 const ask = chat(MODEL);
@@ -413,11 +424,8 @@ const processUserInput = async (userInput) => {
       if (functionContent) {
         extend = msg => functionContent + "\n" + msg;
         fullMessage = rest.join(' ');
-        //console.log("->->->->->->->", extend(fullMessage));
       }
     }
-
-    //console.log("->->->->", extend);
 
     const assistantMessage = await ask(fullMessage, {
       system: systemPrompt,
@@ -442,3 +450,4 @@ const processUserInput = async (userInput) => {
 };
 
 main();
+
