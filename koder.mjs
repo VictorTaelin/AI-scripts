@@ -7,6 +7,7 @@ import process from "process";
 import { chat, MODELS, tokenCount } from './Chat.mjs';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import kind_clean from "./kind_clean.mjs";
 
 const execAsync = promisify(exec);
 
@@ -18,16 +19,19 @@ const system = {
   ts: {
     koder: await fs.readFile(new URL('./koder/ts_koder.txt', import.meta.url), 'utf-8').then(content => content.trim()),
     guess: await fs.readFile(new URL('./koder/ts_guess.txt', import.meta.url), 'utf-8').then(content => content.trim()),
+    clean: x => x,
     deps: name => "ts-deps " + name + " --recursive",
   },
   agda: {
     koder: await fs.readFile(new URL('./koder/agda_koder_2.txt', import.meta.url), 'utf-8').then(content => content.trim()),
     guess: await fs.readFile(new URL('./koder/agda_guess.txt', import.meta.url), 'utf-8').then(content => content.trim()),
+    clean: x => x,
     deps: name => "agda-deps " + name + " --recursive",
   },
   kind: {
     koder: await fs.readFile(new URL('./koder/kind_koder_2.txt', import.meta.url), 'utf-8').then(content => content.trim()),
     guess: await fs.readFile(new URL('./koder/kind_guess.txt', import.meta.url), 'utf-8').then(content => content.trim()),
+    clean: kind_clean,
     deps: name => "kind deps " + name,
   },
 };
@@ -141,7 +145,7 @@ async function main() {
   let dir = process.cwd();
   let fileContent;
   try {
-    fileContent = await fs.readFile(file, 'utf-8');
+    fileContent = system[ext].clean(await fs.readFile(file, 'utf-8'));
   } catch (e) {
     fileContent = "";
   }
@@ -173,7 +177,7 @@ async function main() {
     let path1 = path.join(dir, `${dep.replace(new RegExp(`\\.${ext}$`), '')}/_.${ext}`); 
     for (const pathToTry of [path0, path1]) {
       try {
-        content = await fs.readFile(pathToTry, 'utf-8');
+        content = system[ext].clean(await fs.readFile(pathToTry, 'utf-8'));
         depPath = pathToTry;
         break;
       } catch (err) {}
