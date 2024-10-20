@@ -29,6 +29,7 @@ Notes:
 - Keep your functions clean, concise and efficient.
 - Do NOT use Unicode, special characters or apostrophes (') in names.
 - Mimic faithfully the style used in the examples below.
+- When asked to update, use the idiomatic style (see below).
 
 KIND LANGUAGE EXAMPLES
 
