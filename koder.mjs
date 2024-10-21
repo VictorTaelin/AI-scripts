@@ -134,9 +134,9 @@ async function main() {
   let model = process.argv[4] || CODE_MODEL;
   let ext = path.extname(file).slice(1);
 
-  // Load the local ".context" file
-  let context = "";
-  try { context = await fs.readFile('./.context', 'utf-8'); } catch (e) {};
+  // Load the local ".koder" file
+  let koder = "";
+  try { koder = await fs.readFile('./.koder', 'utf-8'); } catch (e) {};
 
   // Initialize the chat function with the specified model
   let ask = chat(model);
@@ -161,7 +161,7 @@ async function main() {
   }
 
   // Get preducted dependencies
-  var pred = await predictDependencies(file, ext, context, fileContent, request);
+  var pred = await predictDependencies(file, ext, koder, fileContent, request);
   var pred = pred.map(dep => dep.replace(/\/_$/, ''));
 
   // Get real dependencies
@@ -201,7 +201,7 @@ async function main() {
     fileContent,
     '</FILE>',
     '<CONTEXT>',
-    context,
+    koder,
     '</CONTEXT>',
     '<REQUEST>',
     request,

@@ -29,7 +29,6 @@ Notes:
 - Keep your functions clean, concise and efficient.
 - Do NOT use Unicode, special characters or apostrophes (') in names.
 - Mimic faithfully the style used in the examples below.
-- When asked to update, use the idiomatic style (see below).
 
 KIND LANGUAGE EXAMPLES
 
@@ -43,7 +42,7 @@ Nat : *
 = data[]{
   #Zero : Nat
   #Succ{ pred: Nat } : Nat
-}
+} : Nat
 ```
 
 # Nat/add.kind
@@ -81,7 +80,7 @@ List : * -> *
 = λA data[]{
   #Nil{} : (List A)
   #Cons{ head:A tail:(List A) } : (List A)
-}
+} : (List A)
 ```
 
 # List/fold.kind
@@ -111,7 +110,7 @@ List/fold : ∀(A: *) (List A) -> ∀(P: *) P -> (A -> P -> P) -> P
 Equal : ∀(A: *) A -> A -> *
 = λA λx λy data[y]{
   #Refl{} : (Equal A x x)
-}
+} : (Equal A x y)
 ```
 
 # Equal/refl.kind
