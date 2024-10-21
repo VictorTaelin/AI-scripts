@@ -38,11 +38,10 @@ KIND LANGUAGE EXAMPLES
 // Represents nats.
 // - Zero: The zero nat.
 // - Succ: The successor of a nat.
-Nat : *
-= data[]{
-  #Zero : Nat
-  #Succ{ pred: Nat } : Nat
-} : Nat
+data Nat {
+  #Zero
+  #Succ{ pred: Nat }
+}
 ```
 
 # Nat/add.kind
@@ -73,14 +72,12 @@ Nat/eq : Nat -> Nat -> Bool
 # List/List.kind
 
 ```
-// A polymorphic List with two constructors:
-// - Cons: Appends an element to a list.
-// - Nil: The empty list.
-List : * -> *
-= λA data[]{
-  #Nil{} : (List A)
-  #Cons{ head:A tail:(List A) } : (List A)
-} : (List A)
+// A polymorphic List.
+// - A: Element type.
+data List (A: *) {
+  #Nil
+  #Cons { head: A tail: (List A) }
+}
 ```
 
 # List/fold.kind
@@ -107,10 +104,9 @@ List/fold : ∀(A: *) (List A) -> ∀(P: *) P -> (A -> P -> P) -> P
 // - x: The 1st element.
 // - y: The 2nd element.
 // = A proposition that x equals y.
-Equal : ∀(A: *) A -> A -> *
-= λA λx λy data[y]{
-  #Refl{} : (Equal A x x)
-} : (Equal A x y)
+data Equal (A: *) ~ (x: A) (y: A) {
+  #Refl : (Equal A x x)
+}
 ```
 
 # Equal/refl.kind
