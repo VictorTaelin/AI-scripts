@@ -42,10 +42,8 @@ async function findBookDir(currentDir) {
 async function load_example(name, ext) {
   var bookType = ext === '.kind' ? 'kind' : 'agda';
   var parentDir = await findBookDir(process.cwd());
-  var filePath = path.join(parentDir, `${bookType}book`, `${name}${ext}`);
-  if (ext === ".kind") {
-    filePath = filePath.replace("/Base/", "/");
-  }
+  var filePath = fullPath(path.join(parentDir, `${bookType}book`, `${name}${ext}`));
+  console.log("loading", filePath);
   try {
     var content = await fs.readFile(filePath, 'utf-8');
     if (ext === ".kind") {
@@ -110,7 +108,7 @@ Answer in the EXACT following format:
 DONE.
 `.trim();
 
-console.log(SYSTEM_PROMPT);
+//console.log(SYSTEM_PROMPT);
 
 async function getDeps(file) {
   const ext = path.extname(file);
@@ -136,7 +134,7 @@ async function getDeps(file) {
 function fullPath(filePath) {
   var fullPath = path.resolve(filePath);
   if (fullPath.endsWith(".kind")) {
-    return fullPath.replace("/agdabook/","/kindbook/");
+    return fullPath.replace("/agdabook/","/kindbook/").replace("/Base/","/");
   }
   if (fullPath.endsWith(".agda")) {
     return fullPath.replace("/kindbook/","/agdabook/");
@@ -230,7 +228,7 @@ async function main() {
 
   if (missingDeps.length > 0) {
     console.error("ERROR: Missing dependencies. Generate these files first:");
-    missingDeps.forEach(dep => console.error(`- ${dep}`));
+    missingDeps.forEach(dep => console.error(`- ${fullPath(dep)}`));
     process.exit(1);
   }
 
