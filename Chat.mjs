@@ -20,7 +20,8 @@ export const MODELS = {
 
   // Claude by Anthropic
   cm: 'claude-3-haiku-20240307',
-  c: 'claude-3-5-sonnet-20240620',
+  //c: 'claude-3-5-sonnet-20240620',
+  c: 'claude-3-5-sonnet-20241022',
   C: 'claude-3-opus-20240229',
 
   // Llama by Meta
