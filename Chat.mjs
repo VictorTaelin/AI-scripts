@@ -11,7 +11,7 @@ import { encode } from "gpt-tokenizer/esm/model/davinci-codex"; // tokenizer
 export const MODELS = {
   // GPT by OpenAI
   gm: 'gpt-4o-mini',
-  g: 'gpt-4o-2024-08-06',
+  g: 'chatgpt-4o-latest',
   G: 'gpt-4-32k-0314',
 
   // o1 by OpenAI
@@ -20,9 +20,14 @@ export const MODELS = {
 
   // Claude by Anthropic
   cm: 'claude-3-haiku-20240307',
-  //c: 'claude-3-5-sonnet-20240620',
+
   c: 'claude-3-5-sonnet-20241022',
-  C: 'claude-3-opus-20240229',
+  C: 'claude-3-5-sonnet-20240620',
+
+  //c: 'claude-3-5-sonnet-20240620',
+  //C: 'claude-3-5-sonnet-20241022', // TODO: temporarily using the new sonnet instead of opus
+
+  //C: 'claude-3-opus-20240229',
 
   // Llama by Meta
   lm: 'meta-llama/llama-3.1-8b-instruct',

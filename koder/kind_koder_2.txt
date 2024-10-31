@@ -14,11 +14,11 @@ Syntax:
 - Lambda-Case: `(λ{ #Cons{head tail}: ... #Nil: ... } [1 2 3])` (faster)
 - Inline-Switch: `(match 123 { 0: ... _{pred}: ... } 123)`
 - Lambda-Switch: `(λ{ 0: ... _{pred}: ... } 123)` (used for native numbers)
-- U32 Literal: `3` (native)
+- U64 Literal: `3` (native)
 - Nat Literal: `#3` desugars to `#Succ{#Succ{#Succ{#Zero}}}`
 - List Literal: `[1 2 3]`
 - ADT Literal: `data[]{ #V2{ x: F32 y: F32 } }` (the `[]` holds inductive indices)
-- U32 Operation: `(+ 2 3)`
+- U64 Operation: `(+ 2 3)`
 - Do-Block: `do Maybe { ask x = #Some{1} ask y = #Some{2} ret (+ x y) }`
 
 Notes:
@@ -142,16 +142,16 @@ Equal/apply
 | A B f x y #Refl = #Refl
 ```
 
-# U32/sum.kind
+# U64/sum.kind
 
 ```
 // Sums numbers up to an upper bound, exclusive.
 // - x: The upper bound of the sum.
 // = The sum of all numbers from 0 to x, exclusive.
-U32/sum : U32 -> U32
+U64/sum : U64 -> U64
 = λ{
   0: 0
-  _{p}: (+ p (U32/sum p))
+  _{p}: (+ p (U64/sum p))
 }
 ```
 
