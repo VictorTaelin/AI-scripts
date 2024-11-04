@@ -19,7 +19,7 @@ export const MODELS = {
   o: 'o1-preview',
 
   // Claude by Anthropic
-  cm: 'claude-3-haiku-20240307',
+  cm: 'claude-3-5-haiku-20241022',
 
   c: 'claude-3-5-sonnet-20241022',
   C: 'claude-3-5-sonnet-20240620',
