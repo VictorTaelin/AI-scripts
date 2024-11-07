@@ -438,9 +438,12 @@ const processUserInput = async (userInput) => {
     console.log("");
     appendToHistory('CHATSH', assistantMessage);
 
-    fs.appendFileSync('.log.txt', fullMessage + '\n##########################################\n');
-    fs.writeFileSync('.sys.txt', systemPrompt);
-    fs.writeFileSync('.msg.txt', JSON.stringify(await ask(null, {}), null, 2));
+    const logFile = path.join(HISTORY_DIR, 'chatsh2.log.txt');
+    const sysFile = path.join(HISTORY_DIR, 'chatsh2.sys.txt');
+    const msgFile = path.join(HISTORY_DIR, 'chatsh2.msg.txt');
+    fs.appendFileSync(logFile, fullMessage + '\n##########################################\n');
+    fs.writeFileSync(sysFile, systemPrompt);
+    fs.writeFileSync(msgFile, JSON.stringify(await ask(null, {}), null, 2));
 
     await processAIResponse(assistantMessage);
   } catch (error) {

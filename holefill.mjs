@@ -43,7 +43,8 @@ while ((match = regex.exec(mini_code)) !== null) {
 await fs.writeFile(mini, mini_code, 'utf-8');
 
 var tokens = tokenCount(mini_code);
-var prompt = mini_code.replace(".?.", FILL) + "\n\n" + TASK;
+var source = mini_code.replace(".?.", FILL);
+var prompt = source + "\n\n" + TASK;
 
 await fs.mkdir(path.join(os.homedir(), '.ai'), { recursive: true });
 await fs.writeFile(path.join(os.homedir(), '.ai', '.holefill'), SYSTEM + "\n###\n" + prompt, "utf-8");
@@ -58,7 +59,7 @@ if (mini_code.indexOf(".?.") === -1) {
 
 await savePromptHistory(SYSTEM, prompt, reply, MODELS[model] || model);
 
-var reply = (await ask(prompt, {system: SYSTEM, model, max_tokens: 8192}));
+var reply = (await ask(prompt, {system: SYSTEM, model, max_tokens: 8192, itself: source}));
 var reply = reply.indexOf("<COMPLETION>")  === -1 ? "<COMPLETION>" + reply  : reply;
 var reply = reply.indexOf("</COMPLETION>") === -1 ? reply + "</COMPLETION>" : reply;
 var match = reply.match(/<COMPLETION>([\s\S]*?)<\/COMPLETION>/);

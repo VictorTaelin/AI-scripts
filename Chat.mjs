@@ -44,7 +44,7 @@ export function openAIChat(clientClass) {
   const messages = [];
   let extendFunction = null;
 
-  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 8192, stream = true, shorten = (x => x), extend = null }) {
+  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 8192, stream = true, shorten = (x => x), extend = null, itself = null }) {
     if (userMessage === null) {
       return { messages };
     }
@@ -78,6 +78,9 @@ export function openAIChat(clientClass) {
     const messagesCopy = [...messages, { role: "user", content: extendedUserMessage }];
     messages.push({ role: "user", content: userMessage });
 
+    const prediction = itself ? { type: "content", content: itself } : undefined;
+    //console.log(prediction);
+
     const params = {
       messages: messagesCopy,
       model,
@@ -85,6 +88,7 @@ export function openAIChat(clientClass) {
       max_tokens,
       max_completion_tokens,
       stream,
+      prediction,
     };
 
     let result = "";
