@@ -12,7 +12,8 @@ export const MODELS = {
   // GPT by OpenAI
   gm: 'gpt-4o-mini',
   g: 'chatgpt-4o-latest',
-  G: 'gpt-4-32k-0314',
+  //g: 'gpt-4o',
+  //G: 'gpt-4-32k-0314',
 
   // o1 by OpenAI
   om: 'o1-mini',
@@ -44,7 +45,7 @@ export function openAIChat(clientClass) {
   const messages = [];
   let extendFunction = null;
 
-  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 8192, stream = true, shorten = (x => x), extend = null, itself = null }) {
+  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 8192, stream = true, shorten = (x => x), extend = null, predict = null }) {
     if (userMessage === null) {
       return { messages };
     }
@@ -78,7 +79,7 @@ export function openAIChat(clientClass) {
     const messagesCopy = [...messages, { role: "user", content: extendedUserMessage }];
     messages.push({ role: "user", content: userMessage });
 
-    const prediction = itself ? { type: "content", content: itself } : undefined;
+    const prediction = predict && model.indexOf("o1") === -1 ? { type: "content", content: predict } : undefined;
     //console.log(prediction);
 
     const params = {
