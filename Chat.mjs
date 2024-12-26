@@ -11,19 +11,22 @@ import { encode } from "gpt-tokenizer/esm/model/davinci-codex"; // tokenizer
 export const MODELS = {
   // GPT by OpenAI
   gm: 'gpt-4o-mini',
-  g: 'chatgpt-4o-latest',
+  //g: 'chatgpt-4o-latest',
+  g: 'gpt-4o-2024-11-20',
   //g: 'gpt-4o',
   //G: 'gpt-4-32k-0314',
 
   // o1 by OpenAI
   om: 'o1-mini',
-  o: 'o1-preview',
+  o: 'o1',
 
   // Claude by Anthropic
   cm: 'claude-3-5-haiku-20241022',
 
-  c: 'claude-3-5-sonnet-20241022',
-  C: 'claude-3-5-sonnet-20240620',
+  C: 'claude-3-5-sonnet-20241022',
+  c: 'claude-3-5-sonnet-20240620',
+
+  d: 'deepseek-chat',
 
   //c: 'claude-3-5-sonnet-20240620',
   //C: 'claude-3-5-sonnet-20241022', // TODO: temporarily using the new sonnet instead of opus
@@ -36,8 +39,8 @@ export const MODELS = {
   L: 'meta-llama/llama-3.1-405b-instruct',
 
   // Gemini by Google
-  i: 'gemini-1.5-flash-latest',
-  I: 'gemini-1.5-pro-exp-0801'
+  i: 'gemini-2.0-flash-exp',
+  I: 'gemini-exp-1206'
 };
 
 // Factory function to create a stateful OpenAI chat
@@ -49,6 +52,8 @@ export function openAIChat(clientClass) {
     if (userMessage === null) {
       return { messages };
     }
+
+    let reasoning_effort = undefined;
 
     model = MODELS[model] || model;
     const client = new clientClass({ apiKey: await getToken(clientClass.name.toLowerCase()) });
@@ -62,6 +67,7 @@ export function openAIChat(clientClass) {
       temperature = 1;
       max_completion_tokens = max_tokens;
       max_tokens = undefined;
+      reasoning_effort = "high";
     }
 
     if (messages.length === 0 && system) {
@@ -88,6 +94,7 @@ export function openAIChat(clientClass) {
       temperature,
       max_tokens,
       max_completion_tokens,
+      reasoning_effort,
       stream,
       prediction,
     };
@@ -167,7 +174,7 @@ export function geminiChat(clientClass) {
   const messages = [];
   let extendFunction = null;
 
-  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 4096, stream = true, shorten = (x => x), extend = null }) {
+  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 8192, stream = true, shorten = (x => x), extend = null }) {
     if (userMessage === null) {
       return { messages };
     }
@@ -291,6 +298,63 @@ export function openRouterChat(clientClass) {
   return ask;
 }
 
+// Factory function to create a stateful Deepseek chat
+export function deepseekChat(clientClass) {
+  const messages = [];
+  let extendFunction = null;
+
+  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 8192, stream = true, shorten = (x => x), extend = null }) {
+    if (userMessage === null) {
+      return { messages };
+    }
+
+    model = MODELS[model] || model;
+    const client = new clientClass({
+      apiKey: await getToken('deepseek'),
+      baseURL: "https://api.deepseek.com/beta",
+    });
+
+    if (messages.length === 0 && system) {
+      messages.push({ role: "system", content: system });
+    }
+
+    let extendedUserMessage = extendFunction ? extendFunction(userMessage) : userMessage;
+    extendFunction = extend; // Set for next call
+
+    const messagesCopy = [...messages, { role: "user", content: extendedUserMessage }];
+    messages.push({ role: "user", content: userMessage });
+
+    const params = {
+      messages: messagesCopy,
+      model,
+      temperature,
+      max_tokens,
+      stream,
+      response_format: { type: "text" }
+    };
+
+    let result = "";
+    const response = await client.chat.completions.create(params);
+    if (stream) {
+      for await (const chunk of response) {
+        const text = chunk.choices[0]?.delta?.content || "";
+        process.stdout.write(text);
+        result += text;
+      }
+    } else {
+      const text = response.choices[0]?.message?.content || "";
+      process.stdout.write(text);
+      result = text;
+    }
+
+    messages.push({ role: 'assistant', content: await shorten(result) });
+
+    return result;
+  }
+
+  return ask;
+}
+
 // Generic asker function that dispatches to the correct asker based on the model name
 export function chat(model) {
   model = MODELS[model] || model;
@@ -300,6 +364,8 @@ export function chat(model) {
     return openAIChat(OpenAI, model);
   } else if (model.startsWith('chatgpt')) {
     return openAIChat(OpenAI, model);
+  } else if (model.startsWith('deepseek')) {
+    return deepseekChat(OpenAI, model);
   } else if (model.startsWith('claude')) {
     return anthropicChat(Anthropic, model);
   } else if (model.startsWith('meta')) {

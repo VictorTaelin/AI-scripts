@@ -14,6 +14,9 @@ const execAsync = promisify(exec);
 const DEPS_MODEL = "claude-3-5-sonnet-20240620"; // default model for dependency guessing
 const CODE_MODEL = "claude-3-5-sonnet-20240620"; // default model for coding
 
+//const DEPS_MODEL = "g"; // default model for dependency guessing
+//const CODE_MODEL = "g"; // default model for coding
+
 // Define a structured object for the system definitions
 const system = {
   ts: {
