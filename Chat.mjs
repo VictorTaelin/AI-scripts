@@ -34,9 +34,9 @@ export const MODELS = {
   //C: 'claude-3-opus-20240229',
 
   // Llama by Meta
-  lm: 'meta-llama/llama-3.1-8b-instruct',
-  l: 'meta-llama/llama-3.1-70b-instruct',
-  L: 'meta-llama/llama-3.1-405b-instruct',
+  lm: 'meta-llama/llama-3.2-8b-instruct',
+  l: 'meta-llama/llama-3.3-70b-instruct',
+  L: 'meta-llama/llama-3.2-405b-instruct',
 
   // Gemini by Google
   i: 'gemini-2.0-flash-exp',
@@ -44,7 +44,7 @@ export const MODELS = {
 };
 
 // Factory function to create a stateful OpenAI chat
-export function openAIChat(clientClass) {
+export function openAIChat(clientClass, use_model) {
   const messages = [];
   let extendFunction = null;
 
@@ -55,7 +55,7 @@ export function openAIChat(clientClass) {
 
     let reasoning_effort = undefined;
 
-    model = MODELS[model] || model;
+    model = MODELS[model] || model || use_model;
     const client = new clientClass({ apiKey: await getToken(clientClass.name.toLowerCase()) });
 
     const is_o1 = model.startsWith("o1");
@@ -299,7 +299,7 @@ export function openRouterChat(clientClass) {
 }
 
 // Factory function to create a stateful Deepseek chat
-export function deepseekChat(clientClass) {
+export function deepseekChat(clientClass, use_model) {
   const messages = [];
   let extendFunction = null;
 
@@ -308,7 +308,7 @@ export function deepseekChat(clientClass) {
       return { messages };
     }
 
-    model = MODELS[model] || model;
+    model = MODELS[model] || model || use_model;
     const client = new clientClass({
       apiKey: await getToken('deepseek'),
       baseURL: "https://api.deepseek.com/beta",

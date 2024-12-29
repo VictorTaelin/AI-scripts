@@ -12,6 +12,7 @@
     "aieval": "aieval.mjs",
     "chatsh": "chatsh.mjs",
     "chatsh2": "chatsh2.mjs",
+    "codesh": "codesh.mjs",
     "csh": "chatsh2.mjs",
     "holefill": "holefill.mjs",
     "kind-deps": "kind-deps.mjs",
