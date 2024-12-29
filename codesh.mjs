@@ -252,28 +252,39 @@ async function saveConversation(prompt) {
 }
 
 // Helper function to handle chunk modifications
-function modifyChunks(context, startIndex, newChunks, mode = 'replace') {
-  const filePath = context[startIndex] ? context[startIndex].path : context[context.length - 1].path;
+function modifyChunks(context, index, newChunks, mode) {
+  let start, end;
+  
+  if (typeof index === 'string' && index.includes('-')) {
+    [start, end] = index.split('-').map(Number);
+  } else {
+    start = end = Number(index);
+  }
+  
+  const filePath = context[start].path;
   const newEntries = newChunks.map((chunk, i) => ({
     chunk,
     path: filePath,
-    id: mode === 'insert' ? startIndex + i : startIndex + i + (mode === 'append' ? 1 : 0)
+    id: mode === 'insert' ? start + i : start + i + (mode === 'append' ? 1 : 0)
   }));
 
   switch (mode) {
-    case 'replace':
-      context.splice(startIndex, 1, ...newEntries);
+    case 'splice':
+      context.splice(start, end - start + 1, ...newEntries);
+      break;
+    case 'edit':
+      context.splice(start, 1, ...newEntries);
       break;
     case 'insert':
-      context.splice(startIndex, 0, ...newEntries);
+      context.splice(start, 0, ...newEntries);
       break;
     case 'append':
-      context.splice(startIndex + 1, 0, ...newEntries);
+      context.splice(start + 1, 0, ...newEntries);
       break;
   }
 
   // Update IDs for subsequent chunks
-  for (let i = startIndex + newChunks.length; i < context.length; i++) {
+  for (let i = start + newChunks.length; i < context.length; i++) {
     context[i].id = i;
   }
 
@@ -327,16 +338,13 @@ async function executeCommand(command, context, shownChunks) {
   }
   
   if (cleanCommand.startsWith('/splice')) {
-    const match = cleanCommand.match(/\/splice\s+(\d+)(?:-(\d+))?\n```([\s\S]+?)```/);
+    const match = cleanCommand.match(/\/splice\s+(\d+)-(\d+)\n```([\s\S]+?)```/);
     if (!match) return false;
     
     const [_, start, end, newCode] = match;
-    const startIndex = parseInt(start);
-    const endIndex = end ? parseInt(end) : startIndex;
     const newChunks = getChunks(newCode);
     
-    context.splice(startIndex, endIndex - startIndex + 1);
-    const newIds = modifyChunks(context, startIndex, newChunks, 'replace');
+    const newIds = modifyChunks(context, `${start}-${end}`, newChunks, 'splice');
     newIds.forEach(id => shownChunks[id] = true);
 
     return true;
@@ -350,7 +358,7 @@ async function executeCommand(command, context, shownChunks) {
     const chunkIndex = parseInt(index);
     const newChunks = getChunks(newCode);
     
-    const newIds = modifyChunks(context, chunkIndex, newChunks, 'replace');
+    const newIds = modifyChunks(context, chunkIndex, newChunks, 'edit');
     newIds.forEach(id => shownChunks[id] = true);
 
     return true;
