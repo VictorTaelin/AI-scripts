@@ -43,7 +43,7 @@ function getChunks(content) {
 // Summarize a chunk by showing its first comment and first non-comment line
 function shortenChunk(chunk, aggressive) {
   const lines = chunk.split('\n');
-  if (lines[0] === '--λ' || lines[0] === '//λ') {
+  if (lines[0] === '--X--' || lines[0] === '//X//') {
     return lines.slice(1).join('\n');
   }
   if (!aggressive) {
@@ -70,7 +70,7 @@ function shortenChunk(chunk, aggressive) {
 
 function longChunk(chunk) {
   const lines = chunk.split('\n');
-  if (lines[0] === '--λ' || lines[0] === '//λ') {
+  if (lines[0] === '--X--' || lines[0] === '//X//') {
     return lines.slice(1).join('\n');
   } else {
     return lines.join("\n");
@@ -154,6 +154,10 @@ function formatLog(log) {
 const context = await loadContext();
 
 //console.log(shortenContext(context, {}, false, false));
+//process.exit();
+
+// TODO: load and save the context, then exit
+//await saveContext(context);
 //process.exit();
 
 // TASK: complete this file, as follows:
@@ -339,7 +343,7 @@ const processChunks = async (chunks) => {
   // Print selected blocks
   chunks.forEach(chunk => {
     if (editDecisions[chunk.id]) {
-      console.log(chunk.chunk);
+      console.log("#" + chunk.id + ": " + shortenChunk(chunk.chunk).split("\n")[0].trim() + "...");
     }
   });
 
@@ -352,6 +356,8 @@ const processChunks = async (chunks) => {
     return acc;
   }, {});
 };
+
+console.log("Selecting chunks to be edited...");
 
 // Create chunk groups
 const chunkGroups = [];
