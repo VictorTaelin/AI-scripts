@@ -34,9 +34,9 @@ export const MODELS = {
   //C: 'claude-3-opus-20240229',
 
   // Llama by Meta
-  lm: 'meta-llama/llama-3.2-8b-instruct',
+  lm: 'meta-llama/llama-3.1-8b-instruct',
   l: 'meta-llama/llama-3.3-70b-instruct',
-  L: 'meta-llama/llama-3.2-405b-instruct',
+  L: 'meta-llama/llama-3.1-405b-instruct',
 
   // Gemini by Google
   i: 'gemini-2.0-flash-exp',
@@ -109,7 +109,7 @@ export function openAIChat(clientClass, use_model) {
       }
     } else {
       const text = response.choices[0]?.message?.content || "";
-      process.stdout.write(text);
+      //process.stdout.write(text);
       result = text;
     }
 
@@ -170,7 +170,7 @@ export function anthropicChat(clientClass, MODEL) {
   return ask;
 }
 
-export function geminiChat(clientClass) {
+export function geminiChat(clientClass, use_model) {
   const messages = [];
   let extendFunction = null;
 
@@ -179,7 +179,7 @@ export function geminiChat(clientClass) {
       return { messages };
     }
 
-    model = MODELS[model] || model;
+    model = MODELS[model] || model || use_model;
     const client = new clientClass(await getToken(clientClass.name.toLowerCase()));
 
     const generationConfig = {
@@ -286,7 +286,7 @@ export function openRouterChat(clientClass) {
       }
     } else {
       const text = response.choices[0]?.message?.content || "";
-      process.stdout.write(text);
+      //process.stdout.write(text);
       result = text;
     }
 
@@ -343,7 +343,7 @@ export function deepseekChat(clientClass, use_model) {
       }
     } else {
       const text = response.choices[0]?.message?.content || "";
-      process.stdout.write(text);
+      //process.stdout.write(text);
       result = text;
     }
 
