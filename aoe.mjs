@@ -537,12 +537,13 @@ async function editChunks(chunksToEdit) {
   const shownChunks = {};
   const codebase = shortenContext(context, shownChunks, false, false);
   const message = EDITOR_MESSAGE(codebase, chunksToEdit, query);
-  console.log("-------------------");
-  console.log("#SYSTEM");
-  console.log(EDITOR_SYSTEM);
-  console.log("#MESSAGE");
-  console.log(message);
-  console.log("#RESPONSE");
+  console.log("Editing the selected blocks...");
+  //console.log("-------------------");
+  //console.log("#SYSTEM");
+  //console.log(EDITOR_SYSTEM);
+  //console.log("#MESSAGE");
+  //console.log(message);
+  //console.log("#RESPONSE");
   const response = await chat(EDITOR_MODEL)(message, { system: EDITOR_SYSTEM, system_cacheable: true, stream: true });
 
   // Parse the response and extract refactored blocks
