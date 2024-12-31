@@ -235,7 +235,7 @@ Your goal is to answer the following question:
 
 Start by answering the question for each block:
 
-- Block 2: The refactor will affect the Vector library, but that's just a title comment, that isn't directly affected. No.
+- Block 2: The refactor will affect the Vector library, but that block is just a title comment, which isn't directly affected. No.
 - Block 3: That block constructs a vector using the old format, which must be updated. Yes.
 - Block 4: That block uses vectors, but the refactor doesn't affect it code directly. No.
 - Block 5: The add function will be affected by this refactor, but that block contains only the function declaration, which isn't directly affected. No.
