@@ -13,6 +13,8 @@ Some AI scripts I use daily.
 
 - `agda2ts`: compile Agda to/from TypeScript ([example](https://x.com/VictorTaelin/status/1837256721850306746))
 
+- `aoe`: refactor a huge codebase by auto-filtering chunks that need edit ([example](https://x.com/VictorTaelin/status/1873948475299111244))
+
 For VIM integration, this is my messy [vimrc](https://github.com/VictorTaelin/OSX/blob/master/vimrc).
 Use Sonnet to extract the relevant functions for you (:
 
