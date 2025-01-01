@@ -27,6 +27,16 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const START_TIME = Date.now();
 
+// Read the .aoe.json file if it exists
+let config;
+try {
+  const configContent = await fs.readFile(path.join(process.cwd(), 'aoe.json'), 'utf8');
+  config = JSON.parse(configContent);
+} catch (err) {
+  // If no config file or invalid JSON, proceed with default behavior
+  config = {path: "."};
+}
+
 // Trim function that preserves leading spaces
 function trimmer(str) {
   return str.replace(/^\n+|\n+$/g, '');
@@ -99,7 +109,8 @@ async function loadFiles(dir) {
 
 // Load context from files
 async function loadContext() {
-  const files = await loadFiles('.');
+  const basePath = config.path || '.';
+  const files = await loadFiles(basePath);
   let context = [];
   let chunkId = 0;
   for (const file of files) {
@@ -119,9 +130,10 @@ async function saveContext(context) {
     fileMap[item.path].push(item.chunk);
   }
   for (const [filePath, chunks] of Object.entries(fileMap)) {
-    await fs.writeFile(filePath, chunks.join('\n\n').trim());
+    await fs.writeFile(filePath, chunks.join('\n\n') + '\n');
   }
 }
+
 
 // Generate shortened context
 function shortenContext(context, shownChunks, aggressive, xml) {
