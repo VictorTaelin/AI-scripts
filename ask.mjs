@@ -561,7 +561,7 @@ async function getAnswer() {
   Object.entries(flattenedChunkPicks).forEach(([id, result]) => {
     if (result.edit) shownChunks[id] = true;
   });
-  const codebase = shortenContext(context, shownChunks, false, true);
+  const codebase = shortenContext(context, shownChunks, false, false);
   const message = ORACLE_MESSAGE(codebase, query);
   console.log("\x1b[1m# Answer:\x1b[0m");
   const response = await chat(EDITOR_MODEL)(message, { system: ORACLE_SYSTEM, system_cacheable: true, stream: true });
