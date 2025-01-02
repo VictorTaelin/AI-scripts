@@ -355,7 +355,7 @@ const processChunks = async (chunks) => {
   // Print selected blocks
   chunks.forEach(chunk => {
     if (editDecisions[chunk.id]) {
-      console.log("#" + chunk.id + ": " + shortenChunk(chunk.chunk).split("\n")[0].trim() + "...");
+      console.log("\x1b[2m#" + chunk.id + ": " + shortenChunk(chunk.chunk).split("\n")[0].trim() + "...\x1b[0m");
     }
   });
 

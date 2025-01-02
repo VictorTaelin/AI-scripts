@@ -325,7 +325,7 @@ const processChunks = async (chunks) => {
   // Print selected blocks
   chunks.forEach(chunk => {
     if (editDecisions[chunk.id]) {
-      console.log("#" + chunk.id + ": " + shortenChunk(chunk.chunk).split("\n")[0].trim() + "...");
+      console.log("\x1b[2m#" + chunk.id + ": " + shortenChunk(chunk.chunk).split("\n")[0].trim() + "...\x1b[0m");
     }
   });
 
@@ -539,8 +539,7 @@ You must:
 4. Focus on the blocks shown in full, as they were selected as relevant
 
 IMPORTANT: BE CONCISE IN YOUR ANSWERS.
-LIMIT YOURSELF TO ANSWERING WHAT HAS BEEN ASKED.
-DO NOT ADD INFORMATION THAT HASN'T BEEN REQUESTED.`;
+ONLY ANSWER WHAT HAS BEEN ASKED, AND NOTHING ELSE.`;
 
 // Message for the Oracle
 const ORACLE_MESSAGE = (codebase, query) =>
@@ -554,7 +553,7 @@ Your task is to answer the following query:
 ${query}
 </query>
 
-Please provide a clear and practical answer, referencing specific blocks when relevant.`;
+Answer the query now.`;
 
 // Function to get answer from Oracle
 async function getAnswer() {
