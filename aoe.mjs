@@ -130,10 +130,9 @@ async function saveContext(context) {
     fileMap[item.path].push(item.chunk);
   }
   for (const [filePath, chunks] of Object.entries(fileMap)) {
-    await fs.writeFile(filePath, chunks.join('\n\n') + '\n');
+    await fs.writeFile(filePath, chunks.map(trimmer).join('\n\n') + '\n');
   }
 }
-
 
 // Generate shortened context
 function shortenContext(context, shownChunks, aggressive, xml) {
@@ -164,6 +163,8 @@ function formatLog(log) {
 }
 
 const context = await loadContext();
+//await saveContext(context);
+//process.exit();
 
 //console.log(shortenContext(context, {}, false, false));
 //process.exit();
@@ -568,7 +569,7 @@ async function editChunks(chunksToEdit) {
 
   while ((match = blockRegex.exec(response)) !== null) {
     const [, id, content] = match;
-    refactoredChunks[id] = content.trim();
+    refactoredChunks[id] = content;
   }
 
   return refactoredChunks;
