@@ -165,33 +165,6 @@ function formatLog(log) {
 
 const context = await loadContext();
 
-//console.log(shortenContext(context, {}, false, false));
-//process.exit();
-
-// TODO: load and save the context, then exit
-//await saveContext(context);
-//process.exit();
-
-// TASK: complete this file, as follows:
-// - get the user query from argv (ex: `./foo.js "user query here"`)
-// - for each chunk in the context:
-//   - create a summarized context with that chunk shown (all other shortened)
-//   - call Analyst, sending the query + that context, to ask:
-//     1. does this chunk need to be edited to fulfill the request? 
-//     2. which other 32 chunks should be expanded to give additional context when editing that chunk?
-//   - response must be a valid, parseable JSON:
-//     {"edit": true, "relevant": [17, 19, 32, 50, 51, ...]}
-//     {"edit": false, "relevant": []}
-//   - create a proper system prompt to help Analyst answer the query correctly
-// - use Promise.all to gather all responses from the loop above
-// - for each chunk that has to be edited:
-//   - create a summarized context with that chunk plus the other chunks shown
-//   - call Editor, sending the query + that context, to ask it to edit the chunk
-//   - it must response with just the code that has to be inserted to replace the chunk, and nothing else 
-// - use Promise.all to gather all responses from the loop above
-// - replace each edited chunk by the chunks provided by each Editor call
-// - save the final context back to the filesystem
-
 // Get user query from command line
 if (!query) {
   console.error('Please provide a query as argument');
@@ -200,13 +173,13 @@ if (!query) {
 
 // System prompts
 const PICKER_SYSTEM = (codebase, chunks, query) =>
-`You're an advanced software analyst, specialized in predicting when a refactor will affect a specific block of code.
+`You're an advanced software analyst, specialized in deciding whetehr a specific block of code is relevant to a query.
 
-For example, consider the following refactor:
+For example, consider the following query:
 
-<refactor>
-represent vectors as [x,y] instead of {x,y}
-</refactor>
+<query>
+which blocks would be affected if I refactored vectors to use [x,y] instead of {x,y}?
+</query>
 
 Then, given the following target blocks:
 
@@ -243,7 +216,7 @@ function len(v) {
 
 Your goal is to answer the following question:
 
-> After the refactor is completed, which of the target blocks will have been changed?
+> Which blocks are relevant to the query?
 
 Start by answering the question for each block:
 
@@ -255,16 +228,13 @@ Start by answering the question for each block:
 - Block 7: That block just closes the add function with a '}', which isn't affected by the refactor. No.
 - Block 8: The len function isn't directly affected by this refactor, but this block has a comment that must be adjusted. Yes.
 
-Then, complete your goal by writing with a JSON object mapping block ids to a boolean prediction.
+Then, complete your goal by writing with a JSON object mapping block ids to a boolean answer.
 
 In this example, the final answer should be:
 
 {"changed":{"2":false,"3":true,"4":false,"5":false,"6":true,"7":false,"8":true}}
 
-Don't use spaces or newlines inside the JSON.
-
-Pay extra attention to the fact that the answer must only be 'true' when the block's actual text content needs to change.
-Even if a block uses concepts related to the refactor, it should be marked as 'false' unless its literal code requires modification.`;
+Don't use spaces or newlines inside the JSON.`;
 
 const PICKER_MESSAGE = (codebase, chunks, query) =>
 `Before we start, let me give you some helpful context. We're working on the following codebase:
@@ -273,15 +243,15 @@ const PICKER_MESSAGE = (codebase, chunks, query) =>
 ${codebase}
 </codebase>
 
-(Note: many parts have been omitted.)
+(Note: many blocks have been omitted or shortened.)
 
-The proposed refactor is:
+The query is:
 
-<refactor>
+<query>
 ${query}
-</refactor>
+</query>
 
-We're refactoring the following target code blocks:
+Consider only the blocks below in your analysis:
 
 <target>
 ${chunks.map((item, index) =>
@@ -292,7 +262,7 @@ ${longChunk(item.chunk)}
 
 Now, answer the following question:
 
-> After the refactor is completed, which of the target blocks will have been changed?
+> Which blocks are relevant to the query?
 
 Start by answering that question individually for each block. Be concise.
 
@@ -378,217 +348,231 @@ for (let i = 0; i < context.length; i += GROUP_SIZE) {
 }
 
 // Process chunks either in parallel or sequentially based on PARALLEL flag
-const chunkPicks = PARALLEL
-  ? await Promise.all(chunkGroups.map(processChunks))
-  : await chunkGroups.reduce(async (p,g) => [...await p, await processChunks(g)], Promise.resolve([]));
+const chunkPicks = await Promise.all(chunkGroups.map(processChunks));
 
 const flattenedChunkPicks = Object.assign({}, ...(Array.isArray(chunkPicks) ? chunkPicks : [chunkPicks]));
 
-// Rate the AI's output
-//const rateResults = () => {
-  //let falsePositives = 0;
-  //let truePositives = 0;
-  //let realPositives = 0;
-  
-  //for (const [id, result] of Object.entries(flattenedChunkPicks)) {
-    //// Count lambdas that are not followed by a hyphen in this chunk
-    //const chunk = result.chunk.chunk;
-    //const validLambdas = (chunk.match(/(?<!--)λ(?!-)/g) || []).length;
-    
-    //// Track real positives (chunks that actually contain valid lambdas)
-    //if (validLambdas > 0) {
-      //realPositives++;
-    //}
-    
-    //if (result.edit) {
-      //if (validLambdas > 0) {
-        //truePositives++;
-      //} else {
-        //falsePositives++;
-      //}
-    //}
+//// System prompt for the Editor
+//const EDITOR_SYSTEM =
+//`You're an advanced coding agent, specialized in refactoring blocks of code.
+
+//For example, consider the following refactor:
+
+//<refactor>
+//represent vectors as [x,y] instead of {x,y}
+//</refactor>
+
+//Then, given the following target blocks:
+
+//<target>
+//<block id=2>
+//// Vector Library
+//</block>
+//<block id=3>
+//funciton neg(v) {
+  //return {x: -v.x, y: -v.y};
+//}
+//</block>
+//<block id=4>
+//function dot(a, b) {
+  //return sum(mul(a, b));
+//}
+//</block>
+//<block id=5>
+//function add(a, b) {
+//</block>
+//<block id=6>
+  //return {x: a.x + b.x, y: a.y + b.y};
+//</block>
+//<block id=7>
+//}
+//</block>
+//<block id=8>
+//// Example: len({x:3,y:4}) == 5
+//function len(v) {
+  //return Math.sqrt(dot(v));
+//}
+//</block>
+//</target>
+
+//Your must ask yourself the following question:
+
+//> Which of the target blocks must be changed to perform this refactor?
+
+//Start by answering the question for each block:
+
+//- Block 2: The refactor will affect the Vector library, but that's just a title comment, that isn't directly affected. No.
+//- Block 3: That block constructs a vector using the old format, which must be updated. Yes.
+//- Block 4: That block uses vectors, but the refactor doesn't affect it code directly. No.
+//- Block 5: The add function will be affected by this refactor, but that block contains only the function declaration, which isn't directly affected. No.
+//- Block 6: That block constructs a vector using the old format, which must be updated. Yes.
+//- Block 7: That block just closes the add function with a '}', which isn't affected by the refactor. No.
+//- Block 8: The len function isn't directly affected by this refactor, but this block has a comment that must be adjusted. Yes.
+
+//Then, complete your goal by writing the updated version of each block that requires change, in the following format:
+
+//<block id=3>
+//funciton neg(v) {
+  //return [-v.x, -v.y];
+//}
+//</block>
+//<block id=4>
+//function dot(a, b) {
+  //return sum(mul(a, b));
+//}
+//</block>
+//<block id=6>
+  //return [a.x + b.x, a.y + b.y];
+//</block>
+//<block id=8>
+//// Example: len([3,4]) == 5
+//function len(v) {
+  //return Math.sqrt(dot(v));
+//}
+//</block>`;
+
+//// Message for the Editor
+//const EDITOR_MESSAGE = (codebase, chunksToEdit, query) =>
+//`For context, here's a shortened version of our codebase:
+
+//${codebase}
+
+//Your task is to perform the following refactoring:
+
+//<refactor>
+//${query}
+//</refactor>
+
+//Below are the target code blocks you need to consider:
+
+//<target>
+//${chunksToEdit.map(chunk => `
+//<block id=${chunk.id}>
+//${chunk.chunk}
+//</block>`).join('\n')}
+//</target>
+
+//Now, provide the updated version of each block that requires changes, using this format:
+
+//<block id=X>
+//... refactored code here ...
+//</block>
+
+//IMPORTANT:
+//Only make changes directly related to the specified refactor.
+//Do not fix or alter any code unless it's necessary to complete the refactoring task.
+
+//Please proceed with the refactoring now.
+//`;
+
+//// Function to edit chunks
+//async function editChunks(chunksToEdit) {
+  //const shownChunks = {};
+  //const codebase = shortenContext(context, shownChunks, false, false);
+  //const message = EDITOR_MESSAGE(codebase, chunksToEdit, query);
+  //console.log("Editing the selected blocks...");
+  ////console.log("-------------------");
+  ////console.log("#SYSTEM");
+  ////console.log(EDITOR_SYSTEM);
+  ////console.log("#MESSAGE");
+  ////console.log(message);
+  ////console.log("#RESPONSE");
+  //const response = await chat(EDITOR_MODEL)(message, { system: EDITOR_SYSTEM, system_cacheable: true, stream: true });
+
+  //// Parse the response and extract refactored blocks
+  //const blockRegex = /<block id=(\d+)>([\s\S]*?)<\/block>/g;
+  //let match;
+  //const refactoredChunks = {};
+
+  //while ((match = blockRegex.exec(response)) !== null) {
+    //const [, id, content] = match;
+    //refactoredChunks[id] = content.trim();
   //}
-  
-  //console.log("\nRating Results:");
-  //console.log(`True Positives: ${truePositives}`);
-  //console.log(`False Positives: ${falsePositives}`);
-  //console.log(`Real Positives: ${realPositives}`);
-//};
-//rateResults();
-//process.exit();
 
-// TASK: the picker is now working with great accuracy. great job.
-// let's now create the editor.
-// unlike the picker, the editor will NOT be called in parallel.
-// instead, it will be called only once.
-// we will give the following to the editor:
-// 1. the shortened codebase (non aggressively)
-// 2. the target chunks that it must edit (from the previous classifier)
-// 3. the refactor that has to be made
-// the system prompt and message shuold be very simple and concise.
-// we'll then ask it to refactor the code blocks.
-// it must output the results in xml blocks, just like the input.
-// we'll then parse these results, update the respective chunks, and save to disk.
-// your goal is to FULLY complete this script with the editor functionality.
-// do it now:
+  //return refactoredChunks;
+//}
 
-// System prompt for the Editor
-const EDITOR_SYSTEM =
-`You're an advanced coding agent, specialized in refactoring blocks of code.
+//// Get chunks that need editing
+//const chunksToEdit = Object.values(flattenedChunkPicks)
+  //.filter(result => result.edit)
+  //.map(result => result.chunk);
 
-For example, consider the following refactor:
+//// Edit the chunks
+//const refactoredChunks = await editChunks(chunksToEdit);
 
-<refactor>
-represent vectors as [x,y] instead of {x,y}
-</refactor>
+//// Update the context with refactored chunks
+//context.forEach(item => {
+  //if (refactoredChunks[item.id]) {
+    //item.chunk = refactoredChunks[item.id];
+  //}
+//});
 
-Then, given the following target blocks:
+//// Save the updated context back to files
+//await saveContext(context);
 
-<target>
-<block id=2>
-// Vector Library
-</block>
-<block id=3>
-funciton neg(v) {
-  return {x: -v.x, y: -v.y};
-}
-</block>
-<block id=4>
-function dot(a, b) {
-  return sum(mul(a, b));
-}
-</block>
-<block id=5>
-function add(a, b) {
-</block>
-<block id=6>
-  return {x: a.x + b.x, y: a.y + b.y};
-</block>
-<block id=7>
-}
-</block>
-<block id=8>
-// Example: len({x:3,y:4}) == 5
-function len(v) {
-  return Math.sqrt(dot(v));
-}
-</block>
-</target>
+//console.log("Refactoring completed and saved to files.");
+//console.log(`Total execution time: ${(Date.now() - START_TIME) / 1000} seconds`);
 
-Your must ask yourself the following question:
+// TODO: this file used to be a "refactor tool", which refactored all files in a
+// database. now, it is just a query tool, which answers a single question about
+// the database. sadly, the EDITOR hasn't been updated yet. refactor the commented
+// out part of the code. instead of an EDITOR, call it ORACLE. update the system
+// prompt and everything else that needs to change. remember that it doesn't need
+// to alter any file anymore, simplifying the code. note that, instead of showing
+// the codebase shortened, and then showing the selected blocks, we will use the
+// 'shownChunks' field of the shortenContext function to show the blocks selected
+// by the former AI, and we will show just the codebase to the ORACLE one time,
+// not needing to show the selected blocks separately.
 
-> Which of the target blocks must be changed to perform this refactor?
+// System prompt for the Oracle
+const ORACLE_SYSTEM =
+`You're an advanced coding assistant, specialized in answering questions about code.
 
-Start by answering the question for each block:
+Your goal is to answer questions about a codebase. You'll receive:
+1. A codebase, where some blocks are shown in full and others are shortened
+2. A query about that codebase
 
-- Block 2: The refactor will affect the Vector library, but that's just a title comment, that isn't directly affected. No.
-- Block 3: That block constructs a vector using the old format, which must be updated. Yes.
-- Block 4: That block uses vectors, but the refactor doesn't affect it code directly. No.
-- Block 5: The add function will be affected by this refactor, but that block contains only the function declaration, which isn't directly affected. No.
-- Block 6: That block constructs a vector using the old format, which must be updated. Yes.
-- Block 7: That block just closes the add function with a '}', which isn't affected by the refactor. No.
-- Block 8: The len function isn't directly affected by this refactor, but this block has a comment that must be adjusted. Yes.
+You must:
+1. Analyze the codebase carefully
+2. Answer the query in a clear and concise way
+3. Reference specific blocks when relevant
+4. Focus on the blocks shown in full, as they were selected as relevant
 
-Then, complete your goal by writing the updated version of each block that requires change, in the following format:
+IMPORTANT: BE CONCISE IN YOUR ANSWERS.
+LIMIT YOURSELF TO ANSWERING WHAT HAS BEEN ASKED.
+DO NOT ADD INFORMATION THAT HASN'T BEEN REQUESTED.`;
 
-<block id=3>
-funciton neg(v) {
-  return [-v.x, -v.y];
-}
-</block>
-<block id=4>
-function dot(a, b) {
-  return sum(mul(a, b));
-}
-</block>
-<block id=6>
-  return [a.x + b.x, a.y + b.y];
-</block>
-<block id=8>
-// Example: len([3,4]) == 5
-function len(v) {
-  return Math.sqrt(dot(v));
-}
-</block>`;
-
-// Message for the Editor
-const EDITOR_MESSAGE = (codebase, chunksToEdit, query) =>
-`For context, here's a shortened version of our codebase:
+// Message for the Oracle
+const ORACLE_MESSAGE = (codebase, query) =>
+`Here's the codebase you need to analyze:
 
 ${codebase}
 
-Your task is to perform the following refactoring:
+Your task is to answer the following query:
 
-<refactor>
+<query>
 ${query}
-</refactor>
+</query>
 
-Below are the target code blocks you need to consider:
+Please provide a clear and practical answer, referencing specific blocks when relevant.`;
 
-<target>
-${chunksToEdit.map(chunk => `
-<block id=${chunk.id}>
-${chunk.chunk}
-</block>`).join('\n')}
-</target>
-
-Now, provide the updated version of each block that requires changes, using this format:
-
-<block id=X>
-... refactored code here ...
-</block>
-
-IMPORTANT:
-Only make changes directly related to the specified refactor.
-Do not fix or alter any code unless it's necessary to complete the refactoring task.
-
-Please proceed with the refactoring now.
-`;
-
-// Function to edit chunks
-async function editChunks(chunksToEdit) {
+// Function to get answer from Oracle
+async function getAnswer() {
   const shownChunks = {};
-  const codebase = shortenContext(context, shownChunks, false, false);
-  const message = EDITOR_MESSAGE(codebase, chunksToEdit, query);
-  console.log("\x1b[1m# Editing the selected blocks...\x1b[0m");
-  //console.log("-------------------");
-  //console.log("#SYSTEM");
-  //console.log(EDITOR_SYSTEM);
-  //console.log("#MESSAGE");
-  //console.log(message);
-  //console.log("#RESPONSE");
-  const response = await chat(EDITOR_MODEL)(message, { system: EDITOR_SYSTEM, system_cacheable: true, stream: true });
-
-  // Parse the response and extract refactored blocks
-  const blockRegex = /<block id=(\d+)>([\s\S]*?)<\/block>/g;
-  let match;
-  const refactoredChunks = {};
-
-  while ((match = blockRegex.exec(response)) !== null) {
-    const [, id, content] = match;
-    refactoredChunks[id] = content.trim();
-  }
-
-  return refactoredChunks;
+  Object.entries(flattenedChunkPicks).forEach(([id, result]) => {
+    if (result.edit) shownChunks[id] = true;
+  });
+  const codebase = shortenContext(context, shownChunks, false, true);
+  const message = ORACLE_MESSAGE(codebase, query);
+  console.log("\x1b[1m# Answer:\x1b[0m");
+  const response = await chat(EDITOR_MODEL)(message, { system: ORACLE_SYSTEM, system_cacheable: true, stream: true });
+  return response;
 }
 
-// Get chunks that need editing
-const chunksToEdit = Object.values(flattenedChunkPicks)
-  .filter(result => result.edit)
-  .map(result => result.chunk);
+// Get and display the answer
+const answer = await getAnswer();
+//console.log("\nAnswer:");
+//console.log("-------");
+//console.log(answer);
+console.log(`\nTotal execution time: ${(Date.now() - START_TIME) / 1000} seconds`);
 
-// Edit the chunks
-const refactoredChunks = await editChunks(chunksToEdit);
-
-// Update the context with refactored chunks
-context.forEach(item => {
-  if (refactoredChunks[item.id]) {
-    item.chunk = refactoredChunks[item.id];
-  }
-});
-
-// Save the updated context back to files
-await saveContext(context);
-
-console.log("Refactoring completed and saved to files.");
-console.log(`Total execution time: ${(Date.now() - START_TIME) / 1000} seconds`);
