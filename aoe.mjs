@@ -21,7 +21,7 @@ const EDITOR_MODEL = args[2] || "c";
 console.log(`Picker-Model: ${MODELS[PICKER_MODEL]}`);
 console.log(`Editor-Model: ${MODELS[EDITOR_MODEL]}`);
 
-const GROUP_SIZE = 1; // Configurable group size
+const GROUP_SIZE = 2; // Configurable group size
 const PARALLEL = true; // Should we call the picker in parallel?
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -53,7 +53,7 @@ function getChunks(content) {
 // Summarize a chunk by showing its first comment and first non-comment line
 function shortenChunk(chunk, aggressive) {
   const lines = chunk.split('\n');
-  if (lines[0] === '--X--' || lines[0] === '//X//') {
+  if (lines[0] === '--show--' || lines[0] === '//show//') {
     return lines.slice(1).join('\n');
   }
   if (!aggressive) {
@@ -80,7 +80,7 @@ function shortenChunk(chunk, aggressive) {
 
 function longChunk(chunk) {
   const lines = chunk.split('\n');
-  if (lines[0] === '--X--' || lines[0] === '//X//') {
+  if (lines[0] === '--show--' || lines[0] === '//show//') {
     return lines.slice(1).join('\n');
   } else {
     return lines.join("\n");
@@ -273,7 +273,7 @@ const PICKER_MESSAGE = (codebase, chunks, query) =>
 ${codebase}
 </codebase>
 
-(Note: many blocks have been omitted or shortened.)
+(Note: many parts have been omitted.)
 
 The proposed refactor is:
 
@@ -304,7 +304,7 @@ Do it now.`;
 const processChunks = async (chunks) => {
   const shownChunks = {};
   chunks.forEach(c => shownChunks[c.id] = true);
-  const codebase = shortenContext(context, shownChunks, true, true);
+  const codebase = shortenContext(context, shownChunks, true, false);
   const message = PICKER_MESSAGE(codebase, chunks, query);
   const system = PICKER_SYSTEM(codebase, chunks, query);
   const response = await chat(PICKER_MODEL)(message, { system, system_cacheable: true, stream: false });
@@ -384,7 +384,7 @@ const chunkPicks = PARALLEL
 
 const flattenedChunkPicks = Object.assign({}, ...(Array.isArray(chunkPicks) ? chunkPicks : [chunkPicks]));
 
-//// Rate the AI's output
+// Rate the AI's output
 //const rateResults = () => {
   //let falsePositives = 0;
   //let truePositives = 0;
@@ -415,6 +415,7 @@ const flattenedChunkPicks = Object.assign({}, ...(Array.isArray(chunkPicks) ? ch
   //console.log(`Real Positives: ${realPositives}`);
 //};
 //rateResults();
+//process.exit();
 
 // TASK: the picker is now working with great accuracy. great job.
 // let's now create the editor.
