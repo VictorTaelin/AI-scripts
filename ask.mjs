@@ -173,7 +173,7 @@ if (!query) {
 
 // System prompts
 const PICKER_SYSTEM = (codebase, chunks, query) =>
-`You're an advanced software analyst, specialized in deciding whetehr a specific block of code is relevant to a query.
+`You're an advanced software analyst, specialized in deciding whether a specific block of code is relevant to a query.
 
 For example, consider the following query:
 
