@@ -369,7 +369,7 @@ const processChunks = async (chunks) => {
   }, {});
 };
 
-console.log("Selecting chunks to be edited...");
+console.log("# Selecting chunks to be edited...");
 
 // Create chunk groups
 const chunkGroups = [];
@@ -550,7 +550,7 @@ async function editChunks(chunksToEdit) {
   const shownChunks = {};
   const codebase = shortenContext(context, shownChunks, false, false);
   const message = EDITOR_MESSAGE(codebase, chunksToEdit, query);
-  console.log("Editing the selected blocks...");
+  console.log("# Editing the selected blocks...");
   //console.log("-------------------");
   //console.log("#SYSTEM");
   //console.log(EDITOR_SYSTEM);
