@@ -243,7 +243,7 @@ const PICKER_MESSAGE = (codebase, chunks, query) =>
 ${codebase}
 </codebase>
 
-(Note: many blocks have been omitted or shortened.)
+(Note: many parts have been omitted.)
 
 The query is:
 
@@ -545,7 +545,9 @@ ONLY ANSWER WHAT HAS BEEN ASKED, AND NOTHING ELSE.`;
 const ORACLE_MESSAGE = (codebase, query) =>
 `Here's the codebase you need to analyze:
 
+<codebase>
 ${codebase}
+</codebase>
 
 Your task is to answer the following query:
 

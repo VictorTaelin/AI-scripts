@@ -515,7 +515,9 @@ function len(v) {
 const EDITOR_MESSAGE = (codebase, chunksToEdit, query) =>
 `For context, here's a shortened version of our codebase:
 
+<codebase>
 ${codebase}
+</codebase>
 
 Your task is to perform the following refactoring:
 
