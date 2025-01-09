@@ -110,6 +110,7 @@ async function loadFiles(dir) {
     if (ig.ignores(relativePath)) {
       continue;
     }
+    console.log("- " + filePath);
     const stat = await fs.stat(filePath);
     if (stat.isDirectory()) {
       results = results.concat(await loadFiles(filePath));

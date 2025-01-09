@@ -17,12 +17,13 @@ import ignore from 'ignore';
 const args = process.argv.slice(2);
 const query = args[0];
 const PICKER_MODEL = args[1] || "d";
+//const EDITOR_MODEL = args[2] || "c";
 const EDITOR_MODEL = args[2] || "c";
 
 console.log(`Picker-Model: ${MODELS[PICKER_MODEL]}`);
 console.log(`Editor-Model: ${MODELS[EDITOR_MODEL]}`);
 
-const GROUP_SIZE = 2; // Configurable group size
+const GROUP_SIZE = 1; // Configurable group size
 const PARALLEL = true; // Should we call the picker in parallel?
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -35,7 +36,7 @@ try {
   config = JSON.parse(configContent);
 } catch (err) {
   // If no config file or invalid JSON, proceed with default behavior
-  config = {path: ".", include: null, exclude: null};
+  config = {path: "."};
 }
 
 const ig = ignore();
@@ -110,6 +111,7 @@ async function loadFiles(dir) {
     if (ig.ignores(relativePath)) {
       continue;
     }
+    console.log("- " + filePath);
     const stat = await fs.stat(filePath);
     if (stat.isDirectory()) {
       results = results.concat(await loadFiles(filePath));
@@ -578,6 +580,20 @@ async function editChunks(chunksToEdit) {
   //console.log(message);
   //console.log("#RESPONSE");
   const response = await chat(EDITOR_MODEL)(message, { system: EDITOR_SYSTEM, system_cacheable: true, stream: true });
+
+  // Save the conversation to a file
+  const homeDir = os.homedir();
+  const aiDir = path.join(homeDir, '.ai');
+  const aoeDir = path.join(aiDir, 'aoe');
+  // Create directories if they don't exist
+  await fs.mkdir(aiDir, { recursive: true });
+  await fs.mkdir(aoeDir, { recursive: true });
+  // Create a timestamp-based filename
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const logFile = path.join(aoeDir, `conversation-${timestamp}.txt`);
+  // Format and save the conversation
+  const conversationLog = ['#SYSTEM:', EDITOR_SYSTEM, '', '#MESSAGE:', message, '', '#RESPONSE:', response].join('\n');
+  await fs.writeFile(logFile, conversationLog);
 
   // Parse the response and extract refactored blocks
   const blockRegex = /<block id=(\d+)>([\s\S]*?)<\/block>/g;
