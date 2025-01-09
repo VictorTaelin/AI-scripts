@@ -8,6 +8,7 @@ import { dirname } from 'path';
 import { chat, MODELS } from './Chat.mjs';
 import { exec } from 'child_process';
 import os from 'os';
+import ignore from 'ignore';
 
 // UTILS
 // -----
@@ -34,8 +35,14 @@ try {
   config = JSON.parse(configContent);
 } catch (err) {
   // If no config file or invalid JSON, proceed with default behavior
-  config = {path: "."};
+  config = {path: ".", include: null, exclude: null};
 }
+
+const ig = ignore();
+try { ig.add(await fs.readFile(path.join(process.cwd(), '.gitignore'), 'utf8')); } catch (err) {}
+try { ig.add(await fs.readFile(path.join(process.cwd(), '.aoeignore'), 'utf8')); } catch (err) {}
+ig.add('.*');
+ig.add('.*/**');
 
 // Trim function that preserves leading spaces
 function trimmer(str) {
@@ -93,6 +100,16 @@ async function loadFiles(dir) {
   let results = [];
   for (const file of files) {
     const filePath = path.join(dir, file);
+    const relativePath = path.relative(process.cwd(), filePath);
+    if (config.include && !new RegExp(config.include).test(relativePath)) {
+      continue;
+    }
+    if (config.exclude && new RegExp(config.exclude).test(relativePath)) {
+      continue;
+    }
+    if (ig.ignores(relativePath)) {
+      continue;
+    }
     const stat = await fs.stat(filePath);
     if (stat.isDirectory()) {
       results = results.concat(await loadFiles(filePath));

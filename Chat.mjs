@@ -62,6 +62,7 @@ export function openAIChat(clientClass, use_model) {
 
     // FIXME: update when OAI's o1 API flexibilizes
     var max_completion_tokens = undefined;
+    var old_stream = stream;
     if (is_o1) {
       stream = false;
       temperature = 1;
@@ -111,6 +112,10 @@ export function openAIChat(clientClass, use_model) {
       const text = response.choices[0]?.message?.content || "";
       //process.stdout.write(text);
       result = text;
+    }
+
+    if (is_o1 && old_stream) {
+      console.log(result);
     }
 
     messages.push({ role: 'assistant', content: await shorten(result) });

@@ -25,18 +25,26 @@ if (!file) {
 var file_code = await fs.readFile(file, 'utf-8');
 var mini_code = mini ? await fs.readFile(mini, 'utf-8') : file_code;
 
-// Imports context files when //./path_to_file// is present.
+// Prevent recursive imports
+const seen = new Set();
+
+// Imports context files when // ./path_to_file // is present.
 var regex = /\/\/\.\/(.*?)\/\//g;
 var match;
 while ((match = regex.exec(mini_code)) !== null) {
   var import_path = path.resolve(path.dirname(file), match[1]);
-  if (await fs.stat(import_path).then(() => true).catch((e) => false)) {
-    var import_text = await fs.readFile(import_path, 'utf-8');
-    console.log("import_file:", match[0]);
-    mini_code = mini_code.replace(match[0], '\n' + import_text);
+  if (!seen.has(import_path)) {
+    if (await fs.stat(import_path).then(() => true).catch((e) => false)) {
+      var import_text = await fs.readFile(import_path, 'utf-8');
+      console.log("import_file:", match[0]);
+      mini_code = mini_code.replace(match[0], '\n' + import_text);
+      seen.add(import_path);
+    } else {
+      console.log("import_file:", match[0], "ERROR");
+      process.exit(1);
+    }
   } else {
-    console.log("import_file:", match[0], "ERROR");
-    process.exit(1);
+    console.log("import_file:", match[0], "SKIPPED (already imported)");
   }
 }
 
