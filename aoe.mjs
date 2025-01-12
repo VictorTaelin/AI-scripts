@@ -628,3 +628,11 @@ await saveContext(context);
 
 console.log("Refactoring completed and saved to files.");
 console.log(`Total execution time: ${(Date.now() - START_TIME) / 1000} seconds`);
+console.log(`To discard whitespace changes:
+  git diff --ignore-cr-at-eol --ignore-space-at-eol --ignore-space-change --ignore-all-space --ignore-blank-lines > ~/patch.diff
+  git stash
+  git apply --ignore-whitespace ~/patch.diff
+  rm ~/patch.diff
+  # (check if everything worked out, then)
+  git stash drop
+`)
