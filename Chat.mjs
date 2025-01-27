@@ -26,7 +26,8 @@ export const MODELS = {
   C: 'claude-3-5-sonnet-20241022',
   c: 'claude-3-5-sonnet-20240620',
 
-  d: 'deepseek-chat',
+  k: 'deepseek-chat',
+  K: 'deepseek-reasoner',
 
   //c: 'claude-3-5-sonnet-20240620',
   //C: 'claude-3-5-sonnet-20241022', // TODO: temporarily using the new sonnet instead of opus
@@ -66,7 +67,7 @@ export function openAIChat(clientClass, use_model) {
     if (is_o1) {
       stream = false;
       temperature = 1;
-      max_completion_tokens = max_tokens;
+      max_completion_tokens = 100000;
       max_tokens = undefined;
       reasoning_effort = "high";
     }
@@ -114,6 +115,7 @@ export function openAIChat(clientClass, use_model) {
       result = text;
     }
 
+    //console.log(is_o1, old_stream);
     if (is_o1 && old_stream) {
       console.log(result);
     }
@@ -308,7 +310,7 @@ export function deepseekChat(clientClass, use_model) {
   const messages = [];
   let extendFunction = null;
 
-  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 8192, stream = true, shorten = (x => x), extend = null }) {
+  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 8192, stream = true, shorten = (x => x), extend = null, reasoning_effort = "high" }) {
     if (userMessage === null) {
       return { messages };
     }
@@ -316,7 +318,7 @@ export function deepseekChat(clientClass, use_model) {
     model = MODELS[model] || model || use_model;
     const client = new clientClass({
       apiKey: await getToken('deepseek'),
-      baseURL: "https://api.deepseek.com/beta",
+      baseURL: "https://api.deepseek.com/v1",
     });
 
     if (messages.length === 0 && system) {
@@ -331,25 +333,35 @@ export function deepseekChat(clientClass, use_model) {
 
     const params = {
       messages: messagesCopy,
-      model,
+      model: model,
       temperature,
       max_tokens,
       stream,
+      reasoning_effort,
       response_format: { type: "text" }
     };
 
     let result = "";
+    let reasoning_content = "";
     const response = await client.chat.completions.create(params);
     if (stream) {
       for await (const chunk of response) {
-        const text = chunk.choices[0]?.delta?.content || "";
-        process.stdout.write(text);
-        result += text;
+        if (chunk.choices[0]?.delta?.reasoning_content) {
+          const text = chunk.choices[0].delta.reasoning_content;
+          process.stdout.write(text);
+          reasoning_content += text;
+        } else if (chunk.choices[0]?.delta?.content) {
+          if (result === "") console.log("");
+          const text = chunk.choices[0].delta.content;
+          process.stdout.write(text);
+          result += text;
+        }
       }
     } else {
-      const text = response.choices[0]?.message?.content || "";
-      //process.stdout.write(text);
-      result = text;
+      reasoning_content = response.choices[0]?.message?.reasoning_content || "";
+      result = response.choices[0]?.message?.content || "";
+      if (reasoning_content) process.stdout.write(reasoning_content);
+      //process.stdout.write(result);
     }
 
     messages.push({ role: 'assistant', content: await shorten(result) });
@@ -403,4 +415,3 @@ export function tokenCount(inputText) {
   // Return the number of tokens
   return numberOfTokens;
 }
-
