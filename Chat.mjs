@@ -96,7 +96,7 @@ export function openAIChat(clientClass, use_model) {
     const messagesCopy = [...messages, { role: "user", content: extendedUserMessage }];
     messages.push({ role: "user", content: userMessage });
 
-    const prediction = predict && model.indexOf("o1") === -1 && model.indexof("o3") === -1 ? { type: "content", content: predict } : undefined;
+    const prediction = predict && model.indexOf("o1") === -1 && model.indexOf("o3") === -1 ? { type: "content", content: predict } : undefined;
     //console.log(prediction);
 
     const params = {
