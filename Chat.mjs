@@ -1,3 +1,8 @@
+// this is probably the worst code I've ever written
+// why are you guys using it
+// stop
+// i beg you
+
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
@@ -17,7 +22,7 @@ export const MODELS = {
   //G: 'gpt-4-32k-0314',
 
   // o1 by OpenAI
-  om: 'o1-mini',
+  om: 'o3-mini',
   o: 'o1',
 
   // Claude by Anthropic
@@ -60,21 +65,25 @@ export function openAIChat(clientClass, use_model) {
     const client = new clientClass({ apiKey: await getToken(clientClass.name.toLowerCase()) });
 
     const is_o1 = model.startsWith("o1");
+    const is_o3 = model.startsWith("o3");
 
     // FIXME: update when OAI's o1 API flexibilizes
     var max_completion_tokens = undefined;
     var old_stream = stream;
-    if (is_o1) {
+    if (is_o1 || is_o3) {
       stream = false;
       temperature = 1;
       max_completion_tokens = 100000;
       max_tokens = undefined;
       reasoning_effort = "high";
     }
+    if (is_o3) {
+      stream = true;
+    }
 
     if (messages.length === 0 && system) {
       // FIXME: update when OAI's o1 API flexibilizes
-      if (is_o1) {
+      if (is_o1 || is_o3) {
         messages.push({ role: "user", content: system });
       } else {
         messages.push({ role: "system", content: system });
@@ -87,7 +96,7 @@ export function openAIChat(clientClass, use_model) {
     const messagesCopy = [...messages, { role: "user", content: extendedUserMessage }];
     messages.push({ role: "user", content: userMessage });
 
-    const prediction = predict && model.indexOf("o1") === -1 ? { type: "content", content: predict } : undefined;
+    const prediction = predict && model.indexOf("o1") === -1 && model.indexof("o3") === -1 ? { type: "content", content: predict } : undefined;
     //console.log(prediction);
 
     const params = {
@@ -373,11 +382,14 @@ export function deepseekChat(clientClass, use_model) {
 }
 
 // Generic asker function that dispatches to the correct asker based on the model name
+// this is terrible kill me
 export function chat(model) {
   model = MODELS[model] || model;
   if (model.startsWith('gpt')) {
     return openAIChat(OpenAI, model);
   } else if (model.startsWith('o1')) {
+    return openAIChat(OpenAI, model);
+  } else if (model.startsWith('o3')) {
     return openAIChat(OpenAI, model);
   } else if (model.startsWith('chatgpt')) {
     return openAIChat(OpenAI, model);
