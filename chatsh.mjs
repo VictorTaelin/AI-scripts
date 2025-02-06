@@ -36,7 +36,7 @@ ls
 </ChatSH>
 
 <SYSTEM>
-example.gif example.tst example_dir/
+example.gif example.txt example_dir/
 </SYSTEM>
 
 <USER>
