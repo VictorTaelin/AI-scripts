@@ -74,7 +74,8 @@ var reply = reply.indexOf("<COMPLETION>")  === -1 ? "<COMPLETION>" + reply  : re
 var reply = reply.indexOf("</COMPLETION>") === -1 ? reply + "</COMPLETION>" : reply;
 var match = reply.match(/<COMPLETION>([\s\S]*?)<\/COMPLETION>/);
 if (match) {
-  file_code = file_code.replace(".?.", match[1].replace(/\$/g, '$$$$'));
+  var fill = match[1].replace(/\$/g, '$$$$').replace(/^\n+|\n+$/g, '');
+  file_code = file_code.replace(".?.", fill);
 } else {
   console.error("Error: Could not find <COMPLETION> tags in the AI's response.");
   process.exit(1);
