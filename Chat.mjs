@@ -1,5 +1,3 @@
-//./twitter_client.txt//
-
 // this is probably the worst code I've ever written
 // why are you guys using it
 // stop
@@ -14,14 +12,13 @@ import { OpenRouter } from "@openrouter/ai-sdk-provider";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { encode } from "gpt-tokenizer/esm/model/davinci-codex"; // tokenizer
 import { Scraper } from 'agent-twitter-client-taelin-fork';
-import { Cookie } from 'tough-cookie';
 
 // Map of model shortcodes to full model names
 export const MODELS = {
   // GPT by OpenAI
   gm: 'gpt-4o-mini',
-  //g: 'chatgpt-4o-latest',
-  g: 'gpt-4o-2024-11-20',
+  g: 'chatgpt-4o-latest',
+  //g: 'gpt-4o-2024-11-20',
   //g: 'gpt-4o',
   //G: 'gpt-4-32k-0314',
 
@@ -31,7 +28,6 @@ export const MODELS = {
 
   // Claude by Anthropic
   cm: 'claude-3-5-haiku-20241022',
-
   C: 'claude-3-5-sonnet-20241022',
   c: 'claude-3-5-sonnet-20240620',
 
@@ -48,11 +44,14 @@ export const MODELS = {
   l: 'meta-llama/llama-3.3-70b-instruct',
   L: 'meta-llama/llama-3.1-405b-instruct',
 
+  //s: 'DeepSeek-R1-Distill-Llama-70B',
+
   // Gemini by Google
   i: 'gemini-2.0-pro-exp-02-05',
   I: 'gemini-2.0-flash-thinking-exp-01-21',
 
-  x: "grok3",
+  x: "grok-3",
+  X: "grok-3-think",
 };
 
 // Factory function to create a stateful OpenAI chat
@@ -192,63 +191,6 @@ export function anthropicChat(clientClass, MODEL) {
   return ask;
 }
 
-//export function geminiChat(clientClass, use_model) {
-  //const messages = [];
-
-  //async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 8192, stream = true, shorten = (x => x), extend = null }) {
-    //if (userMessage === null) {
-      //return { messages };
-    //}
-
-    //model = MODELS[model] || model || use_model;
-    //const client = new clientClass(await getToken(clientClass.name.toLowerCase()));
-
-    //const generationConfig = {
-      //maxOutputTokens: max_tokens,
-      //temperature,
-    //};
-
-    //const safetySettings = [
-      //{
-        //category: "HARM_CATEGORY_HARASSMENT",
-        //threshold: "BLOCK_NONE",
-      //},
-      //{
-        //category: "HARM_CATEGORY_HATE_SPEECH",
-        //threshold: "BLOCK_NONE",
-      //},
-      //{
-        //category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-        //threshold: "BLOCK_NONE",
-      //},
-      //{
-        //category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-        //threshold: "BLOCK_NONE",
-      //},
-    //];
-
-    //const chat = client
-      //.getGenerativeModel({model,generationConfig})
-      //.startChat({safetySettings});
-
-    //let result = "";
-    //if (stream) {
-      //const response = await chat.sendMessageStream(userMessage);
-      //for await (const chunk of response.stream) {
-        //const text = chunk.text();
-        //process.stdout.write(text);
-        //result += text;
-      //}
-    //} else {
-      //const response = await chat.sendMessage(userMessage);
-      //result = (await response.response).text();
-    //}
-
-    //return result;
-  //}
-
-  //return ask;
-//}
 export function geminiChat(clientClass, use_model) {
   const messages = [];
 
@@ -425,12 +367,94 @@ export function deepseekChat(clientClass, use_model) {
   return ask;
 }
 
+export function sambanovaChat(clientClass, use_model) {
+  // Initialize an array to store the conversation history
+  const messages = [];
+  // Variable to store the extend function for the next call
+  let extendFunction = null;
+
+  // The ask function handles the chat interaction
+  async function ask(userMessage, { 
+    system, 
+    model, 
+    temperature = 0.0, 
+    max_tokens = 8192, 
+    stream = true, 
+    shorten = (x => x), 
+    extend = null 
+  }) {
+    // If userMessage is null, return the current messages array
+    if (userMessage === null) {
+      return { messages };
+    }
+
+    // Determine the model to use, falling back to the default if not specified
+    model = MODELS[model] || model || use_model;
+
+    // Initialize the OpenAI client with SambaNova's base URL and API key
+    const client = new clientClass({
+      apiKey: await getToken('sambanova'),
+      baseURL: "https://api.sambanova.ai/v1",
+    });
+
+    // Add system message if provided and this is the first message
+    if (messages.length === 0 && system) {
+      messages.push({ role: "system", content: system });
+    }
+
+    // Apply the extend function from the previous call, if any
+    let extendedUserMessage = extendFunction ? extendFunction(userMessage) : userMessage;
+    // Set the extend function for the next call
+    extendFunction = extend;
+
+    // Create a copy of messages with the extended user message for the API call
+    const messagesCopy = [...messages, { role: "user", content: extendedUserMessage }];
+    // Add the original user message to the persistent message history
+    messages.push({ role: "user", content: userMessage });
+
+    // Define parameters for the API call, excluding unsupported SambaNova parameters
+    const params = {
+      messages: messagesCopy,
+      model,
+      temperature,
+      max_tokens,
+      stream,
+    };
+
+    let result = "";
+    // Make the API call to SambaNova
+    const response = await client.chat.completions.create(params);
+
+    // Handle streaming response
+    if (stream) {
+      for await (const chunk of response) {
+        const text = chunk.choices[0]?.delta?.content || "";
+        process.stdout.write(text);
+        result += text;
+      }
+    } 
+    // Handle non-streaming response
+    else {
+      const text = response.choices[0]?.message?.content || "";
+      result = text;
+    }
+
+    // Add the assistant's response to the message history after shortening
+    messages.push({ role: 'assistant', content: await shorten(result) });
+
+    return result;
+  }
+
+  return ask;
+}
+
 class GrokChat {
-  constructor() {
+  constructor(model) {
     this.scraper = null;
     this.conversationId = null;
     this.messages = [];
     this.cookies = null;
+    this.model = model;
   }
 
   async initialize() {
@@ -457,27 +481,25 @@ class GrokChat {
       try {
         const cookiesData = await fs.readFile(cookiesPath, 'utf8');
         const cookieStrings = JSON.parse(cookiesData);
-        const loadedCookies = cookieStrings.map(str => Cookie.parse(str)).filter(cookie => cookie !== undefined);
+        const loadedCookies = cookieStrings.filter(cookie => cookie !== undefined);
         await this.scraper.setCookies(loadedCookies);
         //console.log('Loaded cookies from file');
       } catch (err) {
         //console.log('No cookies found or error loading cookies:', err.message);
         this.cookies = null;
       }
-
       // Only log in if not already logged in
       if (!(await this.scraper.isLoggedIn())) {
           try {
             await this.scraper.login(user, pass, email || undefined);
             //console.log('Successfully logged in to Twitter');
-
             // Cache the new cookies
             this.cookies = await this.scraper.getCookies();
             const cookieStrings = this.cookies.map(cookie => cookie.toString());
             await fs.writeFile(cookiesPath, JSON.stringify(cookieStrings), 'utf8');
             //console.log('Saved cookies to file');
           } catch (err) {
-            console.error('Twitter login error details:', err.message);
+            //console.error('Twitter login error details:', err.message);
             throw new Error('Twitter login failed');
           }
       } else {
@@ -491,9 +513,15 @@ class GrokChat {
     const messagesToSend = [{ role: 'user', content: userMessage }];
 
     try {
+      const model = MODELS[options.model || this.model || "grok-3"];
       const response = await this.scraper.grokChat({
+        grokModelOptionId: model.replace("-think", ""),
         messages: messagesToSend,
         conversationId: this.conversationId,
+        isReasoning: model.endsWith("-think") || false,
+        returnSearchResults: false,
+        returnCitations: false,
+        stream: options.stream || true,
         ...options,
       });
 
@@ -521,18 +549,15 @@ class GrokChat {
   }
 }
 
-export function grokChat() {
-  const grok = new GrokChat();
+export function grokChat(model) {
+  const grok = new GrokChat(model);
 
   async function ask(userMessage, { stream = true, ...options } = {}) {
     if (userMessage === null) {
       return { messages: grok.getMessages() };
     }
-    const response = await grok.chat(userMessage, options);
-    if (stream) {
-      process.stdout.write(response);
-    }
-    return response;
+    return await grok.chat(userMessage, options);
+    // NOTE: when stream=true, my forked twitter lib will already print Grok's output
   }
 
   return ask;
@@ -542,8 +567,8 @@ export function grokChat() {
 // this is terrible kill me
 export function chat(model) {
   model = MODELS[model] || model;
-  if (model === 'grok3') {
-    return grokChat();
+  if (model.startsWith('grok')) {
+    return grokChat(model);
   } else if (model.startsWith('gpt')) {
     return openAIChat(OpenAI, model);
   } else if (model.startsWith('o1')) {
@@ -558,6 +583,10 @@ export function chat(model) {
     return anthropicChat(Anthropic, model);
   } else if (model.startsWith('meta')) {
     return openRouterChat(OpenRouter, model);
+  //} else if (model.startsWith('Meta')) {
+    //return sambanovaChat(OpenAI, model);
+  //} else if (model === "DeepSeek-R1-Distill-Llama-70B") {
+    //return sambanovaChat(OpenAI, model);
   } else if (model.startsWith('gemini')) {
     return geminiChat(GoogleGenerativeAI, model);
   } else {
