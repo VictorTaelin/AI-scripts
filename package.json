@@ -46,6 +46,7 @@
     "oauth-1.0a": "^2.2.6",
     "openai": "^4.31.0",
     "portkey-ai": "^1.3.0",
+    "tough-cookie": "^5.1.1",
     "typescript": "^5.5.4"
   },
   "devDependencies": {

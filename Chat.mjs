@@ -14,6 +14,7 @@ import { OpenRouter } from "@openrouter/ai-sdk-provider";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { encode } from "gpt-tokenizer/esm/model/davinci-codex"; // tokenizer
 import { Scraper } from 'agent-twitter-client-taelin-fork';
+import { Cookie } from 'tough-cookie';
 
 // Map of model shortcodes to full model names
 export const MODELS = {
@@ -429,6 +430,7 @@ class GrokChat {
     this.scraper = null;
     this.conversationId = null;
     this.messages = [];
+    this.cookies = null;
   }
 
   async initialize() {
@@ -449,12 +451,37 @@ class GrokChat {
       }
 
       this.scraper = new Scraper();
+
+      // Load cookies if available
+      const cookiesPath = path.join(os.homedir(), '.config', 'twitter.cookies');
       try {
-        await this.scraper.login(user, pass, email || undefined);
-        console.log('Successfully logged in to Twitter');
+        const cookiesData = await fs.readFile(cookiesPath, 'utf8');
+        const cookieStrings = JSON.parse(cookiesData);
+        const loadedCookies = cookieStrings.map(str => Cookie.parse(str)).filter(cookie => cookie !== undefined);
+        await this.scraper.setCookies(loadedCookies);
+        //console.log('Loaded cookies from file');
       } catch (err) {
-        console.error('Twitter login error details:', err.message);
-        throw new Error('Twitter login failed');
+        //console.log('No cookies found or error loading cookies:', err.message);
+        this.cookies = null;
+      }
+
+      // Only log in if not already logged in
+      if (!(await this.scraper.isLoggedIn())) {
+          try {
+            await this.scraper.login(user, pass, email || undefined);
+            //console.log('Successfully logged in to Twitter');
+
+            // Cache the new cookies
+            this.cookies = await this.scraper.getCookies();
+            const cookieStrings = this.cookies.map(cookie => cookie.toString());
+            await fs.writeFile(cookiesPath, JSON.stringify(cookieStrings), 'utf8');
+            //console.log('Saved cookies to file');
+          } catch (err) {
+            console.error('Twitter login error details:', err.message);
+            throw new Error('Twitter login failed');
+          }
+      } else {
+        //console.log('Already logged in (using cookies)');
       }
     }
   }
@@ -502,7 +529,9 @@ export function grokChat() {
       return { messages: grok.getMessages() };
     }
     const response = await grok.chat(userMessage, options);
-    console.log(response);
+    if (stream) {
+      process.stdout.write(response);
+    }
     return response;
   }
 
