@@ -1,3 +1,5 @@
+//./twitter_client.txt//
+
 // this is probably the worst code I've ever written
 // why are you guys using it
 // stop
@@ -17,8 +19,8 @@ import { Scraper } from 'agent-twitter-client-taelin-fork';
 export const MODELS = {
   // GPT by OpenAI
   gm: 'gpt-4o-mini',
-  g: 'chatgpt-4o-latest',
-  //g: 'gpt-4o-2024-11-20',
+  //g: 'chatgpt-4o-latest',
+  g: 'gpt-4o-2024-11-20',
   //g: 'gpt-4o',
   //G: 'gpt-4-32k-0314',
 
@@ -455,6 +457,7 @@ class GrokChat {
     this.messages = [];
     this.cookies = null;
     this.model = model;
+    this.systemPrompt = null;
   }
 
   async initialize() {
@@ -476,40 +479,40 @@ class GrokChat {
 
       this.scraper = new Scraper();
 
-      // Load cookies if available
       const cookiesPath = path.join(os.homedir(), '.config', 'twitter.cookies');
       try {
         const cookiesData = await fs.readFile(cookiesPath, 'utf8');
         const cookieStrings = JSON.parse(cookiesData);
         const loadedCookies = cookieStrings.filter(cookie => cookie !== undefined);
         await this.scraper.setCookies(loadedCookies);
-        //console.log('Loaded cookies from file');
       } catch (err) {
-        //console.log('No cookies found or error loading cookies:', err.message);
         this.cookies = null;
       }
-      // Only log in if not already logged in
+
       if (!(await this.scraper.isLoggedIn())) {
           try {
             await this.scraper.login(user, pass, email || undefined);
-            //console.log('Successfully logged in to Twitter');
-            // Cache the new cookies
             this.cookies = await this.scraper.getCookies();
             const cookieStrings = this.cookies.map(cookie => cookie.toString());
             await fs.writeFile(cookiesPath, JSON.stringify(cookieStrings), 'utf8');
-            //console.log('Saved cookies to file');
           } catch (err) {
-            //console.error('Twitter login error details:', err.message);
             throw new Error('Twitter login failed');
           }
-      } else {
-        //console.log('Already logged in (using cookies)');
       }
     }
   }
 
   async chat(userMessage, options = {}) {
     await this.initialize();
+
+    // If there's a system prompt and this is the first message, prepend it
+    if (options.system && !this.systemPrompt) {
+      this.systemPrompt = options.system;
+      userMessage = `${this.systemPrompt}\n---\n${userMessage}`;
+    } else if (this.systemPrompt && this.messages.length === 0) {
+      userMessage = `${this.systemPrompt}\n---\n${userMessage}`;
+    }
+
     const messagesToSend = [{ role: 'user', content: userMessage }];
 
     try {
@@ -546,6 +549,7 @@ class GrokChat {
   resetConversation() {
     this.conversationId = null;
     this.messages = [];
+    this.systemPrompt = null;
   }
 }
 
