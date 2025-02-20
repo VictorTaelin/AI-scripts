@@ -1,3 +1,5 @@
+//./twitter_client.txt//
+
 // this is probably the worst code I've ever written
 // why are you guys using it
 // stop
@@ -11,6 +13,7 @@ import { Anthropic } from '@anthropic-ai/sdk';
 import { OpenRouter } from "@openrouter/ai-sdk-provider";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { encode } from "gpt-tokenizer/esm/model/davinci-codex"; // tokenizer
+import { Scraper } from 'agent-twitter-client-taelin-fork';
 
 // Map of model shortcodes to full model names
 export const MODELS = {
@@ -45,8 +48,10 @@ export const MODELS = {
   L: 'meta-llama/llama-3.1-405b-instruct',
 
   // Gemini by Google
-  i: 'gemini-2.0-flash-exp',
-  I: 'gemini-exp-1206'
+  i: 'gemini-2.0-pro-exp-02-05',
+  I: 'gemini-2.0-flash-thinking-exp-01-21',
+
+  x: "grok3",
 };
 
 // Factory function to create a stateful OpenAI chat
@@ -186,11 +191,67 @@ export function anthropicChat(clientClass, MODEL) {
   return ask;
 }
 
+//export function geminiChat(clientClass, use_model) {
+  //const messages = [];
+
+  //async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 8192, stream = true, shorten = (x => x), extend = null }) {
+    //if (userMessage === null) {
+      //return { messages };
+    //}
+
+    //model = MODELS[model] || model || use_model;
+    //const client = new clientClass(await getToken(clientClass.name.toLowerCase()));
+
+    //const generationConfig = {
+      //maxOutputTokens: max_tokens,
+      //temperature,
+    //};
+
+    //const safetySettings = [
+      //{
+        //category: "HARM_CATEGORY_HARASSMENT",
+        //threshold: "BLOCK_NONE",
+      //},
+      //{
+        //category: "HARM_CATEGORY_HATE_SPEECH",
+        //threshold: "BLOCK_NONE",
+      //},
+      //{
+        //category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+        //threshold: "BLOCK_NONE",
+      //},
+      //{
+        //category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+        //threshold: "BLOCK_NONE",
+      //},
+    //];
+
+    //const chat = client
+      //.getGenerativeModel({model,generationConfig})
+      //.startChat({safetySettings});
+
+    //let result = "";
+    //if (stream) {
+      //const response = await chat.sendMessageStream(userMessage);
+      //for await (const chunk of response.stream) {
+        //const text = chunk.text();
+        //process.stdout.write(text);
+        //result += text;
+      //}
+    //} else {
+      //const response = await chat.sendMessage(userMessage);
+      //result = (await response.response).text();
+    //}
+
+    //return result;
+  //}
+
+  //return ask;
+//}
 export function geminiChat(clientClass, use_model) {
   const messages = [];
-  let extendFunction = null;
 
-  async function ask(userMessage, { system, model, temperature = 0.0, max_tokens = 8192, stream = true, shorten = (x => x), extend = null }) {
+  async function ask(userMessage, {system, model, temperature = 0.0, max_tokens = 8192, stream = true, shorten = (x) => x, extend = null}) {
     if (userMessage === null) {
       return { messages };
     }
@@ -204,50 +265,32 @@ export function geminiChat(clientClass, use_model) {
     };
 
     const safetySettings = [
-      {
-        category: "HARM_CATEGORY_HARASSMENT",
-        threshold: "BLOCK_NONE",
-      },
-      {
-        category: "HARM_CATEGORY_HATE_SPEECH",
-        threshold: "BLOCK_NONE",
-      },
-      {
-        category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-        threshold: "BLOCK_NONE",
-      },
-      {
-        category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-        threshold: "BLOCK_NONE",
-      },
+      { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+      { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+      { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+      { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
     ];
 
-    let extendedUserMessage = extendFunction ? extendFunction(userMessage) : userMessage;
-    extendFunction = extend; // Set for next call
-
-    const messagesCopy = [...messages, { role: "user", parts: [{ text: extendedUserMessage }] }];
-    messages.push({ role: "user", parts: [{ text: userMessage }] });
-
-    const chat = client.getGenerativeModel({ model, generationConfig })
+    // Initialize the chat with the system prompt integrated as expected by Gemini's API
+    const chat = client
+      .getGenerativeModel({ model, generationConfig })
       .startChat({
-        history: messagesCopy,
-        safetySettings: safetySettings,
+        safetySettings,
+        systemInstruction: { role: "system", parts: [{ text: system }] },
       });
 
     let result = "";
     if (stream) {
-      const response = await chat.sendMessageStream(extendedUserMessage);
+      const response = await chat.sendMessageStream(userMessage);
       for await (const chunk of response.stream) {
         const text = chunk.text();
         process.stdout.write(text);
         result += text;
       }
     } else {
-      const response = await chat.sendMessage(extendedUserMessage);
+      const response = await chat.sendMessage(userMessage);
       result = (await response.response).text();
     }
-
-    messages.push({ role: 'model', parts: [{ text: await shorten(result) }] });
 
     return result;
   }
@@ -381,11 +424,98 @@ export function deepseekChat(clientClass, use_model) {
   return ask;
 }
 
+class GrokChat {
+  constructor() {
+    this.scraper = null;
+    this.conversationId = null;
+    this.messages = [];
+  }
+
+  async initialize() {
+    if (!this.scraper) {
+      const configPath = path.join(os.homedir(), '.config', 'twitter.pwd');
+      let credentials;
+      try {
+        const data = await fs.readFile(configPath, 'utf8');
+        credentials = JSON.parse(data);
+      } catch (err) {
+        console.error('Error reading twitter.pwd file:', err.message);
+        throw new Error('Failed to load Twitter credentials');
+      }
+
+      const { user, pass, email } = credentials;
+      if (!user || !pass) {
+        throw new Error('twitter.pwd must contain "user" and "pass" fields');
+      }
+
+      this.scraper = new Scraper();
+      try {
+        await this.scraper.login(user, pass, email || undefined);
+        console.log('Successfully logged in to Twitter');
+      } catch (err) {
+        console.error('Twitter login error details:', err.message);
+        throw new Error('Twitter login failed');
+      }
+    }
+  }
+
+  async chat(userMessage, options = {}) {
+    await this.initialize();
+    const messagesToSend = [{ role: 'user', content: userMessage }];
+
+    try {
+      const response = await this.scraper.grokChat({
+        messages: messagesToSend,
+        conversationId: this.conversationId,
+        ...options,
+      });
+
+      this.conversationId = response.conversationId;
+      this.messages = response.messages;
+
+      if (response.rateLimit?.isRateLimited) {
+        console.warn(`Rate limit exceeded: ${response.rateLimit.message}`);
+      }
+
+      return response.message;
+    } catch (err) {
+      console.error('Error interacting with Grok:', err.message);
+      throw err;
+    }
+  }
+
+  getMessages() {
+    return this.messages;
+  }
+
+  resetConversation() {
+    this.conversationId = null;
+    this.messages = [];
+  }
+}
+
+export function grokChat() {
+  const grok = new GrokChat();
+
+  async function ask(userMessage, { stream = true, ...options } = {}) {
+    if (userMessage === null) {
+      return { messages: grok.getMessages() };
+    }
+    const response = await grok.chat(userMessage, options);
+    console.log(response);
+    return response;
+  }
+
+  return ask;
+}
+
 // Generic asker function that dispatches to the correct asker based on the model name
 // this is terrible kill me
 export function chat(model) {
   model = MODELS[model] || model;
-  if (model.startsWith('gpt')) {
+  if (model === 'grok3') {
+    return grokChat();
+  } else if (model.startsWith('gpt')) {
     return openAIChat(OpenAI, model);
   } else if (model.startsWith('o1')) {
     return openAIChat(OpenAI, model);
@@ -413,6 +543,17 @@ async function getToken(vendor) {
     return (await fs.readFile(tokenPath, 'utf8')).trim();
   } catch (err) {
     console.error(`Error reading ${vendor}.token file:`, err.message);
+    process.exit(1);
+  }
+}
+
+async function getLogin(vendor) {
+  const loginPath = path.join(os.homedir(), '.config', `${vendor}.pwd`);
+  try {
+    const loginData = await fs.readFile(loginPath, 'utf8');
+    return JSON.parse(loginData);
+  } catch (err) {
+    console.error(`Error reading or parsing ${vendor}.pwd file:`, err.message);
     process.exit(1);
   }
 }

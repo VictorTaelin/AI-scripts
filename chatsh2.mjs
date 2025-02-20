@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env -S node --no-warnings --no-deprecation
 
 import fs from 'fs';
 import os from 'os';

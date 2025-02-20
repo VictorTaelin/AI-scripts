@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env -S node --no-warnings --no-deprecation
 
 import readline from 'readline';
 import { exec } from 'child_process';

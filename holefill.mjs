@@ -1,4 +1,5 @@
-#!/usr/bin/env node
+#!/usr/bin/env -S node --no-warnings --no-deprecation
+
 import { chat, MODELS, tokenCount } from './Chat.mjs';
 import process from "process";
 import fs from 'fs/promises';
