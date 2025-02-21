@@ -38,7 +38,7 @@ while ((match = regex.exec(mini_code)) !== null) {
     if (await fs.stat(import_path).then(() => true).catch((e) => false)) {
       var import_text = await fs.readFile(import_path, 'utf-8');
       console.log("import_file:", match[0]);
-      mini_code = mini_code.replace(match[0], '\n' + import_text);
+      mini_code = import_text + "\n" + mini_code;
       seen.add(import_path);
     } else {
       console.log("import_file:", match[0], "ERROR");
