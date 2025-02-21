@@ -72,9 +72,9 @@ await savePromptHistory(SYSTEM, prompt, reply, MODELS[model] || model);
 var reply = (await ask(prompt, {system: SYSTEM, model, max_tokens: 8192, predict}));
 var reply = reply.indexOf("<COMPLETION>")  === -1 ? "<COMPLETION>" + reply  : reply;
 var reply = reply.indexOf("</COMPLETION>") === -1 ? reply + "</COMPLETION>" : reply;
-var match = reply.match(/<COMPLETION>([\s\S]*?)<\/COMPLETION>/);
-if (match) {
-  var fill = match[1].replace(/\$/g, '$$$$').replace(/^\n+|\n+$/g, '');
+var matches = [...reply.matchAll(/<COMPLETION>([\s\S]*?)<\/COMPLETION>/g)];
+if (matches.length) {
+  var fill = matches[matches.length - 1][1].replace(/\$/g, '$$$$').replace(/^\n+|\n+$/g, '');
   file_code = file_code.replace(".?.", fill);
 } else {
   console.error("Error: Could not find <COMPLETION> tags in the AI's response.");
