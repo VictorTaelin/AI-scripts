@@ -15,7 +15,7 @@ Some AI scripts I use daily.
 
 - ~~`aoe`: refactor a huge codebase by auto-filtering chunks that need edit ([example](https://x.com/VictorTaelin/status/1873948475299111244))~~
 
-Note: I'm currently unifying all scripts into `chatsh`.
+*Note: I'm currently unifying all scripts into `chatsh`. For the old scripts, see the 'old-main' branch.*
 
 For VIM integration, this is my messy [vimrc](https://github.com/VictorTaelin/OSX/blob/master/vimrc).
 
