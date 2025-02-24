@@ -1,0 +1,399 @@
+GenAI.ts
+=======
+GenAI.ts is a TypeScript library providing a unified interface for interacting with various AI language models from providers like OpenAI, Anthropic, Google, and others. It enables stateful chat interactions, allowing users to send messages and receive responses from AI models seamlessly.
+
+The library abstracts the complexities of different AI APIs, enabling easy switching between models or providers without code changes. It supports features like streaming responses, temperature control, and system prompts where applicable.
+
+Usage
+-----
+```typescript
+import { GenAI } from './GenAI';
+
+async function main() {
+  const ai = await GenAI("g"); // Model: GPT-4o
+
+  // Options
+  const opts = {
+    system: "You are a helpful assistant.",
+    temperature: 0.0,
+    stream: true,
+  };
+
+  // Send a message
+  const response1 = await ai.ask("Hello, how are you?", opts);
+  console.log(response1);
+
+  // Send another message
+  const response2 = await ai.ask("What did I just say?", opts);
+  console.log(response2);
+
+  // Get conversation history
+  const history = await ai.ask(null, opts);
+  console.log(history);
+}
+```
+In this example, we create a chat instance for GPT-4o, send two messages, and then retrieve the conversation history.
+
+Models
+------
+The library supports various AI models via shortcodes defined in the `MODELS` export:
+
+- `g`: GPT-4o
+- `G`: o3-mini
+- `o`: o1
+- `cm`: Claude-3.5-Haiku
+- `c`: Claude-3.5-Sonnet
+- `C`: Claude-3.5-Sonnet (latest)
+- `d`: DeepSeek-Chat
+- `D`: DeepSeek-Reasoner
+- `lm`: Llama-3.1-8B-Instruct
+- `l`: Llama-3.3-70B-Instruct
+- `L`: Llama-3.1-405B-Instruct
+- `i`: Gemini-2.0-Pro
+- `I`: Gemini-2.0-Flash
+- `x`: Grok-3
+- `X`: Grok-3-Think
+
+Use uppercase letters (e.g., `G`) for smarter, slower versions where available. You can also use full model names if not listed.
+
+API Reference
+-------------
+### GenAI
+Creates and returns a chat instance for the specified model.
+
+**Signature:** `async function GenAI(modelShortcode: string): Promise<ChatInstance>`  
+**Parameters:**  
+- `modelShortcode: string` - Model shortcode (e.g., "g") or full model name.  
+**Returns:** A promise resolving to a `ChatInstance`.
+
+### ChatInstance
+Interface for chat interactions.
+
+#### ask
+**Signature:** `ask(userMessage: string | null, options: AskOptions): Promise<string | { messages: { role: string; content: string }[] }>`  
+**Parameters:**  
+- `userMessage: string | null` - Message to send. If `null`, returns conversation history.  
+- `options: AskOptions` - Configuration options.  
+**Returns:**  
+- If `userMessage` is a string: AI's response as a string.  
+- If `userMessage` is `null`: Object containing conversation history.  
+**Note:** When `stream` is `true`, the response is streamed to `stdout`, and the full response is still returned as a string.
+
+### AskOptions
+Options for the `ask` method:
+
+- `system?: string` - System prompt to set assistant behavior.
+- `temperature?: number` - Controls response randomness (0.0 to 1.0). Default: 0.0.
+- `max_tokens?: number` - Maximum tokens to generate. Default: 8192.
+- `stream?: boolean` - Enable streaming. Default: `true` where supported.
+- `system_cacheable?: boolean` - Allow caching the system message (Anthropic-specific).
+- `reasoning_effort?: string` - Set reasoning effort (DeepSeek-specific).
+
+**Note:** Not all options apply to every model; unsupported options are ignored.
+
+### MODELS
+Record mapping shortcodes to model names. See [Models](#models) for details.
+
+### tokenCount
+Estimates token count using GPT-4o's tokenizer.
+
+**Signature:** `function tokenCount(text: string): number`  
+**Parameters:**  
+- `text: string` - Text to analyze.  
+**Returns:** Estimated token count.  
+**Note:** This is an approximation; actual counts may vary by model.
+
+Setup
+-----
+Ensure API keys are set in `~/.config/<vendor>.token` (e.g., `~/.config/openai.token`). Supported vendors: `openai`, `anthropic`, `deepseek`, `openrouter`, `gemini`, `grok`.
+
+For OpenRouter, the library sets the `HTTP-Referer` header to `"https://github.com/OpenRouterTeam/openrouter-examples"`.
+
+Additional Notes
+----------------
+- **Streaming:** When enabled, responses are streamed to `stdout`. For DeepSeek models, reasoning content is displayed in dim text.
+- **Model-Specific Features:** Some models have unique behaviors (e.g., o1/o3 series handle streaming and temperature differently).
+- **Token Estimation:** `tokenCount` uses GPT-4o's tokenizer, which may differ from other models' tokenization.
+
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+
+# RepoManager
+
+RepoManager is a TypeScript library designed to manage codebases by breaking
+files into chunks—blocks of non-empty lines separated by blank lines. Each chunk
+gets a unique, stable 12-digit ID, making it easy to view or edit specific parts
+of your code and sync changes to disk automatically.
+
+## What It Does
+
+- Splits files into chunks with stable IDs.
+- Lets you view or edit chunks selectively.
+- Automatically saves changes to the filesystem.
+- Filters files with regex patterns.
+
+Here's how to use it:
+
+### Step 1: Load a Repository
+
+Use `RepoManager.load()` to load a directory into memory.
+
+```typescript
+import { RepoManager } from 'repomanager';
+
+// Load './my-repo', skipping 'node_modules'
+const repo = await RepoManager.load('./my-repo', {
+  exclude: [/node_modules/]
+});
+```
+
+Options:
+- `exclude`: Regex to skip files (e.g., node_modules).
+- `include`: Regex to include specific files (defaults to all).
+- Ignores files listed in `.cshignore` if it exists.
+
+### Step 2: View the Repository
+
+Use `view()` to see your codebase, expanding specific chunks by ID.
+
+```typescript
+console.log(repo.view({ '000000000000': true }));
+```
+
+Output format:
+```
+[file/path.js]
+000000000000:
+function hello() {
+  console.log("Hello, world!");
+}
+000001000000:
+console.log("Shortened chunk")...
+```
+
+Chunks not listed in `shownChunks` are shortened (e.g., first line + ...).
+
+### Step 3: Edit Chunks
+
+Use `edit()` to modify chunks by ID. Changes sync to disk automatically.
+
+Replace a Chunk:
+```typescript
+await repo.edit({
+  '000001000000': `
+function add(a, b) {
+  return a + b;
+}'
+});
+```
+
+
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+
+read the docs above to learn how the RepoManager and GenAI modules work. then,
+implement ChatSH, a terminal-based, vendor-agnostic AI Chat app. ChatSH will be
+similar to ChatGPT, except that it runs on the terminal, and has shell access,
+i.e., it can run bash scripts. moreover, the system prompt for ChatSH will also
+include a *shortened snapshot* of a repository, using the RepoManager module.
+its system prompt is:
+
+```txt
+This conversation is running inside a terminal session.
+
+To better assist me, I'll let you run bash commands on my computer.
+
+To do so, include, anywhere in your answer, a bash script, as follows:
+
+<RUN>
+ls -la
+</RUN>
+
+I'll soon give you a shortened context of the files I'm working on.
+
+You can issue the following context management commands:
+
+- \`<SHOW id=XYZ/>\`: Expands a chunk.
+- \`<HIDE id=XYZ/>\`: Shortens a chunk.
+- \`<EDIT id=XYZ/>\`: Removes a chunk.
+- \`<EDIT id=XYZ>new_content</EDIT>\`: Replaces a chunk's contents.
+
+Include these commands anywhere in your answer, and I'll execute them.
+
+The work context is:
+
+${workContext}
+
+Notes:
+- Chunks are labelled with a 12-number id.
+- Some chunks were shortened with a '...'.
+```
+
+note that workContext is obtained from repo.view(), using RepoManager. the show
+and hide commands edit a state of ChatSH, which maps chunk ids to true or false,
+depending on whether they're expanded or collapsed. we pass that to RepoManager
+when constructing the system prompt. finally, the edit command will just call
+repo.edit(), which will modify the prompt.
+
+note that, when the workContext is empty (for example, when the user calls
+ChatSH with an empty 'include'), there is no need to include the context
+management related parts of the system prompt, so, omit them in that case.
+
+when a RUN command is executed, the script will get the output from console, and
+prepend it to the next user message. this will allow the AI to see the result.
+for example, consider the interaction below:
+
+user: Please, list all files in this dir, using the "-la" flag
+
+chatsh: Sure, I'll do it.
+<RUN>
+ls -la
+</RUN>
+
+user:
+```sh
+drwxr-xr-x@  5 v  staff   160B Feb 23 14:59 ./
+drwxr-xr-x@ 16 v  staff   512B Feb 23 15:18 ../
+drwxr-xr-x@ 12 v  staff   384B Feb 23 14:58 .git/
+-rw-r--r--@  1 v  staff   302B Feb 23 14:59 bar.js
+-rw-r--r--@  1 v  staff   233B Feb 23 14:59 foo.js
+```
+
+now, delete the bar.js file
+
+---
+
+in the interaction above, the user never actually wrote that sh block; they just
+said "now, delete the bar.js file". but the ChatSH script automatically inserted
+that output, allowing the AI to see the same thing as the user did. reason about
+this carefully, to make sure this is handled elegantly and in a sensible way.
+for example, stdout/stderr must be treated carefully.
+
+the ChatSH command must be called like:
+
+$ csh M
+
+this will start csh, with the model 'M'. then, the console will be cleared, and
+the user will see something like:
+
+```
+Welcome to ChatSH!
+Model: full_model_name
+
+λ <user cursor is here>
+```
+
+the user can then start typing something, and it will appear. when the user
+presses <enter>, it will be sent to the AI. when the user presses backtick, it
+will be handled correctly. reason about this to make this smooth and well done.
+
+the user can use -i and -e to include/exclude a list of regexes. a common use
+case is to use -i with an empty regex, which means the context on the system
+prompt will be empty.
+
+if the user types just '?', we will show them the current context (i.e., the
+shortened repository), and some stats, including total token count on the
+context, and total token count in the entire conversation. you can use the
+'tokenCount(str) -> number' function exported by the GenAI module for that.
+
+if the user types '!something', it will execute a sh command directly, without
+calling or involving the AI. these command-output pairs will be accumulated and
+prepended to the next user AI message. example:
+
+Welcome to ChatSH!
+- model: ...
+
+λ !ls
+foo.js
+
+λ !cat foo.js
+console.log("Hello, world!")
+
+λ please overwrite foo.js, making it pt-br instead
+
+if the user enters these 3 exact likes, it will only call the AI after the 3rd
+line, with the following message:
+
+!ls
+```sh
+foo.js
+```
+
+!cat foo.js
+```sh
+console.log("Hello, world!")
+```
+
+please overwrite foo.js, making it pt-br instead
+
+---
+
+note that the results of the commands issued by the IA in the message *before*
+that will be included *before* the user's chain of commands, in a sh block as
+explained before.
+
+use stablished npm libraries to make your file short when possible. do not
+reinvent the wheel.
+
+save the full chat history (including user commands, ai responses, system
+outputs, etc.) to ~/.ai/chatsh3_history/ directory, with a file name like:
+conversation_2025-02-20T22-44-38-472Z.txt
+these logs should be appended dynamically to the file as the session goes
+
+remember: when the system runs a command, both the user and the AI must be able
+to see its output. when printing it to the user, color it *dim*.
+
+also, make the like where the user enters the command *bold*.
+
+finally, before executing commands provided by the AI, you must ask the user
+for permission, with a RED colored message like:
+
+Execute 1 command? [Y/N]
+
+if the user presses enter without an input, we default to running the command.
+
+write below the complete ChatSH.ts file.

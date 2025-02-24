@@ -1,36 +1,27 @@
 {
-  "name": "taelin-ai-scripts",
+  "name": "tai_scripts",
   "version": "0.1.0",
-  "description": "Handy AI scripts by Taelin",
-  "type": "module",
-  "main": "main.js",
+  "description": "Taelin AI Scripts",
+  "main": "index.js",
   "bin": {
-    "agda-deps": "agda-deps.mjs",
-    "agda2kind": "agda2kind.mjs",
-    "agda2ts": "agda2ts.mjs",
-    "aiemu": "aiemu.mjs",
-    "aieval": "aieval.mjs",
-    "chatsh": "chatsh.mjs",
-    "chatsh2": "chatsh2.mjs",
-    "codesh": "codesh.mjs",
-    "aoe": "aoe.mjs",
-    "ask": "ask.mjs",
-    "csh": "chatsh2.mjs",
-    "holefill": "holefill.mjs",
-    "kind-deps": "kind-deps.mjs",
-    "kindcoder": "kindcoder.mjs",
-    "koder": "koder.mjs",
-    "refactor": "refactor.mjs",
-    "ts-deps": "ts-deps.mjs"
+    "csh": "ChatSH.ts",
+    "holefill": "HoleFill.ts"
   },
-  "scripts": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/victortaelin/ai-scripts.git"
+  },
   "keywords": [
-    "cli",
-    "openai",
-    "gpt-4"
+    "ai"
   ],
-  "author": "",
+  "author": "VictorTaelin",
   "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/victortaelin/ai-scripts/issues"
+  },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.19.1",
     "@google/generative-ai": "^0.12.0",
@@ -38,17 +29,20 @@
     "@portkey-ai/gateway": "^1.4.0",
     "agent-twitter-client-taelin-fork": "^0.0.26",
     "apify-client": "^2.9.6",
+    "commander": "^13.1.0",
     "gateway": "^1.0.0",
     "googleapis": "^144.0.0",
     "gpt-tokenizer": "^2.1.2",
     "groq-sdk": "^0.3.2",
     "ignore": "^7.0.0",
+    "minimist": "^1.2.8",
     "oauth-1.0a": "^2.2.6",
     "openai": "^4.31.0",
     "portkey-ai": "^1.3.0",
     "typescript": "^5.5.4"
   },
+  "homepage": "https://github.com/victortaelin/ai-scripts#readme",
   "devDependencies": {
-    "tsx": "^4.16.2"
+    "@types/minimist": "^1.2.5"
   }
 }
