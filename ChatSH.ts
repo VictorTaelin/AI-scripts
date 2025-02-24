@@ -11,7 +11,11 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
-// Execute a shell command and return its output or error message
+/**
+ * Executes a shell command and returns its output or an error message.
+ * @param script The shell script to execute.
+ * @returns The command output or error message.
+ */
 async function executeCommand(script: string): Promise<string> {
   try {
     const { stdout, stderr } = await execAsync(script);
@@ -21,7 +25,12 @@ async function executeCommand(script: string): Promise<string> {
   }
 }
 
-// Generate system prompt without redundancy
+/**
+ * Generates the system prompt for the AI, including context management instructions.
+ * @param repo The repository manager instance.
+ * @param shownChunks Record of chunks to show or hide.
+ * @returns The formatted system prompt.
+ */
 function getSystemPrompt(repo: RepoManager, shownChunks: Record<string, boolean>): string {
   const basePrompt = `
 This conversation is running inside a terminal session.
@@ -48,7 +57,11 @@ And to run it, you can write:
 bun hello.ts
 </RUN>
 
-I will show you the outputs of every command you run.`.trim();
+I will show you the outputs of every command you run.
+
+Keep your answers brief and to the point.
+Don't include unsolicited details.
+`.trim();
 
   const workContext = repo.view(
     Object.fromEntries(
@@ -65,10 +78,10 @@ Below is a shortened context of the files I'm working on.
 
 You can issue the following context management commands:
 
-- \`<SHOW id=XYZ/>\`: Expands a chunk.
-- \`<HIDE id=XYZ/>\`: Shortens a chunk.
-- \`<EDIT id=XYZ/>\`: Removes a chunk.
-- \`<EDIT id=XYZ>new_content</EDIT>\`: Replaces a chunk's contents.
+- <SHOW id=XYZ/>: Expands a chunk.
+- <HIDE id=XYZ/>: Shortens a chunk.
+- <EDIT id=XYZ/>: Removes a chunk.
+- <EDIT id=XYZ>new_content</EDIT>: Replaces a chunk's contents.
 
 Include these commands anywhere in your answer, and I'll execute them.
 
@@ -92,7 +105,46 @@ Notes:
   return `${basePrompt}\n\n${contextInstructions}`.trim();
 }
 
-// Main application logic
+/**
+ * Parses a block ID from a '?' command input.
+ * - Empty input after '?' returns null (show full context).
+ * - 12-digit input returns as-is (full ID).
+ * - Numeric input is multiplied by 1,000,000 and padded to 12 digits (partial ID).
+ * - Invalid input returns undefined (error).
+ * @param input The user's input string (e.g., '?', '?123', '?123456789012').
+ * @returns Parsed block ID, null, or undefined.
+ */
+function parseBlockId(input: string): string | null | undefined {
+  const trimmed = input.replace('?', '').trim();
+  if (trimmed === '') {
+    return null; // Show full context
+  }
+  if (/^\d{12}$/.test(trimmed)) {
+    return trimmed; // Full ID
+  }
+  const num = parseFloat(trimmed);
+  if (!isNaN(num)) {
+    const idNum = Math.floor(num * 1000000);
+    return idNum.toString().padStart(12, '0');
+  }
+  return undefined; // Invalid input
+}
+
+/**
+ * Extracts the content of a specific block from the full context.
+ * @param fullContext The complete context string.
+ * @param blockId The 12-digit block ID to extract.
+ * @returns The block content or an error message if not found.
+ */
+function extractBlockContent(fullContext: string, blockId: string): string {
+  const blockPattern = new RegExp(`^${blockId}:\\s*\\n[\\s\\S]*?(?=^\\d{12}:|\\z)`, 'm');
+  const match = fullContext.match(blockPattern);
+  return match ? match[0].trim() : `Block ID ${blockId} not found.`;
+}
+
+/**
+ * Main application logic, handling user input and AI interactions.
+ */
 async function main() {
   const program = new Command();
   program
@@ -126,13 +178,14 @@ async function main() {
   }
   const timestamp = new Date().toISOString().replace(/:/g, '-');
   const logFile = path.join(logDir, `conversation_${timestamp}.txt`);
-  const logStream = fs.createWriteStream(logFile, { flags: 'a' });
 
   function log(message: string) {
-    logStream.write(message + '\n');
+    fs.appendFileSync(logFile, message + '\n', 'utf8');
   }
 
-  log(`Welcome to ChatSH!\nModel: ${MODELS[model]}\n`);
+  const welcomeMessage = `\x1b[1mWelcome to ChatSH!\x1b[0m\nModel: ${MODELS[model]}`;
+  console.log(welcomeMessage);
+  log(welcomeMessage);
 
   const rl = readline.createInterface({
     input: process.stdin,
@@ -145,34 +198,55 @@ async function main() {
   rl.on('line', async (line) => {
     process.stdout.write("\x1b[0m");
     line = line.trim();
-    if (line === '?') {
-      const currentWorkContext = repo.view(Object.fromEntries(Object.entries(shownChunks).filter(([_, value]) => value === true)) as Record<string, true>);
-      console.log(currentWorkContext);
+    if (line.startsWith('?')) {
+      const blockId = parseBlockId(line);
+      if (blockId === undefined) {
+        console.log('Invalid block ID. Please enter a valid number or exactly 12 digits.');
+        log(`λ ${line}\nInvalid block ID. Please enter a valid number or exactly 12 digits.`);
+      } else {
+        const fullContext = repo.view(
+          Object.fromEntries(
+            Object.entries(shownChunks).filter(([_, value]) => value === true)
+          ) as Record<string, true>
+        );
+        let displayContext: string;
+        if (blockId === null) {
+          displayContext = fullContext;
+        } else {
+          displayContext = extractBlockContent(fullContext, blockId);
+        }
+        console.log(displayContext);
 
-      const systemPromptTokenCount = tokenCount(getSystemPrompt(repo, shownChunks));
-      const totalChatTokenCount = history.reduce((sum, msg) => sum + tokenCount(msg), 0);
-      const totalMessages = history.length;
+        const systemPromptTokenCount = tokenCount(getSystemPrompt(repo, shownChunks));
+        const totalChatTokenCount = history.reduce((sum, msg) => sum + tokenCount(msg), 0);
+        const totalMessages = history.length;
 
-      console.log('\x1b[33m%s\x1b[0m', `msg_number: ${totalMessages}`);
-      console.log('\x1b[33m%s\x1b[0m', `msg_tokens: ${totalChatTokenCount}`);
-      console.log('\x1b[33m%s\x1b[0m', `sys_tokens: ${systemPromptTokenCount}`);
-      console.log('\x1b[33m%s\x1b[0m', `tot_tokens: ${systemPromptTokenCount + totalChatTokenCount}`);
+        console.log('\x1b[33m%s\x1b[0m', `msg_number: ${totalMessages}`);
+        console.log('\x1b[33m%s\x1b[0m', `msg_tokens: ${totalChatTokenCount}`);
+        console.log('\x1b[33m%s\x1b[0m', `sys_tokens: ${systemPromptTokenCount}`);
+        console.log('\x1b[33m%s\x1b[0m', `tot_tokens: ${systemPromptTokenCount + totalChatTokenCount}`);
 
-      log(`Current work context:\n${currentWorkContext}`);
-      log(`Stats: msg_number=${totalMessages}, msg_tokens=${totalChatTokenCount}, sys_tokens=${systemPromptTokenCount}, tot_tokens=${systemPromptTokenCount + totalChatTokenCount}`);
+        log(`λ ${line}`);
+        log(displayContext);
+        log(`\x1b[33mmsg_number: ${totalMessages}\x1b[0m`);
+        log(`\x1b[33mmsg_tokens: ${totalChatTokenCount}\x1b[0m`);
+        log(`\x1b[33msys_tokens: ${systemPromptTokenCount}\x1b[0m`);
+        log(`\x1b[33mtot_tokens: ${systemPromptTokenCount + totalChatTokenCount}\x1b[0m`);
+      }
     } else if (line.startsWith('!')) {
       const cmd = line.slice(1).trim();
       const output = await executeCommand(cmd);
       console.log(output); // Print output to console
-      log(`User executed command: ${cmd}\nOutput:\n${output}`);
-      userCommandOutputs.push(`!${cmd}\n\`\`\`sh\n${output}\n\`\`\``);
+      log(`λ !${cmd}`);
+      log(output);
+      userCommandOutputs.push(`!${cmd}\n\\sh\n${output}\n\\\``);
     } else {
       const fullMessage = [
-        ...aiCommandOutputs.map(output => `\`\`\`sh\n${output}\n\`\`\``),
+        ...aiCommandOutputs.map(output => `\\sh\n${output}\n\\\``),
         ...userCommandOutputs,
         line
       ].join('\n');
-      log(`User: ${fullMessage}`);
+      log(`λ ${fullMessage}`);
       history.push(fullMessage);
 
       const response = await ai.ask(fullMessage, { system: getSystemPrompt(repo, shownChunks), stream: true }) as string;
