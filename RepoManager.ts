@@ -2,10 +2,14 @@ import fs from 'fs/promises';
 import path from 'path';
 import ignore from 'ignore';
 
-// Define common file extensions for programming languages and text files
+// Define common file extensions for programming languages and text files (no hidden files here)
 const commonExtensions = [
   'js', 'ts', 'jsx', 'tsx', // JavaScript/TypeScript
   'py', // Python
+  'hs', // Haskell
+  'kind', // Kind
+  'bend', // Bend
+  'hvm', 'hvml', 'hvms', // HVM
   'java', // Java
   'c', 'cpp', 'h', 'hpp', // C/C++
   'cs', // C#
@@ -30,7 +34,7 @@ const commonExtensions = [
   'conf', 'cfg', 'env', // Configuration files
 ];
 
-// Define specific file names that are important in repositories
+// Define specific file names that are important in repositories (including some hidden ones explicitly)
 const specificFiles = [
   'LICENSE',
   'README',
@@ -47,6 +51,7 @@ const specificFiles = [
 // Define huge directories to exclude by default
 const hugeDirectories = [
   'node_modules', 'dist', 'build', 'vendor', 'coverage', // JavaScript/Node.js, PHP
+  'dist-newstyle', // Haskell
   '__pycache__', '.venv', 'venv', 'env', '.eggs', 'egg-info', // Python
   'target', 'out', '.gradle', '.m2', // Java
   'bin', 'pkg', '.bundle', // Go, Ruby
@@ -54,23 +59,23 @@ const hugeDirectories = [
   'artifacts', 'tmp', 'temp', // General build/temp
 ];
 
-// Escape dots in specific file names for regex (e.g., '.gitignore' -> '\.gitignore')
+// Escape dots in specific file names for regex (e.g., '.gitignore' -> '\\.gitignore')
 const escapedSpecificFiles = specificFiles.map(f => f.replace(/\./g, '\\.'));
 
-// Define default include patterns (what we WANT to include)
+// Improved default include regexes:
+// 1. Include files with common extensions in any directory (hidden filtering will be handled by defaultExclude)
 const defaultInclude = [
-  // Files with common extensions
-  new RegExp(`.*\\.(${commonExtensions.join('|')})$`),
-  // Specific file names (with optional directory prefix)
+  new RegExp(`^.*\\.(${commonExtensions.join('|')})$`),
+  // 2. Include specific files like 'README' or '.gitignore', hidden or not
   new RegExp(`(.*\\/)?(${escapedSpecificFiles.join('|')})$`),
 ];
 
-// Define default exclude patterns (what we DON’T want)
+// Default exclude regexes for hidden files and huge directories
 const defaultExclude = [
-  // Hidden directories (e.g., .git, .vscode)
-  new RegExp(`.*\\/\\.[\\w\\-]+\\/.*`),
-  // Huge directories
-  new RegExp(`.*\\/(${hugeDirectories.join('|')})\\/.*`),
+  // Exclude all hidden files and directories (e.g., '.git', '.hidden.txt')
+  new RegExp(`(^|\\/)\\.[^/]+(/.*|$)`),
+  // Exclude large directories like 'node_modules' and their contents
+  new RegExp(`(^|\\/)(${hugeDirectories.join('|')})\\/.*`),
 ];
 
 /** Converts a 12-character ID string to a number for calculations. */
@@ -161,10 +166,10 @@ export class RepoManager {
       // Ignore missing .cshignore
     }
 
-    // Use provided include patterns if available; otherwise, use defaultInclude
+    // Use user-provided include if supplied; otherwise, use defaultInclude
     const include = options.include !== undefined ? options.include : defaultInclude;
-    // Combine user-provided exclude patterns with defaultExclude
-    const exclude = [...defaultExclude, ...(options.exclude || [])];
+    // Use user-provided exclude if supplied; otherwise, use defaultExclude
+    const exclude = options.exclude !== undefined ? options.exclude : defaultExclude;
     const files = await listFiles(this.rootPath, ig, this.rootPath, include, exclude);
     files.sort();
 
@@ -190,9 +195,20 @@ export class RepoManager {
       fileChunks[chunk.path].push({ id, content: chunk.content });
     }
 
+    // Find the smallest ID for each file
+    const fileMinIds: { path: string; minId: number }[] = [];
+    for (const path in fileChunks) {
+      const ids = fileChunks[path].map(chunk => idToNumber(chunk.id));
+      const minId = Math.min(...ids);
+      fileMinIds.push({ path, minId });
+    }
+
+    // Sort files by their smallest chunk ID
+    fileMinIds.sort((a, b) => a.minId - b.minId);
+
     let result = '';
-    const sortedPaths = Object.keys(fileChunks).sort();
-    for (const filePath of sortedPaths) {
+    for (const file of fileMinIds) {
+      const filePath = file.path;
       result += `[${filePath}]\n`;
       const chunksInFile = fileChunks[filePath].sort((a, b) => idToNumber(a.id) - idToNumber(b.id));
       for (const chunk of chunksInFile) {
@@ -293,5 +309,43 @@ export class RepoManager {
       const content = chunksInFile.map(chunk => chunk.content).join('\n\n') + '\n';
       await fs.writeFile(filePath, content);
     }
+  }
+
+  async refresh(options: { exclude?: RegExp[]; include?: RegExp[] } = {}) {
+    const ig = ignore();
+    const cshignorePath = path.join(this.rootPath, '.cshignore');
+    try {
+      const cshignoreContent = await fs.readFile(cshignorePath, 'utf8');
+      ig.add(cshignoreContent);
+    } catch (err) {
+      // Ignore missing .cshignore
+    }
+    const include = options.include !== undefined ? options.include : defaultInclude;
+    const exclude = options.exclude !== undefined ? options.exclude : defaultExclude;
+    const files = await listFiles(this.rootPath, ig, this.rootPath, include, exclude);
+    files.sort();
+
+    // Gather already tracked file paths from the current chunks
+    const trackedPaths = new Set<string>();
+    for (const chunk of this.chunks.values()) {
+      trackedPaths.add(chunk.path);
+    }
+
+    // Add any new files that are not in the tracked paths
+    for (const file of files) {
+      if (!trackedPaths.has(file)) {
+        const content = await fs.readFile(file, 'utf8');
+        const rawChunks = content.split(/\n\s*\n/);
+        const trimmedChunks = rawChunks
+          .map(chunk => chunk.replace(/^\n+|\n+$/g, ''))
+          .filter(chunk => chunk.length > 0);
+        for (const chunkContent of trimmedChunks) {
+          const id = numberToId(this.nextId);
+          this.chunks.set(id, { path: file, content: chunkContent });
+          this.nextId += 1000000;
+        }
+      }
+    }
+    await this.save();
   }
 }

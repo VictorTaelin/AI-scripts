@@ -1,3 +1,5 @@
+//./RepoManager.ts//
+
 # RepoManager
 
 RepoManager is a TypeScript library designed to manage codebases by breaking
@@ -70,18 +72,21 @@ function add(a, b) {
 });
 ```
 
-### Step 4: Add a New File
+TODO: add below documentation for .refresh
 
-Use `addFile()` to add a new file to the repository.
+### Step 4: Refresh the Repository
+
+Use `refresh()` to scan for new tracked files not yet in memory. New files are split into chunks and added to the repository.
 
 ```typescript
-await repo.addFile('newfile.js', `
-function newFunction() {
-  console.log("This is a new function.");
-}
-`);
+await repo.refresh({
+  exclude: [/node_modules/],
+  include: [/\.ts$/]  // Only refresh TypeScript files
+});
 ```
 
-This will create `newfile.js` in the repository root with the provided content, split it into chunks, assign new IDs, and save it to disk.
+Options:
 
-Note: The file must not already exist; otherwise, an error is thrown. Directories will be created if they do not exist.
+- `exclude`: Regex to skip files during refresh.
+- `include`: Regex to specify which files to refresh (defaults to all).
+- Respects .cshignore for additional filtering.

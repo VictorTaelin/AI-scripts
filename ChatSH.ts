@@ -146,16 +146,13 @@ async function main() {
     process.stdout.write("\x1b[0m");
     line = line.trim();
     if (line === '?') {
-      const currentWorkContext = repo.view(
-        Object.fromEntries(
-          Object.entries(shownChunks).filter(([_, value]) => value === true)
-        ) as Record<string, true>
-      );
+      const currentWorkContext = repo.view(Object.fromEntries(Object.entries(shownChunks).filter(([_, value]) => value === true)) as Record<string, true>);
+      console.log(currentWorkContext);
+
       const systemPromptTokenCount = tokenCount(getSystemPrompt(repo, shownChunks));
       const totalChatTokenCount = history.reduce((sum, msg) => sum + tokenCount(msg), 0);
       const totalMessages = history.length;
 
-      console.log(currentWorkContext);
       console.log('\x1b[33m%s\x1b[0m', `msg_number: ${totalMessages}`);
       console.log('\x1b[33m%s\x1b[0m', `msg_tokens: ${totalChatTokenCount}`);
       console.log('\x1b[33m%s\x1b[0m', `sys_tokens: ${systemPromptTokenCount}`);
@@ -230,6 +227,7 @@ async function main() {
       }
       userCommandOutputs = [];
     }
+    repo.refresh({ include: includePatterns, exclude: excludePatterns });
     rl.prompt();
   });
 }
