@@ -6,7 +6,7 @@ import ignore from 'ignore';
 const commonExtensions = [
   'js', 'ts', 'jsx', 'tsx', // JavaScript/TypeScript
   'py', // Python
-  'hs', // Haskell
+  'hs', 'cabal', 'project', // Haskell
   'kind', // Kind
   'bend', // Bend
   'hvm', 'hvml', 'hvms', // HVM

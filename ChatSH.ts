@@ -1,11 +1,12 @@
 #!/usr/bin/env bun
 
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import * as readline from 'readline';
+import { Command } from 'commander';
 import { GenAI, tokenCount, MODELS } from './GenAI';
 import { RepoManager } from './RepoManager';
-import * as readline from 'readline';
-import * as fs from 'fs';
-import * as path from 'path';
-import { Command } from 'commander';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
@@ -31,9 +32,10 @@ async function executeCommand(script: string): Promise<string> {
  * @param shownChunks Record of chunks to show or hide.
  * @returns The formatted system prompt.
  */
+
 function getSystemPrompt(repo: RepoManager, shownChunks: Record<string, boolean>): string {
   const basePrompt = `
-This conversation is running inside a terminal session.
+This conversation is running inside a terminal session, on ${os.platform()} ${os.release()}.
 
 To better assist me, I'll let you run bash commands on my computer.
 
