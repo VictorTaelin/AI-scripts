@@ -91,7 +91,7 @@ async function main(): Promise<void> {
   // Send prompt to AI
   const options: AskOptions = {
     system: SYSTEM,
-    max_tokens: 8192,
+    //max_tokens: 8192,
   };
   const replyResult = await ai.ask(prompt, options);
   let reply: string;
