@@ -298,6 +298,7 @@ async function main() {
           log(`Executed command:\n${script}\nOutput:\n${output}`);
         } else {
           console.log('\x1b[33mCommand skipped.\x1b[0m');
+          aiCommandOutputs.push("(skipped)");
           log(`Skipped command:\n${script}`);
         }
       }
