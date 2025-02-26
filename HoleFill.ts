@@ -44,25 +44,25 @@ async function main(): Promise<void> {
   let file_code: string = await fs.readFile(file, 'utf-8');
   let mini_code: string = mini ? await fs.readFile(mini, 'utf-8') : file_code;
 
-  // Process imports to prevent recursion
-  const seen: Set<string> = new Set();
-  const regex: RegExp = /\/\/\.\/(.*?)\/\//g;
-  let match: RegExpExecArray | null;
-
-  while ((match = regex.exec(mini_code)) !== null) {
-    const import_path: string = path.resolve(path.dirname(file), match[1]);
-    if (!seen.has(import_path)) {
+  // Process imports by replacing import lines with file contents in order
+  const lines = mini_code.split('\n');
+  const newLines: string[] = [];
+  for (const line of lines) {
+    const match = line.match(/^\/\/\.\/(.*?)\/\/$/);
+    if (match) {
+      const import_path = path.resolve(path.dirname(file), match[1]);
       try {
-        const import_text: string = await fs.readFile(import_path, 'utf-8');
-        console.log('import_file:', match[0]);
-        mini_code = import_text + '\n' + mini_code;
-        seen.add(import_path);
+        const import_text = await fs.readFile(import_path, 'utf-8');
+        newLines.push(import_text);
       } catch (e) {
-        console.log('import_file:', match[0], 'ERROR');
+        console.log('import_file:', line, 'ERROR');
         process.exit(1);
       }
+    } else {
+      newLines.push(line);
     }
   }
+  mini_code = newLines.join('\n');
 
   // Write updated mini_code to mini file if provided
   if (mini) {
