@@ -9,8 +9,9 @@ import { countTokens } from 'gpt-tokenizer/model/gpt-4o';
 
 export const MODELS: Record<string, string> = {
   g: 'gpt-4o-2024-11-20',
-  G: 'o3-mini',
-  o: 'o1',
+  G: 'gpt-4.5-preview-2025-02-27',
+  o: 'o1-mini',
+  O: 'o1',
   cm: 'claude-3-5-haiku-20241022',
   c: 'claude-3-7-sonnet-20250219',
   C: 'claude-3-7-sonnet-20250219-think',
