@@ -52,7 +52,7 @@ export class AnthropicChat implements ChatInstance {
     if (enableThinking) {
       (params as any).thinking = {
         type: "enabled",
-        budget_tokens: 8192*1.5,
+        budget_tokens: 8192,
       };
     }
 

@@ -48,7 +48,9 @@ async function main(): Promise<void> {
   const lines = mini_code.split('\n');
   const newLines: string[] = [];
   for (const line of lines) {
-    const match = line.match(/^\/\/\.\/(.*?)\/\/$/);
+    const matchSlash = line.match(/^\/\/\.\/(.*?)\/\/$/);
+    const matchBrace = line.match(/^{-\.\/(.*?)-\}$/);
+    const match = matchSlash || matchBrace;
     if (match) {
       const import_path = path.resolve(path.dirname(file), match[1]);
       try {

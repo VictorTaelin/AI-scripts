@@ -93,7 +93,7 @@ For example, to show chunk id 000005000000, write:
 
 The work context is:
 
-${workContext}
+${"EMPTY"}
 
 Notes:
 - Chunks are labelled with a 12-number id.
