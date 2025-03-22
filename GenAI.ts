@@ -4,9 +4,10 @@ import * as path from 'path';
 import { AnthropicChat } from './Vendors/Anthropic';
 import { GeminiChat } from './Vendors/Gemini';
 import { GrokChat } from './Vendors/Grok';
+import { OpenAIChat } from './Vendors/OpenAI';
 import { countTokens } from 'gpt-tokenizer/model/gpt-4o';
 
-export const MODELS = {
+export const MODELS: Record<string, string> = {
   g: 'gpt-4o-2024-11-20',
   G: 'gpt-4.5-preview-2025-02-27',
   o: 'o1-mini',
@@ -67,105 +68,13 @@ async function getToken(vendor: string): Promise<string> {
   }
 }
 
-export class OpenAIChat {
-  constructor(apiKey: string, baseURL: string, model: string, vendor: string) {
-    this.apiKey = apiKey;
-    this.baseURL = baseURL;
-    this.model = model;
-    this.vendor = vendor;
-  }
-
-  async ask(userMessage: string | null, options: AskOptions): Promise<string | { messages: any[] }> {
-    const { system, temperature, max_tokens, stream } = options;
-
-    let endpoint, payload;
-    const isO1Model = this.model.startsWith('o1');
-
-    if (isO1Model) {
-      // Use completions endpoint for o1 models like o1-pro
-      endpoint = `${this.baseURL}/v1/completions`;
-      const prompt = userMessage ? `${system || ''}\n\n${userMessage}` : system || '';
-      payload = {
-        model: this.model,
-        prompt,
-        temperature: temperature || 0.7,
-        max_tokens: max_tokens || 1000,
-        stream: false // o1 models don’t support streaming
-      };
-    } else {
-      // Use chat completions endpoint for other OpenAI models
-      endpoint = `${this.baseURL}/v1/chat/completions`;
-      const messages = [];
-      if (system) messages.push({ role: 'system', content: system });
-      if (userMessage) messages.push({ role: 'user', content: userMessage });
-      payload = {
-        model: this.model,
-        messages,
-        temperature: temperature || 0.7,
-        max_tokens: max_tokens || 1000,
-        stream: stream || false // Preserve streaming for non-o1 models
-      };
-    }
-
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${this.apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`API Error: ${response.status} - ${JSON.stringify(errorData)}`);
-    }
-
-    if (payload.stream) {
-      // Handle streaming response (for non-o1 models that support it)
-      const messages = [];
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop(); // Keep incomplete line in buffer
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            if (data === '[DONE]') continue;
-            const parsed = JSON.parse(data);
-            const content = parsed.choices[0].delta.content;
-            if (content) messages.push({ role: 'assistant', content });
-          }
-        }
-      }
-
-      return { messages };
-    } else {
-      // Handle non-streaming response
-      const data = await response.json();
-      if (isO1Model) {
-        return data.choices[0].text; // Completions endpoint for o1 models
-      } else {
-        return data.choices[0].message.content; // Chat completions for others
-      }
-    }
-  }
-}
-
 export async function GenAI(modelShortcode: string): Promise<ChatInstance> {
   const model = MODELS[modelShortcode] || modelShortcode;
   const vendor = getVendor(model);
 
   if (['openai', 'deepseek', 'openrouter'].includes(vendor)) {
     const apiKey = await getToken(vendor);
-    let baseURL;
+    let baseURL: string;
     if (vendor === 'openai') {
       baseURL = 'https://api.openai.com/v1';
     } else if (vendor === 'deepseek') {
@@ -190,13 +99,3 @@ export async function GenAI(modelShortcode: string): Promise<ChatInstance> {
 export function tokenCount(text: string): number {
   return countTokens(text);
 }
-
-
-
-
-
-
-
-
-
-
