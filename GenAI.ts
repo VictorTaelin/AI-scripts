@@ -20,7 +20,7 @@ export const MODELS: Record<string, string> = {
   lm: 'meta-llama/llama-3.1-8b-instruct',
   l: 'meta-llama/llama-3.3-70b-instruct',
   L: 'meta-llama/llama-3.1-405b-instruct',
-  i: 'gemini-2.0-pro-exp-02-05',
+  i: 'gemini-2.5-pro-exp-03-25',
   I: 'gemini-2.0-flash-thinking-exp-01-21',
   x: "grok-3",
   X: "grok-3-think",

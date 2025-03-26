@@ -13,6 +13,15 @@ import { promisify } from 'util';
 const execAsync = promisify(exec);
 
 /**
+ * Escapes special characters in a string for use in a regular expression.
+ * @param string The string to escape.
+ * @returns The escaped string.
+ */
+function escapeRegex(string: string): string {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
  * Executes a shell command and returns its output or an error message.
  * @param script The shell script to execute.
  * @returns The command output or error message.
@@ -27,25 +36,24 @@ async function executeCommand(script: string): Promise<string> {
 }
 
 /**
- * Generates the system prompt for the AI, including context management instructions.
+ * Generates the system prompt for the AI, including context management instructions only if files are loaded.
  * @param repo The repository manager instance.
  * @param shownChunks Record of chunks to show or hide.
  * @returns The formatted system prompt.
  */
-
 function getSystemPrompt(repo: RepoManager, shownChunks: Record<string, boolean>): string {
   const basePrompt = `
 This conversation is running inside a terminal session, on ${os.platform()} ${os.release()}.
 
-To better assist me, I'll let you run bash commands on my computer.
+To better assist the user, you can run bash commands on this computer.
 
-To do so, include, anywhere in your answer, a bash script, as follows:
+To run a bash command, include a script in your answer, inside <RUN/> tags:
 
 <RUN>
 shell_script_here
 </RUN>
 
-For example, to create a new file, you can write:
+For example, to create a file, you can write:
 
 <RUN>
 cat > hello.ts << EOL
@@ -61,8 +69,10 @@ bun hello.ts
 
 I will show you the outputs of every command you run.
 
-Keep your answers brief and to the point.
-Don't include unsolicited details.
+Note: only include bash commands when explicitly asked. Example:
+- "save a demo JS file": use a RUN command to save it to disk
+- "show a demo JS function": use normal code blocks, no RUN
+- "what colors apples have?": just answer conversationally
 `.trim();
 
   const workContext = repo.view(
@@ -76,7 +86,7 @@ Don't include unsolicited details.
   }
 
   const contextInstructions = `
-Below is a shortened context of the files I'm working on.
+Below is a context of the files I'm working on.
 
 You can issue the following context management commands:
 
@@ -85,7 +95,7 @@ You can issue the following context management commands:
 - <EDIT id=XYZ/>: Removes a chunk.
 - <EDIT id=XYZ>new_content</EDIT>: Replaces a chunk's contents.
 
-Include these commands anywhere in your answer, and I'll execute them.
+Include these commands anywhere in your answer to manage your context.
 
 For example, to show chunk id 000005000000, write:
 
@@ -97,11 +107,13 @@ ${workContext}
 
 Notes:
 - Chunks are labelled with a 12-number id.
-- Use that chunk id when issuing commands.
 - Some chunks were shortened with a '...'.
 - Expand relevant chunks before refactors.
-- When issuing SHOW commands, don't issue other commands.
-- Instead, wait for the next turn for it to take effect.
+
+Important:
+
+When issuing SHOW commands, DON'T issue any other command.
+Instead, wait for the next message, for it to take effect.
   `.trim();
 
   return `${basePrompt}\n\n${contextInstructions}`.trim();
@@ -158,9 +170,8 @@ async function main() {
 
   const [model, repoPath = '.'] = program.args;
 
-  const includePatterns = program.opts().include
-    ? program.opts().include.split(',').map((p: string) => new RegExp(p))
-    : undefined;
+  // Initialize with no files loaded
+  let includePatterns: RegExp[] = [];
   const excludePatterns = program.opts().exclude
     ? program.opts().exclude.split(',').map((p: string) => new RegExp(p))
     : undefined;
@@ -168,7 +179,7 @@ async function main() {
   const repo = await RepoManager.load(repoPath, { include: includePatterns, exclude: excludePatterns });
   const ai = await GenAI(model);
 
-  const shownChunks: Record<string, boolean> = {};
+  let shownChunks: Record<string, boolean> = {};
   let aiCommandOutputs: string[] = [];
   let userCommandOutputs: string[] = [];
   const history: string[] = [];
@@ -200,7 +211,20 @@ async function main() {
   rl.on('line', async (line) => {
     process.stdout.write("\x1b[0m");
     line = line.trim();
-    if (line.startsWith('?')) {
+    if (line.startsWith('.')) {
+      const ext = line.slice(1).trim();
+      if (ext) {
+        const includePattern = new RegExp(`.*\\.${escapeRegex(ext)}$`);
+        includePatterns = [includePattern];
+        shownChunks = {}; // Reset shown chunks when changing context
+        await repo.refresh({ include: includePatterns, exclude: excludePatterns });
+        console.log(`Work context updated to include *.${ext} files.`);
+        log(`Work context updated to include *.${ext} files.`);
+      } else {
+        console.log('Invalid extension. Please specify an extension, e.g., ".hs".');
+        log('Invalid extension. Please specify an extension, e.g., ".hs".');
+      }
+    } else if (line.startsWith('?')) {
       const blockId = parseBlockId(line);
       if (blockId === undefined) {
         console.log('Invalid block ID. Please enter a valid number or exactly 12 digits.');
