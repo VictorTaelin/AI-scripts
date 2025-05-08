@@ -1,126 +1,124 @@
-import { Anthropic } from '@anthropic-ai/sdk';
+import Anthropic from "@anthropic-ai/sdk";
 import { AskOptions, ChatInstance } from "../GenAI";
 
+// ---------------------------------------------------------------------------
+// NOTE: The Anthropic SDK’s type exports have been unstable across recent
+//       versions.  To keep compilation green regardless of future renames, we
+//       avoid direct named‑type imports and fall back to `any` where necessary.
+// ---------------------------------------------------------------------------
+
+type Role = "user" | "assistant";
+
 export class AnthropicChat implements ChatInstance {
-  private client: Anthropic;
-  private messages: { role: "user" | "assistant"; content: string | any[] }[] = [];
-  private model: string;
+  private readonly client: Anthropic;
+  private readonly model: string;
+  private readonly messages: { role: Role; content: any }[] = [];
 
   constructor(apiKey: string, model: string) {
     this.client = new Anthropic({
       apiKey,
       defaultHeaders: {
-        "anthropic-beta": "prompt-caching-2024-07-31"
-      }
+        "anthropic-beta": "prompt-caching-2024-07-31",
+      },
     });
     this.model = model;
   }
 
-  async ask(userMessage: string | null, options: AskOptions): Promise<string | { messages: { role: string; content: any }[] }> {
-    if (userMessage === null) {
-      return { messages: this.messages };
-    }
+  async ask(
+    userMessage: string | null,
+    options: AskOptions = {},
+  ): Promise<string | { messages: any[] }> {
+    if (userMessage === null) return { messages: this.messages };
 
-    // Extract options with defaults
-    let { system, temperature = 0.0, max_tokens = 64000, stream = true, system_cacheable = false } = options;
+    // ── options ----------------------------------------------------------
+    const enableThinking = this.model.endsWith("-think");
+    const baseModel = enableThinking ? this.model.replace("-think", "") : this.model;
 
-    // Determine if thinking should be enabled based on model suffix
-    const enableThinking = this.model.endsWith('-think');
-    const baseModel = enableThinking ? this.model.replace('-think', '') : this.model;
+    let {
+      system,
+      temperature = enableThinking ? 1 : 0,
+      max_tokens = 32_000,
+      stream = true,
+      system_cacheable = false,
+    } = options;
 
-    // When thinking is enabled, temperature must be 1.0 as per API requirements
-    if (enableThinking) {
-      temperature = 1.0;
-    }
-
-    // Add user message to chat history
+    // ── build message history -------------------------------------------
     this.messages.push({ role: "user", content: userMessage });
 
-    // Construct API request parameters
-    const params: Anthropic.MessageCreateParams = {
-      system: system_cacheable && system
-        ? ([{ type: "text", text: system, cache_control: { type: "ephemeral" } }] as any)
-        : system,
+    // --------------------------------------------------------------------
+    // Build request params (typeless to dodge SDK type churn)
+    // --------------------------------------------------------------------
+    const params: any = {
       model: baseModel,
       temperature,
       max_tokens,
       stream,
-      messages: this.messages as any,
+      messages: this.messages,
     };
 
-    // Enable thinking feature if model ends with '-think'
+    if (system) {
+      params.system = system_cacheable
+        ? [{ type: "text", text: system, cache_control: { type: "ephemeral" } }]
+        : system;
+    }
+
     if (enableThinking) {
-      (params as any).thinking = {
+      params.thinking = {
         type: "enabled",
-        budget_tokens: 8192*1.5,
+        budget_tokens: 4096,
       };
     }
 
-    let result = "";
-    if (stream) {
-      // Handle streaming response with dim styling for thinking tokens
-      const stream = this.client.messages.stream(params);
-      let assistantContent: any[] = [];
-      let hasPrintedThinking = false; // Track if thinking content was printed
+    // ── perform request --------------------------------------------------
+    let plain = "";
 
-      for await (const event of stream) {
-        if (event.type === 'content_block_start') {
-          assistantContent.push({ ...event.content_block });
-        } else if (event.type === 'content_block_delta') {
-          const index = event.index;
-          const delta = event.delta;
-          if (delta.type === 'thinking_delta') {
-            // Apply dim styling to thinking tokens for console output
+    if (stream) {
+      const streamResp: AsyncIterable<any> = (await this.client.messages.create(
+        params,
+      )) as any;
+
+      let printedReasoning = false;
+      for await (const event of streamResp) {
+        if (event.type === "content_block_delta") {
+          const delta: any = event.delta;
+          if (delta.type === "thinking_delta") {
             process.stdout.write(`\x1b[2m${delta.thinking}\x1b[0m`);
-            assistantContent[index].thinking += delta.thinking;
-            result += delta.thinking;
-            hasPrintedThinking = true; // Set flag when thinking is printed
-          } else if (delta.type === 'text_delta') {
-            // Add newline before text if thinking was printed
-            if (hasPrintedThinking) {
-              process.stdout.write('\n');
-              hasPrintedThinking = false; // Reset flag after newline
+            plain += delta.thinking;
+            printedReasoning = true;
+          } else if (delta.type === "text_delta") {
+            if (printedReasoning) {
+              process.stdout.write("\n");
+              printedReasoning = false;
             }
             process.stdout.write(delta.text);
-            assistantContent[index].text += delta.text;
-            result += delta.text;
-          } else if (delta.type === 'signature_delta') {
-            assistantContent[index].signature = delta.signature;
+            plain += delta.text;
           }
         }
       }
-      process.stdout.write("\n"); // Final newline after response
-      this.messages.push({ role: "assistant", content: assistantContent });
+      process.stdout.write("\n");
+      this.messages.push({ role: "assistant", content: plain });
     } else {
-      // Handle non-streaming response with dim styling for thinking tokens
-      const message = await this.client.messages.create(params);
-      const content = message.content;
-      let styledText = '';
-      let plainText = '';
-      let hasPrintedThinking = false; // Track if thinking content was printed
-
-      for (const block of content) {
-        if (block.type === 'thinking') {
-          // Apply dim styling to thinking blocks for console output
-          styledText += `\x1b[2m${block.thinking}\x1b[0m`;
-          plainText += block.thinking;
-          hasPrintedThinking = true; // Set flag when thinking is added
-        } else if (block.type === 'text') {
-          // Add newline before text if thinking was printed
-          if (hasPrintedThinking) {
-            styledText += '\n';
-            plainText += '\n';
-            hasPrintedThinking = false; // Reset flag after newline
+      const message: any = await this.client.messages.create({ ...params, stream: false });
+      const blocks: any[] = message.content;
+      let printedReasoning = false;
+      for (const block of blocks) {
+        if (block.type === "thinking") {
+          process.stdout.write(`\x1b[2m${block.thinking}\x1b[0m`);
+          plain += block.thinking;
+          printedReasoning = true;
+        } else if (block.type === "text") {
+          if (printedReasoning) {
+            process.stdout.write("\n");
+            printedReasoning = false;
           }
-          styledText += block.text;
-          plainText += block.text;
+          process.stdout.write(block.text);
+          plain += block.text;
         }
       }
-      process.stdout.write(styledText);
-      this.messages.push({ role: "assistant", content: content });
-      result = plainText;
+      process.stdout.write("\n");
+      this.messages.push({ role: "assistant", content: blocks });
     }
 
-    return result;
+    return plain;
   }
 }

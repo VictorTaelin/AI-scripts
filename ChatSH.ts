@@ -73,6 +73,9 @@ Note: only include bash commands when explicitly asked. Example:
 - "save a demo JS file": use a RUN command to save it to disk
 - "show a demo JS function": use normal code blocks, no RUN
 - "what colors apples have?": just answer conversationally
+
+IMPORTANT: Be CONCISE and DIRECT in your answers.
+Do not add any information beyond what has been explicitly asked.
 `.trim();
 
   const workContext = repo.view(

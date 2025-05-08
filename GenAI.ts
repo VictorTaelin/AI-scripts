@@ -8,10 +8,10 @@ import { OpenAIChat } from './Vendors/OpenAI';
 import { countTokens } from 'gpt-tokenizer/model/gpt-4o';
 
 export const MODELS: Record<string, string> = {
-  g: 'gpt-4o-2024-11-20',
+  g: 'gpt-4.1',
   G: 'gpt-4.5-preview-2025-02-27',
-  o: 'o1-mini',
-  O: 'o1',
+  o: 'o4-mini',
+  O: 'o3',
   cm: 'claude-3-5-haiku-20241022',
   c: 'claude-3-7-sonnet-20250219',
   C: 'claude-3-7-sonnet-20250219-think',
@@ -20,7 +20,7 @@ export const MODELS: Record<string, string> = {
   lm: 'meta-llama/llama-3.1-8b-instruct',
   l: 'meta-llama/llama-3.3-70b-instruct',
   L: 'meta-llama/llama-3.1-405b-instruct',
-  i: 'gemini-2.5-pro-exp-03-25',
+  i: 'gemini-2.5-pro-preview-05-06',
   I: 'gemini-2.0-flash-thinking-exp-01-21',
   x: "grok-3",
   X: "grok-3-think",
@@ -41,7 +41,7 @@ export interface ChatInstance {
 }
 
 function getVendor(model: string): string {
-  if (model.startsWith('gpt') || model.startsWith('o1') || model.startsWith('o3')) {
+  if (model.startsWith('gpt') || model.startsWith('o1') || model.startsWith('o3') || model.startsWith('o4') || model.startsWith('chat')) {
     return 'openai';
   } else if (model.startsWith('claude')) {
     return 'anthropic';

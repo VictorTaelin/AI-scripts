@@ -6,7 +6,6 @@ import * as path from 'path';
 import * as process from 'process';
 import { GenAI, MODELS, tokenCount } from './GenAI';
 
-// Define the AskOptions interface based on GenAI.ts documentation
 interface AskOptions {
   system?: string;
   temperature?: number;
@@ -16,126 +15,96 @@ interface AskOptions {
   reasoning_effort?: string;
 }
 
-// Constants
-const SYSTEM: string = `You're a code completion assistant.`;
-const FILL: string = "{:FILL_HERE:}";
-const TASK: string = `### TASK: complete the ${FILL} part of the file above. Write ONLY the needed text to replace ${FILL} by the correct completion, including correct spacing and indentation. Include the answer inside a <COMPLETION></COMPLETION> tag.`;
+const SYSTEM = `You're a code completion assistant.`;
+const FILL   = '{:FILL_HERE:}';
+const TASK =
+  `### TASK: complete the ${FILL} part of the file above. ` +
+  `Write ONLY the needed text to replace ${FILL} by the correct completion, including correct spacing and indentation. ` +
+  `Include the answer inside a <COMPLETION></COMPLETION> tag.`;
 
-// Main async function
+/* ------------------------------------------------------------------
+ * Utility: force every ".?." placeholder to column-0
+ * ------------------------------------------------------------------ */
+function leftAlignHoles(code: string): string {
+  /* strip any leading spaces or tabs that precede ".?." */
+  return code.replace(/^([ \t]+)(\.\?\.)/gm, '$2');
+}
+
 async function main(): Promise<void> {
-  // Command-line arguments with types
-  const file: string = process.argv[2];
-  const mini: string | undefined = process.argv[3];
-  const model: string = process.argv[4] || 'c';
+  const file  = process.argv[2];
+  const mini  = process.argv[3];
+  const model = process.argv[4] || 'c';
 
-  // Check if file is provided
   if (!file) {
     console.log('Usage: holefill <file> [<shortened_file>] [<model_name>]');
-    console.log('');
-    console.log("This will complete a HOLE, written as '.?.', in <file>, using the AI.");
-    console.log('A shortened file can be used to omit irrelevant parts.');
+    console.log('\nThis will complete a HOLE, written as ".?.", in <file>, using the AI.');
     process.exit(1);
   }
 
-  // Initialize the AI chat instance using GenAI
   const ai = await GenAI(model);
 
-  // Read file contents
-  let file_code: string = await fs.readFile(file, 'utf-8');
-  let mini_code: string = mini ? await fs.readFile(mini, 'utf-8') : file_code;
+  /* read user files */
+  let file_code = await fs.readFile(file, 'utf-8');
+  let mini_code = mini ? await fs.readFile(mini, 'utf-8') : file_code;
 
-  // Process imports by replacing import lines with file contents in order
-  const lines = mini_code.split('\n');
-  const newLines: string[] = [];
-  for (const line of lines) {
-    const matchSlash = line.match(/^\/\/\.\/(.*?)\/\/$/);
-    const matchBrace = line.match(/^{-\.\/(.*?)-\}$/);
-    const match = matchSlash || matchBrace;
-    if (match) {
-      const import_path = path.resolve(path.dirname(file), match[1]);
-      try {
-        const import_text = await fs.readFile(import_path, 'utf-8');
-        newLines.push(import_text);
-      } catch (e) {
-        console.log('import_file:', line, 'ERROR');
-        process.exit(1);
-      }
+  /* expand inline import markers in mini_code */
+  const expanded: string[] = [];
+  for (const line of mini_code.split('\n')) {
+    const m1 = line.match(/^\/\/\.\/(.*?)\/\/$/);
+    const m2 = line.match(/^{-\.\/(.*?)-\}$/);
+    const m  = m1 || m2;
+    if (m) {
+      const p = path.resolve(path.dirname(file), m[1]);
+      try { expanded.push(await fs.readFile(p, 'utf-8')); }
+      catch { console.log('import_file:', line, 'ERROR'); process.exit(1); }
     } else {
-      newLines.push(line);
+      expanded.push(line);
     }
   }
-  mini_code = newLines.join('\n');
+  mini_code = expanded.join('\n');
 
-  // Write updated mini_code to mini file if provided
-  if (mini) {
-    await fs.writeFile(mini, mini_code, 'utf-8');
-  }
+  /* --------------------------------------------------------------
+   *  New behaviour: NO hole may start after column-0.
+   *  We left-align every ".?." in BOTH file_code and mini_code.
+   * -------------------------------------------------------------- */
+  file_code = leftAlignHoles(file_code);
+  mini_code = leftAlignHoles(mini_code);
 
-  // Prepare prompt
-  const tokens: number = tokenCount(mini_code);
-  const source: string = mini_code.replace('.?.', FILL);
-  const prompt: string = source + '\n\n' + TASK;
+  if (mini) await fs.writeFile(mini, mini_code, 'utf-8');
 
-  // Log prompt for debugging
+  /* build prompt */
+  const tokens = tokenCount(mini_code);
+  const source = mini_code.replace('.?.', FILL);
+  const prompt = `${source}\n\n${TASK}`;
+
   await fs.mkdir(path.join(os.homedir(), '.ai'), { recursive: true });
-  await fs.writeFile(path.join(os.homedir(), '.ai', '.holefill'), `${SYSTEM}\n###\n${prompt}`, 'utf-8');
+  await fs.writeFile(path.join(os.homedir(), '.ai', '.holefill'),
+                     `${SYSTEM}\n###\n${prompt}`, 'utf-8');
 
-  // Display token count and model info
   console.log('token_count:', tokens);
   console.log('model_label:', MODELS[model] || model);
 
-  // Check for hole existence
-  if (mini_code.indexOf('.?.') === -1) {
-    console.log('No hole found.');
-    process.exit(1);
-  }
+  if (!mini_code.includes('.?.')) { console.log('No hole found.'); process.exit(1); }
 
-  // Send prompt to AI
-  const options: AskOptions = {
-    system: SYSTEM,
-    //max_tokens: 8192,
-  };
-  const replyResult = await ai.ask(prompt, options);
-  let reply: string;
-  if (typeof replyResult === 'string') {
-    reply = replyResult;
-  } else {
-    reply = replyResult.messages.map((m: any) => m.content).join("\n");
-  }
+  const replyRaw = await ai.ask(prompt, { system: SYSTEM } as AskOptions);
+  const replyStr = typeof replyRaw === 'string'
+                   ? replyRaw
+                   : replyRaw.messages.map((m: any) => m.content).join('\n');
 
-  // Process AI response
-  reply = reply.indexOf('<COMPLETION>') === -1 ? '<COMPLETION>' + reply : reply;
-  reply = reply.indexOf('</COMPLETION>') === -1 ? reply + '</COMPLETION>' : reply;
+  const wrapped  = replyStr.includes('<COMPLETION>') ? replyStr : `<COMPLETION>${replyStr}</COMPLETION>`;
+  const match    = /<COMPLETION>([\s\S]*?)<\/COMPLETION>/g.exec(wrapped);
+  if (!match) { console.error('Error: no <COMPLETION> in AI response.'); process.exit(1); }
 
-  const matches = [...reply.matchAll(/<COMPLETION>([\s\S]*?)<\/COMPLETION>/g)];
-  if (matches.length) {
-    const fill: string = matches[matches.length - 1][1].replace(/\$/g, '$$$$').replace(/^\n+|\n+$/g, '');
-    file_code = file_code.replace('.?.', fill);
-  } else {
-    console.error("Error: Could not find <COMPLETION> tags in the AI's response.");
-    process.exit(1);
-  }
+  const fill = match[1].replace(/\$/g, '$$$$').replace(/^\n+|\n+$/g, '');
+  file_code  = file_code.replace('.?.', fill);
 
-  // Write updated file
   await fs.writeFile(file, file_code, 'utf-8');
 
-  // Save prompt history
-  await savePromptHistory(SYSTEM, prompt, reply, MODELS[model] || model);
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const logDir = path.join(os.homedir(), '.ai', 'prompt_history');
+  await fs.mkdir(logDir, { recursive: true });
+  await fs.writeFile(path.join(logDir, `${ts}_${MODELS[model] || model}.log`),
+                     `SYSTEM:\n${SYSTEM}\n\nPROMPT:\n${prompt}\n\nREPLY:\n${wrapped}\n\n`, 'utf-8');
 }
 
-// Helper function to save prompt history
-async function savePromptHistory(
-  system: string,
-  prompt: string,
-  reply: string,
-  model: string
-): Promise<void> {
-  const timestamp: string = new Date().toISOString().replace(/[:.]/g, '-');
-  const logPath: string = path.join(os.homedir(), '.ai', 'prompt_history', `${timestamp}_${model}.log`);
-  const logContent: string = `SYSTEM:\n${system}\n\nPROMPT:\n${prompt}\n\nREPLY:\n${reply}\n\n`;
-  await fs.mkdir(path.dirname(logPath), { recursive: true });
-  await fs.writeFile(logPath, logContent, 'utf-8');
-}
-
-// Execute main function
 main().catch(console.error);

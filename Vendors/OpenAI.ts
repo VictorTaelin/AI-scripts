@@ -1,105 +1,113 @@
 import OpenAI from "openai";
 import { AskOptions, ChatInstance } from "../GenAI";
 
+/**
+ * OpenAI wrapper supporting GPT‑series and o‑series reasoning models.
+ */
+
+type Role = "user" | "assistant" | "system" | "developer";
+
+const isOSeries = (m: string) => /^o[0-9]/.test(m);
+const controlRole = (m: string): Role => (isOSeries(m) ? "developer" : "system");
+
 export class OpenAIChat implements ChatInstance {
-  private client: OpenAI;
-  private messages: { role: "user" | "assistant" | "system"; content: string }[] = [];
-  private model: string;
-  private vendor: string;
+  private readonly client: OpenAI;
+  private readonly model: string;
+  private readonly vendor: string;
+  private readonly messages: { role: Role; content?: string }[] = [];
 
   constructor(apiKey: string, baseURL: string, model: string, vendor: string) {
-    if (vendor === 'openrouter') {
-      this.client = new OpenAI({
-        apiKey,
-        baseURL,
-        defaultHeaders: {
-          "HTTP-Referer": "https://github.com/OpenRouterTeam/openrouter-examples",
-        },
-      });
-    } else {
-      this.client = new OpenAI({ apiKey, baseURL });
-    }
+    const defaultHeaders =
+      vendor === "openrouter"
+        ? { "HTTP-Referer": "https://github.com/OpenRouterTeam/openrouter-examples" }
+        : undefined;
+    this.client = new OpenAI({ apiKey, baseURL, defaultHeaders });
     this.model = model;
     this.vendor = vendor;
   }
 
-  async ask(userMessage: string | null, options: AskOptions): Promise<string | { messages: { role: string; content: string }[] }> {
-    if (userMessage === null) {
-      return { messages: this.messages };
+  private ensureControlMessage(content?: string) {
+    if (!content) return;
+    const role = controlRole(this.model);
+    if (this.messages[0] && (this.messages[0].role === "system" || this.messages[0].role === "developer")) {
+      this.messages[0] = { role, content };
+    } else {
+      this.messages.unshift({ role, content });
     }
+  }
 
-    let { system, temperature = 0.0, max_tokens = 8192, stream = true } = options;
+  async ask(userMessage: string | null, options: AskOptions = {}): Promise<string | { messages: any[] }> {
+    if (userMessage === null) return { messages: this.messages };
 
-    const is_o_series = this.model.startsWith("o1") || this.model.startsWith("o3");
+    const useOSeries = isOSeries(this.model);
 
-    let max_completion_tokens: number | undefined;
-    let reasoning_effort: string | undefined;
+    const {
+      system,
+      temperature = useOSeries ? 1 : 0,
+      stream: wantStream = true,
+      max_tokens = 8_192,
+      max_completion_tokens = 65_000,
+      reasoning_effort = "high",
+    } = options;
 
-    if (is_o_series) {
-      stream = this.model.startsWith("o3"); // streaming only for o3
-      temperature = 1;
-      max_completion_tokens = 100000; // Default for o-series if not specified
-      reasoning_effort = "high";
-    }
-
-    // Update or set the system message if provided
-    if (system) {
-      if (this.messages.length > 0 && this.messages[0].role === "system") {
-        this.messages[0].content = system; // Update existing system message
-      } else {
-        this.messages.unshift({ role: is_o_series ? "user" : "system", content: system }); // Add new system message at the start
-      }
-    }
-
+    this.ensureControlMessage(system);
     this.messages.push({ role: "user", content: userMessage });
 
-    const params: OpenAI.Chat.Completions.ChatCompletionCreateParams = {
-      messages: this.messages,
+    // Build base request body
+    const body: Record<string, any> = {
       model: this.model,
+      messages: this.messages as any,
       temperature,
-      stream,
-      ...(is_o_series ? { max_completion_tokens: max_completion_tokens ?? max_tokens } : { max_tokens }),
+      ...(useOSeries ? { max_completion_tokens, reasoning_effort } : { max_tokens }),
     };
 
-    if (reasoning_effort && this.vendor === 'deepseek') {
-      (params as any).reasoning_effort = reasoning_effort;
+    // OpenRouter flag for reasoning tokens — OpenAI rejects it
+    if (this.vendor === "openrouter") {
+      body.include_reasoning = true;
     }
 
-    let result = "";
-    if (stream) {
-      const streamResponse = await this.client.chat.completions.create({
-        ...params,
-        stream: true,
-      });
-      var is_reasoning = false;
-      for await (const chunk of streamResponse) {
-        if (this.vendor === "deepseek" && (chunk as any).choices[0]?.delta?.reasoning_content) {
-          const text = (chunk as any).choices[0].delta.reasoning_content;
-          process.stdout.write('\x1b[2m' + text + '\x1b[0m');
-          is_reasoning = true;
-        } else if (chunk.choices[0]?.delta?.content) {
-          if (is_reasoning) { is_reasoning = false; process.stdout.write("\n"); }
-          const text = chunk.choices[0].delta.content;
-          process.stdout.write(text);
-          result += text;
+    const doStream = !!wantStream;
+    let visible = "";
+
+    try {
+      if (doStream) {
+        const streamParams = body as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming;
+        const stream = await this.client.chat.completions.create({ ...streamParams, stream: true });
+
+        let printingReasoning = false;
+        for await (const chunk of stream) {
+          const delta: any = chunk.choices[0]?.delta;
+          const reasoningPart = delta?.reasoning_content ?? delta?.reasoning;
+          if (reasoningPart) {
+            process.stdout.write(`\x1b[2m${reasoningPart}\x1b[0m`);
+            printingReasoning = true;
+            continue;
+          }
+          if (delta?.content) {
+            if (printingReasoning) {
+              printingReasoning = false;
+              process.stdout.write("\n");
+            }
+            process.stdout.write(delta.content);
+            visible += delta.content;
+          }
         }
+        process.stdout.write("\n");
+      } else {
+        const respParams = body as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming;
+        const resp: any = await this.client.chat.completions.create(respParams);
+        const msg: any = resp.choices[0]?.message ?? {};
+        const reasoningText = msg.reasoning_content ?? msg.reasoning;
+        if (reasoningText) process.stdout.write(`\x1b[2m${reasoningText}\x1b[0m\n`);
+        visible = msg.content ?? "";
+        process.stdout.write(visible + "\n");
       }
-      process.stdout.write("\n");
-    } else {
-      const completionResponse = await this.client.chat.completions.create({
-        ...params,
-        stream: false,
-      });
-      if (this.vendor === "deepseek") {
-        const reasoning_content = (completionResponse as any).choices[0]?.message?.reasoning_content || "";
-        if (reasoning_content) process.stdout.write(reasoning_content);
-      }
-      const text = completionResponse.choices[0]?.message?.content || "";
-      result = text;
-      if (is_o_series && this.model.startsWith("o1")) console.log(result);
+    } catch (err: any) {
+      console.error("[OpenAIChat] API error:", err?.message || err);
+      throw err;
     }
 
-    this.messages.push({ role: "assistant", content: result });
-    return result;
+    this.messages.push({ role: "assistant", content: visible });
+    return visible;
   }
 }
