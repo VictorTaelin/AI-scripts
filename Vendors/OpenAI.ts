@@ -45,8 +45,8 @@ export class OpenAIChat implements ChatInstance {
       system,
       temperature = useOSeries ? 1 : 0,
       stream: wantStream = true,
-      max_tokens = 8_192,
-      max_completion_tokens = 65_000,
+      max_tokens = 8_192*2,
+      max_completion_tokens = 80_000,
       reasoning_effort = "high",
     } = options;
 

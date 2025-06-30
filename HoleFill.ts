@@ -4,16 +4,7 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import * as process from 'process';
-import { GenAI, MODELS, tokenCount } from './GenAI';
-
-interface AskOptions {
-  system?: string;
-  temperature?: number;
-  max_tokens?: number;
-  stream?: boolean;
-  system_cacheable?: boolean;
-  reasoning_effort?: string;
-}
+import { GenAI, MODELS, tokenCount, AskOptions } from './GenAI';
 
 const SYSTEM = `You're a code completion assistant.`;
 const FILL   = '{:FILL_HERE:}';
@@ -52,7 +43,8 @@ async function main(): Promise<void> {
   for (const line of mini_code.split('\n')) {
     const m1 = line.match(/^\/\/\.\/(.*?)\/\/$/);
     const m2 = line.match(/^{-\.\/(.*?)-\}$/);
-    const m  = m1 || m2;
+    const m3 = line.match(/^#\.\/(.*?)#$/);
+    const m  = m1 || m2 || m3;
     if (m) {
       const p = path.resolve(path.dirname(file), m[1]);
       try { expanded.push(await fs.readFile(p, 'utf-8')); }

@@ -7,16 +7,6 @@ Some AI scripts I use daily.
 
 - `holefill`: I use it on VIM to fill code snippets
 
-- ~~`aiemu`: emulate any game on the terminal ([example](https://x.com/VictorTaelin/status/1790183986096116189))~~
-
-- ~~`koder`: perform refactor requests ([example](https://x.com/VictorTaelin/status/1824489509146227192)) ([example](https://x.com/VictorTaelin/status/1811254153655558188))~~
-
-- ~~`agda2ts`: compile Agda to/from TypeScript ([example](https://x.com/VictorTaelin/status/1837256721850306746))~~
-
-- ~~`aoe`: refactor a huge codebase by auto-filtering chunks that need edit ([example](https://x.com/VictorTaelin/status/1873948475299111244))~~
-
-*Note: I'm currently unifying all scripts into `chatsh`. For the old scripts, see the 'old-main' branch.*
-
 For VIM integration, this is my messy [vimrc](https://github.com/VictorTaelin/OSX/blob/master/vimrc).
 
 This repo in general is kinda gambiarra. Note: currently updating to ts!

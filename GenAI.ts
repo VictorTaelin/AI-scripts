@@ -18,14 +18,14 @@ export const MODELS: Record<string, string> = {
   ct: 'claude-sonnet-4-20250514-think',
   Ct: 'claude-opus-4-20250514-think',
   d: 'deepseek-chat',
-  D: 'deepseek-reasoner',
+  dt: 'deepseek-reasoner',
   lm: 'meta-llama/llama-3.1-8b-instruct',
   l: 'meta-llama/llama-3.3-70b-instruct',
   L: 'meta-llama/llama-3.1-405b-instruct',
-  i: 'gemini-2.5-pro-preview-05-06',
-  I: 'gemini-2.0-flash-thinking-exp-01-21',
+  i: 'gemini-2.5-flash',
+  I: 'gemini-2.5-pro',
   x: "grok-3",
-  X: "grok-3-think",
+  xt: "grok-3-think",
 };
 
 export interface AskOptions {
