@@ -5,6 +5,7 @@ import { AnthropicChat } from './Vendors/Anthropic';
 import { GeminiChat } from './Vendors/Gemini';
 import { GrokChat } from './Vendors/Grok';
 import { OpenAIChat } from './Vendors/OpenAI';
+import { CerebrasChat } from './Vendors/Cerebras';
 import { countTokens } from 'gpt-tokenizer/model/gpt-4o';
 
 export const MODELS: Record<string, string> = {
@@ -26,6 +27,7 @@ export const MODELS: Record<string, string> = {
   I: 'gemini-2.5-pro',
   x: "grok-3",
   xt: "grok-3-think",
+  q: "qwen-3-32b",
 };
 
 export interface AskOptions {
@@ -55,6 +57,8 @@ function getVendor(model: string): string {
     return 'gemini';
   } else if (model.startsWith('grok')) {
     return 'grok';
+  } else if (model.startsWith('qwen')) {
+    return 'cerebras';
   } else {
     throw new Error(`Unsupported model: ${model}`);
   }
@@ -93,6 +97,9 @@ export async function GenAI(modelShortcode: string): Promise<ChatInstance> {
     return new GeminiChat(apiKey, model);
   } else if (vendor === 'grok') {
     return new GrokChat(model);
+  } else if (vendor === 'cerebras') {
+    const apiKey = await getToken(vendor);
+    return new CerebrasChat(apiKey, model);
   } else {
     throw new Error(`Unsupported vendor: ${vendor}`);
   }
