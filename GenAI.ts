@@ -3,9 +3,9 @@ import * as os from 'os';
 import * as path from 'path';
 import { AnthropicChat } from './Vendors/Anthropic';
 import { GeminiChat } from './Vendors/Gemini';
-import { GrokChat } from './Vendors/Grok';
 import { OpenAIChat } from './Vendors/OpenAI';
 import { CerebrasChat } from './Vendors/Cerebras';
+import { XAIChat } from './Vendors/xai';
 import { countTokens } from 'gpt-tokenizer/model/gpt-4o';
 
 export const MODELS: Record<string, string> = {
@@ -25,8 +25,8 @@ export const MODELS: Record<string, string> = {
   L: 'meta-llama/llama-3.1-405b-instruct',
   i: 'gemini-2.5-flash',
   I: 'gemini-2.5-pro',
-  x: "grok-3",
-  xt: "grok-3-think",
+  x: "grok-4-0709",
+  xt: "grok-4-0709",
   q: "qwen-3-32b",
 };
 
@@ -56,9 +56,11 @@ function getVendor(model: string): string {
   } else if (model.startsWith('gemini')) {
     return 'gemini';
   } else if (model.startsWith('grok')) {
-    return 'grok';
+    return 'xai';
   } else if (model.startsWith('qwen')) {
     return 'cerebras';
+  } else if (model === 'grok-4-0709') {
+    return 'xai';
   } else {
     throw new Error(`Unsupported model: ${model}`);
   }
@@ -95,11 +97,12 @@ export async function GenAI(modelShortcode: string): Promise<ChatInstance> {
   } else if (vendor === 'gemini') {
     const apiKey = await getToken(vendor);
     return new GeminiChat(apiKey, model);
-  } else if (vendor === 'grok') {
-    return new GrokChat(model);
   } else if (vendor === 'cerebras') {
     const apiKey = await getToken(vendor);
     return new CerebrasChat(apiKey, model);
+  } else if (vendor === 'xai') {
+    const apiKey = await getToken(vendor);
+    return new XAIChat(apiKey, model);
   } else {
     throw new Error(`Unsupported vendor: ${vendor}`);
   }

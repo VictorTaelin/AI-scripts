@@ -278,7 +278,12 @@ async function main() {
       log(`λ ${fullMessage}`);
       history.push(fullMessage);
 
-      const response = await ai.ask(fullMessage, { system: getSystemPrompt(repo, shownChunks), stream: true }) as string;
+      var response;
+      try {
+        response = await ai.ask(fullMessage, { system: getSystemPrompt(repo, shownChunks), stream: true }) as string;
+      } catch (e) {
+        response = "<error>";
+      }
 
       log(response);
       history.push(response);
