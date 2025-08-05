@@ -8,8 +8,11 @@
     "strict": true,
     "outDir": "./dist",
     "rootDir": "./",
-    "baseUrl": "."
+    "baseUrl": ".",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true
   },
   "include": ["*.ts", "Vendors/*.ts"],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "test-import.ts", "scripts/**/*"]
 }

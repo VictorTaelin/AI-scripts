@@ -15,9 +15,9 @@ export const MODELS: Record<string, string> = {
   O: 'o3',
   cm: 'claude-3-5-haiku-20241022',
   c: 'claude-sonnet-4-20250514',
-  C: 'claude-opus-4-20250514',
+  C: 'claude-opus-4-1-20250805',
   ct: 'claude-sonnet-4-20250514-think',
-  Ct: 'claude-opus-4-20250514-think',
+  Ct: 'claude-opus-4-1-20250805-think',
   d: 'deepseek-chat',
   dt: 'deepseek-reasoner',
   lm: 'meta-llama/llama-3.1-8b-instruct',
@@ -27,7 +27,8 @@ export const MODELS: Record<string, string> = {
   I: 'gemini-2.5-pro',
   x: "grok-4-0709",
   xt: "grok-4-0709",
-  q: "qwen-3-32b",
+  //q: "qwen-3-235b-a22b",
+  q: "qwen-3-coder-480b",
 };
 
 export interface AskOptions {

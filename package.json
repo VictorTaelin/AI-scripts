@@ -1,14 +1,24 @@
 {
   "name": "tai_scripts",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Taelin AI Scripts",
-  "main": "index.js",
-  "bin": {
-    "csh": "ChatSH.ts",
-    "holefill": "HoleFill.ts"
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "rm -rf dist && tsc && node scripts/build-esm-wrapper.js",
+    "prepare": "npm run build",
+    "test": "node test-import.ts",
+    "test:esm": "node --input-type=module test-import.ts"
   },
   "repository": {
     "type": "git",
