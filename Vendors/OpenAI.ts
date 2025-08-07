@@ -80,18 +80,34 @@ export class OpenAIChat implements ChatInstance {
         for await (const chunk of stream) {
           const delta: any = chunk.choices[0]?.delta;
           const reasoningPart = delta?.reasoning_content ?? delta?.reasoning;
+
+          let reasoningText: string | undefined;
           if (reasoningPart) {
-            process.stdout.write(`\x1b[2m${reasoningPart}\x1b[0m`);
+            if (typeof reasoningPart === "string") {
+              reasoningText = reasoningPart;
+            } else {
+              reasoningText =
+                reasoningPart.output_text ||
+                reasoningPart.text ||
+                reasoningPart?.content?.[0]?.text ||
+                reasoningPart?.[0]?.text;
+            }
+          }
+
+          if (reasoningText) {
+            process.stdout.write(`\x1b[2m${reasoningText}\x1b[0m`);
             printingReasoning = true;
             continue;
           }
-          if (delta?.content) {
+
+          const content = delta?.content || delta?.message?.content;
+          if (content) {
             if (printingReasoning) {
               printingReasoning = false;
               process.stdout.write("\n");
             }
-            process.stdout.write(delta.content);
-            visible += delta.content;
+            process.stdout.write(content);
+            visible += content;
           }
         }
         process.stdout.write("\n");
@@ -99,9 +115,21 @@ export class OpenAIChat implements ChatInstance {
         const respParams = body as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming;
         const resp: any = await this.client.chat.completions.create(respParams);
         const msg: any = resp.choices[0]?.message ?? {};
-        const reasoningText = msg.reasoning_content ?? msg.reasoning;
+        const reasoningPart = msg.reasoning_content ?? msg.reasoning;
+        let reasoningText: string | undefined;
+        if (reasoningPart) {
+          if (typeof reasoningPart === "string") {
+            reasoningText = reasoningPart;
+          } else {
+            reasoningText =
+              reasoningPart.output_text ||
+              reasoningPart.text ||
+              reasoningPart?.content?.[0]?.text ||
+              reasoningPart?.[0]?.text;
+          }
+        }
         if (reasoningText) process.stdout.write(`\x1b[2m${reasoningText}\x1b[0m\n`);
-        visible = msg.content ?? "";
+        visible = msg.content ?? msg?.message?.content ?? "";
         process.stdout.write(visible + "\n");
       }
     } catch (err: any) {
