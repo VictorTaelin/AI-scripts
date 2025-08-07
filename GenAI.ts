@@ -9,8 +9,8 @@ import { XAIChat } from './Vendors/xai';
 import { countTokens } from 'gpt-tokenizer/model/gpt-4o';
 
 export const MODELS: Record<string, string> = {
-  g: 'gpt-4.1',
-  G: 'gpt-4.5-preview-2025-02-27',
+  g: 'gpt-5',
+  G: 'gpt-5',
   o: 'o4-mini',
   O: 'o3',
   cm: 'claude-3-5-haiku-20241022',

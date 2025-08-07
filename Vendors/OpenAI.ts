@@ -8,6 +8,8 @@ import { AskOptions, ChatInstance } from "../GenAI";
 type Role = "user" | "assistant" | "system" | "developer";
 
 const isOSeries = (m: string) => /^o[0-9]/.test(m);
+const isGPT5 = (m: string) => m.startsWith('gpt-5');
+const usesMaxCompletionTokens = (m: string) => isOSeries(m) || isGPT5(m);
 const controlRole = (m: string): Role => (isOSeries(m) ? "developer" : "system");
 
 export class OpenAIChat implements ChatInstance {
@@ -43,7 +45,7 @@ export class OpenAIChat implements ChatInstance {
 
     const {
       system,
-      temperature = useOSeries ? 1 : 0,
+      temperature = (useOSeries || isGPT5(this.model)) ? 1 : 0,
       stream: wantStream = true,
       max_tokens = 8_192*2,
       max_completion_tokens = 80_000,
@@ -58,7 +60,7 @@ export class OpenAIChat implements ChatInstance {
       model: this.model,
       messages: this.messages as any,
       temperature,
-      ...(useOSeries ? { max_completion_tokens, reasoning_effort } : { max_tokens }),
+      ...(usesMaxCompletionTokens(this.model) ? { max_completion_tokens, reasoning_effort } : { max_tokens }),
     };
 
     // OpenRouter flag for reasoning tokens — OpenAI rejects it
