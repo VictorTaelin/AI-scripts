@@ -9,26 +9,42 @@ import { XAIChat } from './Vendors/xai';
 import { countTokens } from 'gpt-tokenizer/model/gpt-4o';
 
 export const MODELS: Record<string, string> = {
-  g: 'gpt-5',
-  G: 'gpt-5',
+  // OpenAI (Responses API)
+  g:  'gpt-5',             // reasoning.effort = low (enforced in OpenAI.ts)
+  gt: 'gpt-5-thinking',    // alias -> calls gpt-5 with reasoning.effort = medium
+  G:  'gpt-5',
+
+  // o‑series
   o: 'o4-mini',
   O: 'o3',
+
+  // Anthropic
   cm: 'claude-3-5-haiku-20241022',
-  c: 'claude-sonnet-4-20250514',
-  C: 'claude-opus-4-1-20250805',
+  c:  'claude-sonnet-4-20250514',
+  C:  'claude-opus-4-1-20250805',
   ct: 'claude-sonnet-4-20250514-think',
   Ct: 'claude-opus-4-1-20250805-think',
-  d: 'deepseek-chat',
+
+  // DeepSeek
+  d:  'deepseek-chat',
   dt: 'deepseek-reasoner',
+
+  // Meta (via OpenRouter)
   lm: 'meta-llama/llama-3.1-8b-instruct',
-  l: 'meta-llama/llama-3.3-70b-instruct',
-  L: 'meta-llama/llama-3.1-405b-instruct',
-  i: 'gemini-2.5-flash',
-  I: 'gemini-2.5-pro',
-  x: "grok-4-0709",
-  xt: "grok-4-0709",
-  //q: "qwen-3-235b-a22b",
-  q: "qwen-3-coder-480b",
+  l:  'meta-llama/llama-3.3-70b-instruct',
+  L:  'meta-llama/llama-3.1-405b-instruct',
+
+  // Google
+  i:  'gemini-2.5-flash',
+  I:  'gemini-2.5-pro',
+
+  // xAI
+  x:  'grok-4-0709',
+  xt: 'grok-4-0709',
+
+  // Qwen (via Cerebras)
+  // q: "qwen-3-235b-a22b",
+  q:  "qwen-3-coder-480b",
 };
 
 export interface AskOptions {
@@ -37,8 +53,8 @@ export interface AskOptions {
   max_tokens?: number;
   max_completion_tokens?: number;
   stream?: boolean;
-  system_cacheable?: boolean;
-  reasoning_effort?: string;
+  system_cacheable?: boolean; // Anthropic only
+  reasoning_effort?: string;  // kept for non-Responses fallbacks
 }
 
 export interface ChatInstance {
@@ -46,24 +62,25 @@ export interface ChatInstance {
 }
 
 function getVendor(model: string): string {
-  if (model.startsWith('gpt') || model.startsWith('o1') || model.startsWith('o3') || model.startsWith('o4') || model.startsWith('chat')) {
+  const m = model.startsWith('gpt-5-thinking') ? 'gpt-5' : model;
+  if (m.startsWith('gpt') || m.startsWith('o1') || m.startsWith('o3') || m.startsWith('o4') || m.startsWith('chat')) {
     return 'openai';
-  } else if (model.startsWith('claude')) {
+  } else if (m.startsWith('claude')) {
     return 'anthropic';
-  } else if (model.startsWith('deepseek')) {
+  } else if (m.startsWith('deepseek')) {
     return 'deepseek';
-  } else if (model.startsWith('meta')) {
+  } else if (m.startsWith('meta')) {
     return 'openrouter';
-  } else if (model.startsWith('gemini')) {
+  } else if (m.startsWith('gemini')) {
     return 'gemini';
-  } else if (model.startsWith('grok')) {
+  } else if (m.startsWith('grok')) {
     return 'xai';
-  } else if (model.startsWith('qwen')) {
+  } else if (m.startsWith('qwen')) {
     return 'cerebras';
-  } else if (model === 'grok-4-0709') {
+  } else if (m === 'grok-4-0709') {
     return 'xai';
   } else {
-    throw new Error(`Unsupported model: ${model}`);
+    throw new Error(`Unsupported vendor: ${model}`);
   }
 }
 
@@ -85,11 +102,11 @@ export async function GenAI(modelShortcode: string): Promise<ChatInstance> {
     const apiKey = await getToken(vendor);
     let baseURL: string;
     if (vendor === 'openai') {
-      baseURL = 'https://api.openai.com/v1';
+      baseURL = 'https://api.openai.com/v1';        // Responses API
     } else if (vendor === 'deepseek') {
-      baseURL = 'https://api.deepseek.com/v1';
+      baseURL = 'https://api.deepseek.com/v1';      // Chat Completions fallback
     } else {
-      baseURL = 'https://openrouter.ai/api/v1';
+      baseURL = 'https://openrouter.ai/api/v1';     // Chat Completions fallback
     }
     return new OpenAIChat(apiKey, baseURL, model, vendor);
   } else if (vendor === 'anthropic') {
