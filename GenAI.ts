@@ -12,17 +12,18 @@ export const MODELS: Record<string, string> = {
   // OpenAI (Responses API)
   g:  'gpt-5',             // reasoning.effort = low (enforced in OpenAI.ts)
   gt: 'gpt-5-thinking',    // alias -> calls gpt-5 with reasoning.effort = medium
-  G:  'gpt-5',
+  G:  'gpt-5-thinking',
+  Gt: 'gpt-5-thinking',
 
   // o‑series
   o: 'o4-mini',
-  O: 'o3',
+  O: 'gpt-5-pro',
 
   // Anthropic
   cm: 'claude-3-5-haiku-20241022',
-  c:  'claude-sonnet-4-20250514',
+  c:  'claude-sonnet-4-5-20250929',
   C:  'claude-opus-4-1-20250805',
-  ct: 'claude-sonnet-4-20250514-think',
+  ct: 'claude-sonnet-4-5-20250929-think',
   Ct: 'claude-opus-4-1-20250805-think',
 
   // DeepSeek
@@ -40,7 +41,7 @@ export const MODELS: Record<string, string> = {
 
   // xAI
   x:  'grok-4-0709',
-  xt: 'grok-4-0709',
+  xt: 'grok-code',
 
   // Qwen (via Cerebras)
   // q: "qwen-3-235b-a22b",

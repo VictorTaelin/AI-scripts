@@ -93,7 +93,8 @@ export class OpenAIChat implements ChatInstance {
       stream: wantStream = true,
       max_tokens = 8192 * 2, // ignored by Responses API (we map to max_output_tokens)
       max_completion_tokens = 80_000,
-      reasoning_effort = this.isThinking() ? "medium" : "low",
+      // Ensure gpt-5-pro uses high reasoning effort by default
+      reasoning_effort = (this.isThinking() || this.baseModel() === "gpt-5-pro") ? "high" : "low",
     } = options;
 
     this.ensureControlMessage(system);
@@ -127,7 +128,9 @@ export class OpenAIChat implements ChatInstance {
       input: history,
       // Reasoning controls
       reasoning: {
-        effort: ["low", "medium", "high"].includes(String(reasoning_effort)) ? reasoning_effort : (this.isThinking() ? "medium" : "low"),
+        effort: ["low", "medium", "high"].includes(String(reasoning_effort))
+          ? reasoning_effort
+          : ((this.baseModel() === "gpt-5-pro" || this.isThinking()) ? "high" : "low"),
         summary: "auto", // request a human-readable summary stream
       },
     };
