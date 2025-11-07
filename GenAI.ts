@@ -46,6 +46,10 @@ export const MODELS: Record<string, string> = {
   // Qwen (via Cerebras)
   // q: "qwen-3-235b-a22b",
   q:  "qwen-3-coder-480b",
+
+  // Kimi K2 (Moonshot AI)
+  k:  'kimi-latest',
+  kt: 'kimi-k2-thinking',
 };
 
 export interface AskOptions {
@@ -78,6 +82,8 @@ function getVendor(model: string): string {
     return 'xai';
   } else if (m.startsWith('qwen')) {
     return 'cerebras';
+  } else if (m.startsWith('kimi')) {
+    return 'kimi';
   } else if (m === 'grok-4-0709') {
     return 'xai';
   } else {
@@ -99,13 +105,15 @@ export async function GenAI(modelShortcode: string): Promise<ChatInstance> {
   const model = MODELS[modelShortcode] || modelShortcode;
   const vendor = getVendor(model);
 
-  if (['openai', 'deepseek', 'openrouter'].includes(vendor)) {
+  if (['openai', 'deepseek', 'openrouter', 'kimi'].includes(vendor)) {
     const apiKey = await getToken(vendor);
     let baseURL: string;
     if (vendor === 'openai') {
       baseURL = 'https://api.openai.com/v1';        // Responses API
     } else if (vendor === 'deepseek') {
       baseURL = 'https://api.deepseek.com/v1';      // Chat Completions fallback
+    } else if (vendor === 'kimi') {
+      baseURL = 'https://api.moonshot.ai/v1';       // Moonshot/Kimi API
     } else {
       baseURL = 'https://openrouter.ai/api/v1';     // Chat Completions fallback
     }

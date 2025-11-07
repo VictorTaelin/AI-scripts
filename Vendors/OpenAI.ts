@@ -30,8 +30,10 @@ const dbg = (label: string, data?: any) => {
 
 const isOSeries = (m: string) => /^o[0-9]/.test(m);
 const isGPT5 = (m: string) => m.startsWith("gpt-5");
+const isKimi = (m: string) => m.startsWith("kimi");
 const usesMaxCompletionTokens = (m: string) => isOSeries(m) || isGPT5(m);
 const controlRole = (m: string): Role => (isOSeries(m) ? "developer" : "system");
+const usesResponsesAPI = (m: string) => isOSeries(m) || isGPT5(m);
 
 function isStandaloneVerbosityToken(s: string): boolean {
   // Defensive: skip stray single tokens like "detailed" that may appear in some payloads.
@@ -87,11 +89,29 @@ export class OpenAIChat implements ChatInstance {
   ): Promise<string | { messages: any[] }> {
     if (userMessage === null) return { messages: this.messages };
 
+    const baseModel = this.baseModel();
+    const isKimiThinking = baseModel === 'kimi-k2-thinking';
+    const isKimiModel = baseModel.startsWith('kimi');
+
+    // Set defaults based on model type
+    let defaultTemp = 0;
+    let defaultMaxTokens = 8192 * 2;
+
+    if (isKimiThinking) {
+      defaultTemp = 1.0;
+      defaultMaxTokens = 64000; // Large budget for reasoning + answer
+    } else if (isKimiModel) {
+      defaultTemp = 0.6;
+      defaultMaxTokens = 32000; // Large context window
+    } else if (isOSeries(this.model) || isGPT5(this.model)) {
+      defaultTemp = 1;
+    }
+
     const {
       system,
-      temperature = (isOSeries(this.model) || isGPT5(this.model)) ? 1 : 0,
+      temperature = defaultTemp,
       stream: wantStream = true,
-      max_tokens = 8192 * 2, // ignored by Responses API (we map to max_output_tokens)
+      max_tokens = defaultMaxTokens,
       max_completion_tokens = 80_000,
       // Ensure gpt-5-pro uses high reasoning effort by default
       reasoning_effort = (this.isThinking() || this.baseModel() === "gpt-5-pro") ? "high" : "low",
@@ -117,8 +137,6 @@ export class OpenAIChat implements ChatInstance {
         },
       ],
     }));
-
-    const baseModel = this.baseModel();
 
     const params: any = {
       model: baseModel,
@@ -188,6 +206,64 @@ export class OpenAIChat implements ChatInstance {
     };
 
     try {
+      // Use Chat Completions API for Kimi, DeepSeek, OpenRouter
+      if (!usesResponsesAPI(baseModel)) {
+        const chatParams: any = {
+          model: baseModel,
+          temperature,
+          max_tokens,
+          stream: wantStream,
+          messages: this.messages.map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+        };
+
+        if (wantStream) {
+          const stream = await this.client.chat.completions.create(chatParams);
+          let printedReasoning = false;
+          for await (const chunk of stream as any) {
+            const delta = chunk.choices?.[0]?.delta;
+
+            // Handle reasoning content (from kimi-k2-thinking)
+            if (delta?.reasoning_content) {
+              process.stdout.write(DIM + delta.reasoning_content + RESET);
+              visible += delta.reasoning_content;
+              printedReasoning = true;
+            }
+
+            // Handle regular content
+            if (delta?.content) {
+              // Add newline between reasoning and content if needed
+              if (printedReasoning && !visible.endsWith('\n')) {
+                process.stdout.write("\n");
+                visible += "\n";
+                printedReasoning = false;
+              }
+              process.stdout.write(delta.content);
+              visible += delta.content;
+            }
+          }
+          process.stdout.write("\n");
+        } else {
+          const response = await this.client.chat.completions.create(chatParams);
+          const message: any = response.choices?.[0]?.message;
+
+          // Handle reasoning content in non-streaming response
+          if (message?.reasoning_content) {
+            process.stdout.write(DIM + message.reasoning_content + RESET + "\n");
+            visible += message.reasoning_content + "\n";
+          }
+
+          visible += message?.content || "";
+          process.stdout.write((message?.content || "") + "\n");
+        }
+
+        this.messages.push({ role: "assistant", content: visible });
+        return visible;
+      }
+
+      // Use Responses API for GPT-5, o-series
       if (wantStream) {
         dbg("STREAM_OPEN");
         // Use streaming Responses API
