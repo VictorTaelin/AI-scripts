@@ -128,16 +128,21 @@ export class OpenAIChat implements ChatInstance {
         ? this.messages[0].content
         : undefined;
 
-    const history = (instructions ? this.messages.slice(1) : this.messages).map((m) => ({
-      type: "message",
-      role: m.role === "developer" ? "system" : (m.role as "user" | "assistant" | "system"),
-      content: [
-        {
-          type: "input_text", // Inputs are always "input_*" types
-          text: m.content ?? "",
-        },
-      ],
-    }));
+    const history = (instructions ? this.messages.slice(1) : this.messages).map((m) => {
+      const role = m.role === "developer" ? "system" : (m.role as "user" | "assistant" | "system");
+      const contentType = role === "assistant" ? "output_text" : "input_text";
+
+      return {
+        type: "message",
+        role,
+        content: [
+          {
+            type: contentType,
+            text: m.content ?? "",
+          },
+        ],
+      };
+    });
 
     const params: any = {
       model: baseModel,
