@@ -63,11 +63,12 @@ export class OpenAIChat implements ChatInstance {
   private baseModel(): string {
     // "thinking" alias uses the same base model id, different reasoning effort.
     if (this.model === "gpt-5-thinking") return "gpt-5";
+    if (this.model === "gpt-5.1-thinking") return "gpt-5.1";
     return this.model;
   }
 
   private isThinking(): boolean {
-    return this.model === "gpt-5-thinking";
+    return this.model === "gpt-5-thinking" || this.model === "gpt-5.1-thinking";
   }
 
   private ensureControlMessage(content?: string) {
