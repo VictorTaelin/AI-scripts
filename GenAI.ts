@@ -10,10 +10,10 @@ import { countTokens } from 'gpt-tokenizer/model/gpt-4o';
 
 export const MODELS: Record<string, string> = {
   // OpenAI (Responses API)
-  g:  'gpt-5',             // reasoning.effort = low (enforced in OpenAI.ts)
-  gt: 'gpt-5-thinking',    // alias -> calls gpt-5 with reasoning.effort = medium
-  G:  'gpt-5-thinking',
-  Gt: 'gpt-5-thinking',
+  g:  'gpt-5.1',             // reasoning.effort = low (enforced in OpenAI.ts)
+  gt: 'gpt-5.1-thinking',    // alias -> calls gpt-5 with reasoning.effort = medium
+  G:  'gpt-5.1-thinking',
+  Gt: 'gpt-5.1-thinking',
 
   // o‑series
   o: 'o4-mini',
@@ -67,7 +67,10 @@ export interface ChatInstance {
 }
 
 function getVendor(model: string): string {
-  const m = model.startsWith('gpt-5-thinking') ? 'gpt-5' : model;
+  const m
+    = model.startsWith('gpt-5-thinking') ? 'gpt-5'
+    : model.startsWith('gpt-5.1-thinking') ? 'gpt-5.1'
+    : model;
   if (m.startsWith('gpt') || m.startsWith('o1') || m.startsWith('o3') || m.startsWith('o4') || m.startsWith('chat')) {
     return 'openai';
   } else if (m.startsWith('claude')) {
