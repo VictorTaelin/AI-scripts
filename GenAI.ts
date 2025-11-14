@@ -60,8 +60,10 @@ export interface VendorConfig {
   };
   google?: {
     config?: {
+      maxOutputTokens?: number;
       thinkingConfig?: {
-        thinkingBudget?: number;
+        thinkingLevel?: 'low' | 'high';
+        //thinkingBudget?: number;
         includeThoughts?: boolean;
       };
     };
@@ -216,10 +218,17 @@ function mapThinkingToAnthropic(
   };
 }
 
-function mapThinkingToGoogle(thinking: ThinkingLevel): VendorConfig['google'] | undefined {
+function mapThinkingToGoogle(
+  model: string,
+  thinking: ThinkingLevel,
+): VendorConfig['google'] | undefined {
+  const baseConfig = {
+    maxOutputTokens: 65536,
+  };
   if (thinking === 'none') {
     return {
       config: {
+        ...baseConfig,
         thinkingConfig: {
           includeThoughts: false,
         },
@@ -229,18 +238,23 @@ function mapThinkingToGoogle(thinking: ThinkingLevel): VendorConfig['google'] | 
   if (thinking === 'auto') {
     return {
       config: {
+        ...baseConfig,
         thinkingConfig: {
           includeThoughts: true,
         },
       },
     };
   }
-  const budget = thinking === 'low' ? 1024 : thinking === 'medium' ? 4096 : 8192;
+  const level: 'low' | 'high' = thinking === 'low' ? 'low' : 'high';
+  const budget = thinking === 'low' ? 2048 : thinking === 'medium' ? 4096 : 8192;
+  const modelName = model.toLowerCase();
+  const prefersBudget = modelName.includes('gemini-2.5');
   return {
     config: {
+      ...baseConfig,
       thinkingConfig: {
-        thinkingBudget: budget,
         includeThoughts: true,
+        ...(prefersBudget ? { thinkingBudget: budget } : { thinkingLevel: level }),
       },
     },
   };
@@ -261,7 +275,7 @@ function buildVendorConfig(vendor: Vendor, model: string, thinking: ThinkingLeve
     cfg.anthropic = anthropic;
   }
 
-  const google = mapThinkingToGoogle(thinking);
+  const google = mapThinkingToGoogle(model, thinking);
   if (vendor === 'google' && google) {
     cfg.google = google;
   }

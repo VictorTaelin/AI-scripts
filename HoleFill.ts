@@ -6,12 +6,15 @@ import * as path from 'path';
 import * as process from 'process';
 import { GenAI, resolveModelSpec, tokenCount, AskOptions } from './GenAI';
 
-const SYSTEM = `You're a code completion assistant.`;
+const SYSTEM = `You're a file completion assistant.`;
 const FILL   = '{:FILL_HERE:}';
 const TASK =
-  `### TASK: complete the ${FILL} part of the file above. ` +
-  `Write ONLY the needed text to replace ${FILL} by the correct completion, including correct spacing and indentation. ` +
-  `Include the answer inside a <COMPLETION></COMPLETION> tag.`;
+  "### TASK\n\n" +
+  "- Complete the ${FILL} hole / gap on the file above.\n" +
+  "- Include your answer inside a <COMPLETION></COMPLETION> tag.\n" +
+  "- We will replace ${FILL} by the contents inside that tag.\n" +
+  "- Make sure to use context-aware spacing and indentation.\n" +
+  "- Do not include anything else in your final answer.";
 
 /* ------------------------------------------------------------------
  * Utility: force every ".?." placeholder to column-0
