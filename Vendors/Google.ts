@@ -15,7 +15,7 @@ interface Turn {
 }
 
 /**
- * Gemini implementation of the HoleFill ChatInstance.
+ * Google Gemini implementation of the HoleFill ChatInstance.
  * Fixes two long-standing issues:
  *
  * 1. **Malformed completions** – we now pass the system prompt via
@@ -26,7 +26,7 @@ interface Turn {
  *    `thinking_delta` chunks (the same event names Anthropic uses).  These
  *    deltas are echoed to stdout in grey, exactly like the Sonnet handler.
  */
-export class GeminiChat implements ChatInstance {
+export class GoogleChat implements ChatInstance {
   private readonly client: GoogleGenerativeAI;
   private readonly modelName: string;
 

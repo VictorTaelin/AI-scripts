@@ -105,7 +105,7 @@ Estimates token count using GPT-4o's tokenizer.
 
 Setup
 -----
-Ensure API keys are set in `~/.config/<vendor>.token` (e.g., `~/.config/openai.token`). Supported vendors: `openai`, `anthropic`, `deepseek`, `openrouter`, `gemini`, `grok`.
+Ensure API keys are set in `~/.config/<vendor>.token` (e.g., `~/.config/openai.token`). Supported vendors: `openai`, `anthropic`, `deepseek`, `openrouter`, `google`, `kimi`, `xai`, `cerebras`.
 
 For OpenRouter, the library sets the `HTTP-Referer` header to `"https://github.com/OpenRouterTeam/openrouter-examples"`.
 

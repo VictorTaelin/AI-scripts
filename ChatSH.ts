@@ -5,7 +5,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as readline from 'readline';
 import { Command } from 'commander';
-import { GenAI, tokenCount, MODELS } from './GenAI';
+import { GenAI, tokenCount, resolveModelSpec } from './GenAI';
 import { RepoManager } from './RepoManager';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -180,6 +180,7 @@ async function main() {
     : undefined;
 
   const repo = await RepoManager.load(repoPath, { include: includePatterns, exclude: excludePatterns });
+  const { model: resolvedModelName } = resolveModelSpec(model);
   const ai = await GenAI(model);
 
   let shownChunks: Record<string, boolean> = {};
@@ -199,7 +200,7 @@ async function main() {
     fs.appendFileSync(logFile, message + '\n', 'utf8');
   }
 
-  const welcomeMessage = `\x1b[1mWelcome to ChatSH!\x1b[0m\nModel: ${MODELS[model]}`;
+  const welcomeMessage = `\x1b[1mWelcome to ChatSH!\x1b[0m\nModel: ${resolvedModelName}`;
   console.log(welcomeMessage);
   log(welcomeMessage);
 

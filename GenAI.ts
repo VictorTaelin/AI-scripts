@@ -2,7 +2,7 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { AnthropicChat } from './Vendors/Anthropic';
-import { GeminiChat } from './Vendors/Gemini';
+import { GoogleChat } from './Vendors/Google';
 import { OpenAIChat } from './Vendors/OpenAI';
 import { CerebrasChat } from './Vendors/Cerebras';
 import { XAIChat } from './Vendors/xai';
@@ -52,6 +52,17 @@ export const MODELS: Record<string, string> = {
   kt: 'kimi-k2-thinking',
 };
 
+const SUPPORTED_VENDORS = new Set([
+  'openai',
+  'anthropic',
+  'deepseek',
+  'openrouter',
+  'google',
+  'xai',
+  'cerebras',
+  'kimi',
+]);
+
 export interface AskOptions {
   system?: string;
   temperature?: number;
@@ -80,7 +91,7 @@ function getVendor(model: string): string {
   } else if (m.startsWith('meta')) {
     return 'openrouter';
   } else if (m.startsWith('gemini')) {
-    return 'gemini';
+    return 'google';
   } else if (m.startsWith('grok')) {
     return 'xai';
   } else if (m.startsWith('qwen')) {
@@ -104,9 +115,34 @@ async function getToken(vendor: string): Promise<string> {
   }
 }
 
+export function resolveModelSpec(modelShortcode: string): { model: string; vendor: string } {
+  let vendorOverride: string | undefined;
+  let resolvedShortcode = modelShortcode.trim();
+
+  const colonIndex = resolvedShortcode.indexOf(':');
+  if (colonIndex !== -1) {
+    const explicitVendor = resolvedShortcode.slice(0, colonIndex).trim();
+    const explicitModel = resolvedShortcode.slice(colonIndex + 1).trim();
+    if (!explicitVendor) {
+      throw new Error('Vendor name is required before ":"');
+    }
+    if (!explicitModel) {
+      throw new Error('Model name is required after ":"');
+    }
+    vendorOverride = explicitVendor.toLowerCase();
+    if (!SUPPORTED_VENDORS.has(vendorOverride)) {
+      throw new Error(`Unsupported vendor override: ${explicitVendor}`);
+    }
+    resolvedShortcode = explicitModel;
+  }
+
+  const model = MODELS[resolvedShortcode] || resolvedShortcode;
+  const vendor = vendorOverride || getVendor(model);
+  return { model, vendor };
+}
+
 export async function GenAI(modelShortcode: string): Promise<ChatInstance> {
-  const model = MODELS[modelShortcode] || modelShortcode;
-  const vendor = getVendor(model);
+  const { model, vendor } = resolveModelSpec(modelShortcode);
 
   if (['openai', 'deepseek', 'openrouter', 'kimi'].includes(vendor)) {
     const apiKey = await getToken(vendor);
@@ -124,9 +160,9 @@ export async function GenAI(modelShortcode: string): Promise<ChatInstance> {
   } else if (vendor === 'anthropic') {
     const apiKey = await getToken(vendor);
     return new AnthropicChat(apiKey, model);
-  } else if (vendor === 'gemini') {
+  } else if (vendor === 'google') {
     const apiKey = await getToken(vendor);
-    return new GeminiChat(apiKey, model);
+    return new GoogleChat(apiKey, model);
   } else if (vendor === 'cerebras') {
     const apiKey = await getToken(vendor);
     return new CerebrasChat(apiKey, model);
