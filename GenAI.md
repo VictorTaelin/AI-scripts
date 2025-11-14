@@ -10,7 +10,7 @@ Usage
 import { GenAI } from './GenAI';
 
 async function main() {
-  const ai = await GenAI("g"); // Model: GPT-4o
+  const ai = await GenAI("openai:gpt-5.1:medium");
 
   // Options
   const opts = {
@@ -36,25 +36,24 @@ In this example, we create a chat instance for GPT-4o, send two messages, and th
 
 Models
 ------
-The library supports various AI models via shortcodes defined in the `MODELS` export:
+Models are now referenced using the canonical `vendor:official_model_name:thinking_budget`
+format, for example:
 
-- `g`: GPT-4o
-- `G`: o3-mini
-- `o`: o1
-- `cm`: Claude-3.5-Haiku
-- `c`: Claude-3.5-Sonnet
-- `C`: Claude-3.5-Sonnet (latest)
-- `d`: DeepSeek-Chat
-- `D`: DeepSeek-Reasoner
-- `lm`: Llama-3.1-8B-Instruct
-- `l`: Llama-3.3-70B-Instruct
-- `L`: Llama-3.1-405B-Instruct
-- `i`: Gemini-2.0-Pro
-- `I`: Gemini-2.0-Flash
-- `x`: Grok-3
-- `X`: Grok-3-Think
+- `openai:gpt-5.1:high`
+- `anthropic:claude-sonnet-4-5-20250929:medium`
+- `google:gemini-2.5-pro:medium`
+- `openrouter:meta-llama/llama-3.3-70b-instruct:auto`
+- `xai:grok-4-0709:auto`
 
-Use uppercase letters (e.g., `G`) for smarter, slower versions where available. You can also use full model names if not listed.
+The optional third segment controls the thinking budget (`none | low | medium | high | auto`).
+Legacy shortcodes remain available via the `MODELS` export for convenience. Each shortcut
+follows a consistent pattern:
+
+- Each character (`g`, `G`, `c`, `C`, `l`, `L`, etc.) maps directly to a specific
+  vendor/model pairing (e.g., `c` is Claude Sonnet, `C` is Claude Opus, `g` and `G`
+  both map to GPT‑5.1).
+- Append `-` to request the low thinking budget, omit it for medium, and append `+`
+  for high (e.g., `g-`, `g`, `g+` map to `openai:gpt-5.1:low|medium|high`).
 
 API Reference
 -------------
@@ -83,11 +82,13 @@ Interface for chat interactions.
 Options for the `ask` method:
 
 - `system?: string` - System prompt to set assistant behavior.
-- `temperature?: number` - Controls response randomness (0.0 to 1.0). Default: 0.0.
-- `max_tokens?: number` - Maximum tokens to generate. Default: 8192.
+- `temperature?: number` - Controls response randomness. Omitted by default.
+- `max_tokens?: number` - Maximum tokens to generate (chat-completions style APIs).
+- `max_completion_tokens?: number` - Maximum output tokens (Responses API).
 - `stream?: boolean` - Enable streaming. Default: `true` where supported.
 - `system_cacheable?: boolean` - Allow caching the system message (Anthropic-specific).
-- `reasoning_effort?: string` - Set reasoning effort (DeepSeek-specific).
+- `vendorConfig?: VendorConfig` - Optional per-call overrides for vendor-specific knobs
+  computed in `GenAI.ts` (e.g., reasoning effort, thinking budgets).
 
 **Note:** Not all options apply to every model; unsupported options are ignored.
 
@@ -105,12 +106,17 @@ Estimates token count using GPT-4o's tokenizer.
 
 Setup
 -----
-Ensure API keys are set in `~/.config/<vendor>.token` (e.g., `~/.config/openai.token`). Supported vendors: `openai`, `anthropic`, `deepseek`, `openrouter`, `google`, `kimi`, `xai`, `cerebras`.
+Ensure API keys are set in `~/.config/<vendor>.token` (e.g., `~/.config/openai.token`).
+Supported vendors are `openai`, `anthropic`, `google`, `openrouter`, and `xai`.
 
 For OpenRouter, the library sets the `HTTP-Referer` header to `"https://github.com/OpenRouterTeam/openrouter-examples"`.
 
 Additional Notes
 ----------------
-- **Streaming:** When enabled, responses are streamed to `stdout`. For DeepSeek models, reasoning content is displayed in dim text.
-- **Model-Specific Features:** Some models have unique behaviors (e.g., o1/o3 series handle streaming and temperature differently).
+- **Streaming:** When enabled, responses are streamed to `stdout`. When vendors expose
+  explicit thinking traces (OpenAI Responses, Anthropic, Gemini), they are printed
+  in dim gray before the final answer.
+- **Thinking Budgets:** Thinking levels are centrally managed in `GenAI.ts` and forwarded
+  to each vendor in an idiomatic way (e.g., OpenAI reasoning effort, Anthropic
+  `thinking` blocks, Gemini `thinkingConfig`).
 - **Token Estimation:** `tokenCount` uses GPT-4o's tokenizer, which may differ from other models' tokenization.

@@ -1,14 +1,8 @@
 import { GenAI } from './GenAI';
 
 async function main() {
-  // Available models:
-  // - g: GPT-4o
-  // - c: Claude
-  // - d: DeepSeek
-  // - l: Llama
-  // - i: Gemini
-  // - x: Grok
-  const ai = await GenAI("g");
+  // Model specs follow the "vendor:model:thinking" format.
+  const ai = await GenAI("openai:gpt-5.1:medium");
 
   // Options
   const opts = {

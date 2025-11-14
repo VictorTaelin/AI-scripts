@@ -1,144 +1,153 @@
-import {
-  GoogleGenerativeAI,
-  HarmCategory,
-  HarmBlockThreshold,
-  type GenerationConfig,
-  type SafetySetting,
-} from "@google/generative-ai";
-import type { AskOptions, ChatInstance } from "../GenAI";
+import { GoogleGenAI } from "@google/genai";
+import type { AskOptions, ChatInstance, VendorConfig } from "../GenAI";
 
-/** Internal representation of a chat turn */
 type Role = "user" | "assistant";
 interface Turn {
   role: Role;
   content: string;
 }
 
-/**
- * Google Gemini implementation of the HoleFill ChatInstance.
- * Fixes two long-standing issues:
- *
- * 1. **Malformed completions** – we now pass the system prompt via
- *    `systemInstruction`, drop the in-prompt “System: …\nUser: …” hack and
- *    always wait for the final aggregated response, so the returned text
- *    contains the full `<COMPLETION> … </COMPLETION>` block.
- * 2. **Hidden thinking trace** – streaming output is parsed for
- *    `thinking_delta` chunks (the same event names Anthropic uses).  These
- *    deltas are echoed to stdout in grey, exactly like the Sonnet handler.
- */
+const DIM = "\x1b[2m";
+const RESET = "\x1b[0m";
+
 export class GoogleChat implements ChatInstance {
-  private readonly client: GoogleGenerativeAI;
+  private readonly client: GoogleGenAI;
   private readonly modelName: string;
+  private readonly vendorConfig?: VendorConfig;
+  private readonly history: Turn[] = [];
+  private systemInstruction?: string;
 
-  private chat: any = null;               // lazy-initialised ChatSession
-  private history: Turn[] = [];           // local running history
-
-  constructor(apiKey: string, modelName: string) {
-    this.client    = new GoogleGenerativeAI(apiKey);
+  constructor(apiKey: string, modelName: string, vendorConfig?: VendorConfig) {
+    this.client = new GoogleGenAI({ apiKey });
     this.modelName = modelName;
+    this.vendorConfig = vendorConfig;
   }
-
-  /* --------------------------------------------------------------------- */
 
   async ask(
     userMessage: string | null,
-    opts: AskOptions = {},
+    options: AskOptions = {},
   ): Promise<string | { messages: any[] }> {
     if (userMessage === null) {
       return { messages: this.history };
     }
 
-    const {
-      system,
-      temperature = 0,
-      max_tokens  = 100_000,
-      stream      = true,
-    } = opts;
-
-    /* ---------- create the chat session (once) ------------------------- */
-    if (!this.chat) {
-      const generationConfig: GenerationConfig = {
-        temperature,
-        maxOutputTokens: max_tokens,
-      };
-
-      const safetySettings: SafetySetting[] = [
-        { category: HarmCategory.HARM_CATEGORY_HARASSMENT,         threshold: HarmBlockThreshold.BLOCK_NONE },
-        { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,        threshold: HarmBlockThreshold.BLOCK_NONE },
-        { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,  threshold: HarmBlockThreshold.BLOCK_NONE },
-        { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,  threshold: HarmBlockThreshold.BLOCK_NONE },
-      ];
-
-      const model = this.client.getGenerativeModel({
-        model: this.modelName,
-        systemInstruction: system
-          ? { role: "model", parts: [{ text: system }] }
-          : undefined,
-        generationConfig,
-        safetySettings,
-      });
-
-      /* convert local history → SDK format */
-      const sdkHistory = this.history.map(turn => ({
-        role  : turn.role === "assistant" ? "model" : "user",
-        parts : [{ text: turn.content }],
-      }));
-
-      this.chat = model.startChat({ history: sdkHistory });
+    const wantStream = options.stream !== false;
+    if (typeof options.system === "string") {
+      this.systemInstruction = options.system;
     }
 
-    /* ---------- send user prompt -------------------------------------- */
+    const contents = this.buildContents(userMessage);
     this.history.push({ role: "user", content: userMessage });
 
-    let answer = "";
-    let printedGrey = false;   // to add a newline between reasoning & answer
+    const config = this.buildConfig(options);
 
-    if (stream) {
-      const resp = await this.chat.sendMessageStream(userMessage);
+    const request: any = {
+      model: this.modelName,
+      contents,
+    };
 
-      for await (const chunk of resp.stream) {
-        /* Anthropic-style reasoning tokens come through as thinking_delta   */
-        if (chunk.type === "content_block_delta") {
-          if (chunk.delta?.type === "thinking_delta") {
-            process.stdout.write(`\x1b[2m${chunk.delta.thinking}\x1b[0m`);
-            printedGrey = true;
-            answer += chunk.delta.thinking;          // keep for completeness
-            continue;
-          }
-          if (chunk.delta?.type === "text_delta") {
-            if (printedGrey) {
-              process.stdout.write("\n");            // line break after thoughts
-              printedGrey = false;
-            }
-            process.stdout.write(chunk.delta.text);
-            answer += chunk.delta.text;
-            continue;
-          }
-        }
-
-        /* Fallback for non-typed chunks (old SDKs simply expose .text()) */
-        const txt = typeof (chunk as any).text === "function"
-          ? (chunk as any).text()
-          : (chunk as any).text ?? "";
-        if (txt) {
-          process.stdout.write(txt);
-          answer += txt;
-        }
-      }
-      process.stdout.write("\n");
-
-      /* guarantee we didn’t miss tail content */
-      try {
-        const full = (await resp.response).text();
-        if (full && !answer.endsWith(full)) answer += full;
-      } catch { /* ignore */ }
-    } else {
-      /* non-stream fallback */
-      const resp = await this.chat.sendMessage(userMessage);
-      answer     = (await resp.response).text();
+    if (Object.keys(config).length > 0) {
+      request.config = config;
     }
 
-    this.history.push({ role: "assistant", content: answer });
-    return answer;
+    let visible = "";
+    if (wantStream) {
+      const response = await this.client.models.generateContentStream(request);
+      visible = await this.handleStream(response);
+    } else {
+      const response = await this.client.models.generateContent(request);
+      visible = this.printCandidate(response.candidates?.[0]);
+    }
+
+    this.history.push({ role: "assistant", content: visible });
+    return visible;
+  }
+
+  private buildContents(userMessage: string) {
+    const contents = this.history.map((turn) => ({
+      role: turn.role === "assistant" ? "model" : "user",
+      parts: [{ text: turn.content }],
+    }));
+
+    contents.push({
+      role: "user",
+      parts: [{ text: userMessage }],
+    });
+
+    return contents;
+  }
+
+  private buildConfig(options: AskOptions) {
+    const config: Record<string, any> = {
+      ...(this.vendorConfig?.google?.config ?? {}),
+    };
+
+    if (options.vendorConfig?.google?.config) {
+      Object.assign(config, options.vendorConfig.google.config);
+    }
+
+    if (this.systemInstruction) {
+      config.systemInstruction = this.systemInstruction;
+    }
+    if (typeof options.temperature === "number") {
+      config.temperature = options.temperature;
+    }
+    if (typeof options.max_tokens === "number") {
+      config.maxOutputTokens = options.max_tokens;
+    }
+
+    return config;
+  }
+
+  private async handleStream(stream: AsyncGenerator<any>) {
+    let visible = "";
+    let printedThought = false;
+
+    for await (const chunk of stream) {
+      const candidate = chunk?.candidates?.[0];
+      if (!candidate) continue;
+      const parts = candidate.content?.parts ?? [];
+      for (const part of parts) {
+        const text = part?.text;
+        if (!text) continue;
+        if (part?.thought) {
+          process.stdout.write(DIM + text + RESET);
+          printedThought = true;
+        } else {
+          if (printedThought && !visible.endsWith("\n")) {
+            process.stdout.write("\n");
+            printedThought = false;
+          }
+          process.stdout.write(text);
+          visible += text;
+        }
+      }
+    }
+
+    process.stdout.write("\n");
+    return visible;
+  }
+
+  private printCandidate(candidate: any) {
+    let visible = "";
+    let printedThought = false;
+    const parts = candidate?.content?.parts ?? [];
+    for (const part of parts) {
+      const text = part?.text;
+      if (!text) continue;
+      if (part?.thought) {
+        process.stdout.write(DIM + text + RESET);
+        printedThought = true;
+      } else {
+        if (printedThought) {
+          process.stdout.write("\n");
+          printedThought = false;
+        }
+        process.stdout.write(text);
+        visible += text;
+      }
+    }
+    process.stdout.write("\n");
+    return visible;
   }
 }

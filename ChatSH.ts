@@ -180,7 +180,8 @@ async function main() {
     : undefined;
 
   const repo = await RepoManager.load(repoPath, { include: includePatterns, exclude: excludePatterns });
-  const { model: resolvedModelName } = resolveModelSpec(model);
+  const resolvedSpec = resolveModelSpec(model);
+  const resolvedModelName = `${resolvedSpec.vendor}:${resolvedSpec.model}:${resolvedSpec.thinking}`;
   const ai = await GenAI(model);
 
   let shownChunks: Record<string, boolean> = {};

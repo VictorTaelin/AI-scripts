@@ -1,20 +1,19 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { AskOptions, ChatInstance } from "../GenAI";
-
-// ---------------------------------------------------------------------------
-// NOTE: The Anthropic SDK’s type exports have been unstable across recent
-//       versions.  To keep compilation green regardless of future renames, we
-//       avoid direct named‑type imports and fall back to `any` where necessary.
-// ---------------------------------------------------------------------------
+import type { AskOptions, ChatInstance, VendorConfig } from "../GenAI";
 
 type Role = "user" | "assistant";
+
+const DEFAULT_MAX_TOKENS = 64000;
+const MIN_THINKING_BUDGET = 1024;
+const MIN_ANSWER_RESERVE = 2048;
 
 export class AnthropicChat implements ChatInstance {
   private readonly client: Anthropic;
   private readonly model: string;
-  private readonly messages: { role: Role; content: any }[] = [];
+  private readonly vendorConfig?: VendorConfig;
+  private readonly messages: { role: Role; content: string }[] = [];
 
-  constructor(apiKey: string, model: string) {
+  constructor(apiKey: string, model: string, vendorConfig?: VendorConfig) {
     this.client = new Anthropic({
       apiKey,
       defaultHeaders: {
@@ -22,68 +21,61 @@ export class AnthropicChat implements ChatInstance {
       },
     });
     this.model = model;
+    this.vendorConfig = vendorConfig;
   }
 
   async ask(
     userMessage: string | null,
     options: AskOptions = {},
   ): Promise<string | { messages: any[] }> {
-    if (userMessage === null) return { messages: this.messages };
+    if (userMessage === null) {
+      return { messages: this.messages };
+    }
 
-    // ── options ----------------------------------------------------------
-    const enableThinking = this.model.endsWith("-think");
-    const baseModel = enableThinking ? this.model.replace("-think", "") : this.model;
+    const wantStream = options.stream !== false;
+    const mergedAnthropicConfig = {
+      ...this.vendorConfig?.anthropic,
+      ...options.vendorConfig?.anthropic,
+    };
 
-    let {
-      system,
-      temperature = enableThinking ? 1 : 0,
-      max_tokens = 32_000,
-      stream = true,
-      system_cacheable = false,
-    } = options;
-
-    // ── build message history -------------------------------------------
-    this.messages.push({ role: "user", content: userMessage });
-
-    // --------------------------------------------------------------------
-    // Build request params (typeless to dodge SDK type churn)
-    // --------------------------------------------------------------------
+    const maxTokens = options.max_tokens ?? DEFAULT_MAX_TOKENS;
     const params: any = {
-      model: baseModel,
-      temperature,
-      max_tokens,
-      stream,
+      model: this.model,
+      stream: wantStream,
+      max_tokens: maxTokens,
       messages: this.messages,
     };
 
-    if (system) {
-      params.system = system_cacheable
-        ? [{ type: "text", text: system, cache_control: { type: "ephemeral" } }]
-        : system;
+    if (options.system) {
+      params.system = options.system_cacheable
+        ? [{ type: "text", text: options.system, cache_control: { type: "ephemeral" } }]
+        : options.system;
     }
 
-    if (enableThinking) {
+    const thinking = mergedAnthropicConfig?.thinking;
+    if (thinking && typeof thinking === "object") {
+      const requested = Math.max(MIN_THINKING_BUDGET, thinking.budget_tokens);
+      const maxAllowed = Math.max(MIN_THINKING_BUDGET, maxTokens - MIN_ANSWER_RESERVE);
       params.thinking = {
-        type: "enabled",
-        budget_tokens: 4096,
+        ...thinking,
+        budget_tokens: Math.min(requested, maxAllowed),
       };
+    } else if (typeof options.temperature === "number") {
+      params.temperature = options.temperature;
     }
 
-    // ── perform request --------------------------------------------------
+    this.messages.push({ role: "user", content: userMessage });
+
     let plain = "";
 
-    if (stream) {
-      const streamResp: AsyncIterable<any> = (await this.client.messages.create(
-        params,
-      )) as any;
-
+    if (wantStream) {
+      const streamResp: AsyncIterable<any> = (await this.client.messages.create(params)) as any;
       let printedReasoning = false;
       for await (const event of streamResp) {
         if (event.type === "content_block_delta") {
           const delta: any = event.delta;
           if (delta.type === "thinking_delta") {
             process.stdout.write(`\x1b[2m${delta.thinking}\x1b[0m`);
-            plain += delta.thinking;
             printedReasoning = true;
           } else if (delta.type === "text_delta") {
             if (printedReasoning) {
@@ -96,7 +88,6 @@ export class AnthropicChat implements ChatInstance {
         }
       }
       process.stdout.write("\n");
-      this.messages.push({ role: "assistant", content: plain });
     } else {
       const message: any = await this.client.messages.create({ ...params, stream: false });
       const blocks: any[] = message.content;
@@ -104,7 +95,6 @@ export class AnthropicChat implements ChatInstance {
       for (const block of blocks) {
         if (block.type === "thinking") {
           process.stdout.write(`\x1b[2m${block.thinking}\x1b[0m`);
-          plain += block.thinking;
           printedReasoning = true;
         } else if (block.type === "text") {
           if (printedReasoning) {
@@ -116,9 +106,9 @@ export class AnthropicChat implements ChatInstance {
         }
       }
       process.stdout.write("\n");
-      this.messages.push({ role: "assistant", content: blocks });
     }
 
+    this.messages.push({ role: "assistant", content: plain });
     return plain;
   }
 }

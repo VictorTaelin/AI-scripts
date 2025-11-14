@@ -4,64 +4,69 @@ import * as path from 'path';
 import { AnthropicChat } from './Vendors/Anthropic';
 import { GoogleChat } from './Vendors/Google';
 import { OpenAIChat } from './Vendors/OpenAI';
-import { CerebrasChat } from './Vendors/Cerebras';
 import { XAIChat } from './Vendors/xai';
 import { countTokens } from 'gpt-tokenizer/model/gpt-4o';
 
 export const MODELS: Record<string, string> = {
-  // OpenAI (Responses API)
-  g:  'gpt-5.1',             // reasoning.effort = low (enforced in OpenAI.ts)
-  gt: 'gpt-5.1-thinking',    // alias -> calls gpt-5 with reasoning.effort = medium
-  G:  'gpt-5.1-thinking',
-  Gt: 'gpt-5.1-thinking',
+  // OpenAI GPT-5.1 family
+  'g-' : 'openai:gpt-5.1:low',
+  'g'  : 'openai:gpt-5.1:medium',
+  'g+' : 'openai:gpt-5.1:high',
+  'G'  : 'openai:gpt-5.1:high',
 
-  // o‑series
-  o: 'o4-mini',
-  O: 'gpt-5-pro',
+  // Anthropic Claude
+  's-' : 'anthropic:claude-sonnet-4-5-20250929:low',
+  's'  : 'anthropic:claude-sonnet-4-5-20250929:medium',
+  's+' : 'anthropic:claude-sonnet-4-5-20250929:high',
+  'S'  : 'anthropic:claude-sonnet-4-5-20250929:high',
 
-  // Anthropic
-  cm: 'claude-3-5-haiku-20241022',
-  c:  'claude-sonnet-4-5-20250929',
-  C:  'claude-opus-4-1-20250805',
-  ct: 'claude-sonnet-4-5-20250929-think',
-  Ct: 'claude-opus-4-1-20250805-think',
+  'o-' : 'anthropic:claude-opus-4-1-20250805:low',
+  'o'  : 'anthropic:claude-opus-4-1-20250805:medium',
+  'o+' : 'anthropic:claude-opus-4-1-20250805:high',
+  'O'  : 'anthropic:claude-opus-4-1-20250805:high',
 
-  // DeepSeek
-  d:  'deepseek-chat',
-  dt: 'deepseek-reasoner',
+  // Google Gemini
+  'i-' : 'google:gemini-2.5-pro:low',
+  'i'  : 'google:gemini-2.5-pro:medium',
+  'i+' : 'google:gemini-2.5-pro:high',
+  'I'  : 'google:gemini-2.5-pro:high',
 
-  // Meta (via OpenRouter)
-  lm: 'meta-llama/llama-3.1-8b-instruct',
-  l:  'meta-llama/llama-3.3-70b-instruct',
-  L:  'meta-llama/llama-3.1-405b-instruct',
-
-  // Google
-  i:  'gemini-2.5-flash',
-  I:  'gemini-2.5-pro',
-
-  // xAI
-  x:  'grok-4-0709',
-  xt: 'grok-code',
-
-  // Qwen (via Cerebras)
-  // q: "qwen-3-235b-a22b",
-  q:  "qwen-3-coder-480b",
-
-  // Kimi K2 (Moonshot AI)
-  k:  'kimi-latest',
-  kt: 'kimi-k2-thinking',
+  // xAI Grok
+  'x-' : 'xai:grok-4-0709:low',
+  'x'  : 'xai:grok-4-0709:medium',
+  'X'  : 'xai:grok-4-0709:high',
 };
 
-const SUPPORTED_VENDORS = new Set([
-  'openai',
-  'anthropic',
-  'deepseek',
-  'openrouter',
-  'google',
-  'xai',
-  'cerebras',
-  'kimi',
-]);
+export type Vendor = 'openai' | 'anthropic' | 'google' | 'openrouter' | 'xai';
+export type ThinkingLevel = 'none' | 'low' | 'medium' | 'high' | 'auto';
+
+export interface ResolvedModelSpec {
+  vendor: Vendor;
+  model: string;
+  thinking: ThinkingLevel;
+}
+
+export interface VendorConfig {
+  openai?: {
+    reasoning?: {
+      effort: 'minimal' | 'low' | 'medium' | 'high';
+    };
+  };
+  anthropic?: {
+    thinking?: {
+      type: 'enabled';
+      budget_tokens: number;
+    } | null;
+  };
+  google?: {
+    config?: {
+      thinkingConfig?: {
+        thinkingBudget?: number;
+        includeThoughts?: boolean;
+      };
+    };
+  };
+}
 
 export interface AskOptions {
   system?: string;
@@ -69,40 +74,34 @@ export interface AskOptions {
   max_tokens?: number;
   max_completion_tokens?: number;
   stream?: boolean;
-  system_cacheable?: boolean; // Anthropic only
-  reasoning_effort?: string;  // kept for non-Responses fallbacks
+  system_cacheable?: boolean;
+  vendorConfig?: VendorConfig;
 }
 
 export interface ChatInstance {
   ask(userMessage: string | null, options: AskOptions): Promise<string | { messages: any[] }>;
 }
 
-function getVendor(model: string): string {
-  const m
-    = model.startsWith('gpt-5-thinking') ? 'gpt-5'
-    : model.startsWith('gpt-5.1-thinking') ? 'gpt-5.1'
-    : model;
-  if (m.startsWith('gpt') || m.startsWith('o1') || m.startsWith('o3') || m.startsWith('o4') || m.startsWith('chat')) {
+const SUPPORTED_VENDORS = new Set<Vendor>(['openai', 'anthropic', 'google', 'openrouter', 'xai']);
+
+function inferVendor(model: string): Vendor {
+  const normalized = model.toLowerCase();
+  if (normalized.startsWith('gpt') || normalized.startsWith('o')) {
     return 'openai';
-  } else if (m.startsWith('claude')) {
-    return 'anthropic';
-  } else if (m.startsWith('deepseek')) {
-    return 'deepseek';
-  } else if (m.startsWith('meta')) {
-    return 'openrouter';
-  } else if (m.startsWith('gemini')) {
-    return 'google';
-  } else if (m.startsWith('grok')) {
-    return 'xai';
-  } else if (m.startsWith('qwen')) {
-    return 'cerebras';
-  } else if (m.startsWith('kimi')) {
-    return 'kimi';
-  } else if (m === 'grok-4-0709') {
-    return 'xai';
-  } else {
-    throw new Error(`Unsupported vendor: ${model}`);
   }
+  if (normalized.startsWith('claude')) {
+    return 'anthropic';
+  }
+  if (normalized.startsWith('gemini')) {
+    return 'google';
+  }
+  if (normalized.startsWith('grok')) {
+    return 'xai';
+  }
+  if (normalized.includes('/')) {
+    return 'openrouter';
+  }
+  throw new Error(`Unsupported vendor for model "${model}"`);
 }
 
 async function getToken(vendor: string): Promise<string> {
@@ -115,63 +114,190 @@ async function getToken(vendor: string): Promise<string> {
   }
 }
 
-export function resolveModelSpec(modelShortcode: string): { model: string; vendor: string } {
-  let vendorOverride: string | undefined;
-  let resolvedShortcode = modelShortcode.trim();
-
-  const colonIndex = resolvedShortcode.indexOf(':');
-  if (colonIndex !== -1) {
-    const explicitVendor = resolvedShortcode.slice(0, colonIndex).trim();
-    const explicitModel = resolvedShortcode.slice(colonIndex + 1).trim();
-    if (!explicitVendor) {
-      throw new Error('Vendor name is required before ":"');
-    }
-    if (!explicitModel) {
-      throw new Error('Model name is required after ":"');
-    }
-    vendorOverride = explicitVendor.toLowerCase();
-    if (!SUPPORTED_VENDORS.has(vendorOverride)) {
-      throw new Error(`Unsupported vendor override: ${explicitVendor}`);
-    }
-    resolvedShortcode = explicitModel;
+export function resolveModelSpec(spec: string): ResolvedModelSpec {
+  const trimmed = spec.trim();
+  if (!trimmed) {
+    throw new Error('Model spec must be provided');
   }
 
-  const model = MODELS[resolvedShortcode] || resolvedShortcode;
-  const vendor = vendorOverride || getVendor(model);
-  return { model, vendor };
+  const parts = trimmed.split(':');
+  if (parts.length === 1) {
+    const alias = MODELS[trimmed];
+    if (alias) {
+      if (alias.includes(':')) {
+        return resolveModelSpec(alias);
+      }
+      const vendor = inferVendor(alias);
+      return { model: alias, vendor, thinking: 'auto' };
+    }
+    const vendor = inferVendor(trimmed);
+    return { model: trimmed, vendor, thinking: 'auto' };
+  }
+
+  if (parts.length < 2 || parts.length > 3) {
+    throw new Error(
+      `Expected "vendor:model" or "vendor:model:thinking_budget", got "${spec}"`,
+    );
+  }
+
+  const [vendorRaw, modelRaw, thinkingRaw] = parts as [string, string, string | undefined];
+  const vendor = vendorRaw.trim().toLowerCase() as Vendor;
+  if (!SUPPORTED_VENDORS.has(vendor)) {
+    throw new Error(`Unsupported vendor: ${vendorRaw}`);
+  }
+
+  const modelValue = modelRaw.trim();
+  if (!modelValue) {
+    throw new Error('Model name must be provided after vendor');
+  }
+
+  let model = modelValue;
+  let aliasThinking: ThinkingLevel | undefined;
+  if (MODELS[modelValue]) {
+    const aliasSpec = resolveModelSpec(MODELS[modelValue]);
+    if (aliasSpec.vendor !== vendor) {
+      throw new Error(
+        `Model alias "${modelValue}" belongs to vendor "${aliasSpec.vendor}", not "${vendorRaw}"`,
+      );
+    }
+    model = aliasSpec.model;
+    aliasThinking = aliasSpec.thinking;
+  }
+
+  let thinking: ThinkingLevel = 'auto';
+  if (thinkingRaw) {
+    const normalized = thinkingRaw.trim().toLowerCase();
+    if (!['none', 'low', 'medium', 'high', 'auto'].includes(normalized)) {
+      throw new Error(
+        `Unsupported thinking budget "${thinkingRaw}", expected one of none|low|medium|high|auto`,
+      );
+    }
+    thinking = normalized as ThinkingLevel;
+  } else if (aliasThinking) {
+    thinking = aliasThinking;
+  }
+
+  return { vendor, model, thinking };
 }
 
-export async function GenAI(modelShortcode: string): Promise<ChatInstance> {
-  const { model, vendor } = resolveModelSpec(modelShortcode);
-
-  if (['openai', 'deepseek', 'openrouter', 'kimi'].includes(vendor)) {
-    const apiKey = await getToken(vendor);
-    let baseURL: string;
-    if (vendor === 'openai') {
-      baseURL = 'https://api.openai.com/v1';        // Responses API
-    } else if (vendor === 'deepseek') {
-      baseURL = 'https://api.deepseek.com/v1';      // Chat Completions fallback
-    } else if (vendor === 'kimi') {
-      baseURL = 'https://api.moonshot.ai/v1';       // Moonshot/Kimi API
-    } else {
-      baseURL = 'https://openrouter.ai/api/v1';     // Chat Completions fallback
-    }
-    return new OpenAIChat(apiKey, baseURL, model, vendor);
-  } else if (vendor === 'anthropic') {
-    const apiKey = await getToken(vendor);
-    return new AnthropicChat(apiKey, model);
-  } else if (vendor === 'google') {
-    const apiKey = await getToken(vendor);
-    return new GoogleChat(apiKey, model);
-  } else if (vendor === 'cerebras') {
-    const apiKey = await getToken(vendor);
-    return new CerebrasChat(apiKey, model);
-  } else if (vendor === 'xai') {
-    const apiKey = await getToken(vendor);
-    return new XAIChat(apiKey, model);
-  } else {
-    throw new Error(`Unsupported vendor: ${vendor}`);
+function mapThinkingToOpenAI(
+  model: string,
+  thinking: ThinkingLevel,
+): VendorConfig['openai'] | undefined {
+  if (!model.startsWith('gpt') && !model.startsWith('o')) {
+    return undefined;
   }
+  if (thinking === 'none' || thinking === 'auto') {
+    return undefined;
+  }
+  const effort = thinking === 'low'
+    ? 'low'
+    : thinking === 'medium'
+      ? 'medium'
+      : 'high';
+  return { reasoning: { effort } };
+}
+
+function mapThinkingToAnthropic(
+  thinking: ThinkingLevel,
+): VendorConfig['anthropic'] | undefined {
+  if (thinking === 'none') {
+    return { thinking: null };
+  }
+  if (thinking === 'auto') {
+    return undefined;
+  }
+  const budget = thinking === 'low' ? 2048 : thinking === 'medium' ? 4096 : 8192;
+  return {
+    thinking: {
+      type: 'enabled' as const,
+      budget_tokens: budget,
+    },
+  };
+}
+
+function mapThinkingToGoogle(thinking: ThinkingLevel): VendorConfig['google'] | undefined {
+  if (thinking === 'none') {
+    return {
+      config: {
+        thinkingConfig: {
+          includeThoughts: false,
+        },
+      },
+    };
+  }
+  if (thinking === 'auto') {
+    return {
+      config: {
+        thinkingConfig: {
+          includeThoughts: true,
+        },
+      },
+    };
+  }
+  const budget = thinking === 'low' ? 1024 : thinking === 'medium' ? 4096 : 8192;
+  return {
+    config: {
+      thinkingConfig: {
+        thinkingBudget: budget,
+        includeThoughts: true,
+      },
+    },
+  };
+}
+
+function buildVendorConfig(vendor: Vendor, model: string, thinking: ThinkingLevel): VendorConfig {
+  const cfg: VendorConfig = {};
+
+  if (vendor === 'openai' || vendor === 'openrouter') {
+    const reasoning = mapThinkingToOpenAI(model, thinking);
+    if (reasoning) {
+      cfg.openai = reasoning;
+    }
+  }
+
+  const anthropic = mapThinkingToAnthropic(thinking);
+  if (vendor === 'anthropic' && anthropic) {
+    cfg.anthropic = anthropic;
+  }
+
+  const google = mapThinkingToGoogle(thinking);
+  if (vendor === 'google' && google) {
+    cfg.google = google;
+  }
+
+  return cfg;
+}
+
+export async function GenAI(modelSpec: string): Promise<ChatInstance> {
+  const resolved = resolveModelSpec(modelSpec);
+  const vendorConfig = buildVendorConfig(resolved.vendor, resolved.model, resolved.thinking);
+
+  if (resolved.vendor === 'openai' || resolved.vendor === 'openrouter') {
+    const apiKey = await getToken(resolved.vendor);
+    const baseURL =
+      resolved.vendor === 'openai'
+        ? 'https://api.openai.com/v1'
+        : 'https://openrouter.ai/api/v1';
+    return new OpenAIChat(apiKey, baseURL, resolved.model, resolved.vendor, vendorConfig);
+  }
+
+  if (resolved.vendor === 'anthropic') {
+    const apiKey = await getToken(resolved.vendor);
+    return new AnthropicChat(apiKey, resolved.model, vendorConfig);
+  }
+
+  if (resolved.vendor === 'google') {
+    const apiKey = await getToken(resolved.vendor);
+    return new GoogleChat(apiKey, resolved.model, vendorConfig);
+  }
+
+  if (resolved.vendor === 'xai') {
+    const apiKey = await getToken(resolved.vendor);
+    return new XAIChat(apiKey, resolved.model, vendorConfig);
+  }
+
+  throw new Error(`Unsupported vendor: ${resolved.vendor}`);
 }
 
 export function tokenCount(text: string): number {

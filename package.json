@@ -34,7 +34,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
-    "@google/generative-ai": "^0.24.0",
+    "@google/genai": "^1.29.1",
     "@openrouter/ai-sdk-provider": "^0.4.5",
     "@portkey-ai/gateway": "^1.9.15",
     "apify-client": "^2.12.2",

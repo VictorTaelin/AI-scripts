@@ -4,7 +4,7 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import * as process from 'process';
-import { GenAI, MODELS, tokenCount, AskOptions } from './GenAI';
+import { GenAI, resolveModelSpec, tokenCount, AskOptions } from './GenAI';
 
 const SYSTEM = `You're a code completion assistant.`;
 const FILL   = '{:FILL_HERE:}';
@@ -25,6 +25,8 @@ async function main(): Promise<void> {
   const file  = process.argv[2];
   const mini  = process.argv[3];
   const model = process.argv[4] || 'c';
+  const resolvedModel = resolveModelSpec(model);
+  const modelDescriptor = `${resolvedModel.vendor}:${resolvedModel.model}:${resolvedModel.thinking}`;
 
   if (!file) {
     console.log('Usage: holefill <file> [<shortened_file>] [<model_name>]');
@@ -74,7 +76,7 @@ async function main(): Promise<void> {
                      `${SYSTEM}\n###\n${prompt}`, 'utf-8');
 
   console.log('token_count:', tokens);
-  console.log('model_label:', MODELS[model] || model);
+  console.log('model_label:', modelDescriptor);
 
   if (!mini_code.includes('.?.')) { console.log('No hole found.'); process.exit(1); }
 
@@ -95,7 +97,8 @@ async function main(): Promise<void> {
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const logDir = path.join(os.homedir(), '.ai', 'prompt_history');
   await fs.mkdir(logDir, { recursive: true });
-  await fs.writeFile(path.join(logDir, `${ts}_${MODELS[model] || model}.log`),
+  const safeModelLabel = modelDescriptor.replace(/[:/]/g, '_');
+  await fs.writeFile(path.join(logDir, `${ts}_${safeModelLabel}.log`),
                      `SYSTEM:\n${SYSTEM}\n\nPROMPT:\n${prompt}\n\nREPLY:\n${wrapped}\n\n`, 'utf-8');
 }
 
