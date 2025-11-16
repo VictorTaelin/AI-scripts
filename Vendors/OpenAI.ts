@@ -217,7 +217,7 @@ export class OpenAIChat implements ChatInstance {
     let visible = "";
 
     if (wantStream) {
-      const stream = await this.client.chat.completions.create({
+      const stream: AsyncIterable<any> = await (this.client.chat.completions.create as any)({
         ...params,
         stream: true,
       });
@@ -239,7 +239,7 @@ export class OpenAIChat implements ChatInstance {
       }
       process.stdout.write("\n");
     } else {
-      const resp: any = await this.client.chat.completions.create(params);
+      const resp: any = await (this.client.chat.completions.create as any)(params);
       const message = resp?.choices?.[0]?.message;
       if (message?.reasoning_content) {
         process.stdout.write(DIM + message.reasoning_content + RESET + "\n");

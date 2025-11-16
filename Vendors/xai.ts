@@ -8,6 +8,7 @@ export class XAIChat implements ChatInstance {
   private readonly model: string;
   private readonly vendorConfig?: VendorConfig;
   private readonly messages: { role: Role; content: string }[] = [];
+  private systemInstruction?: string;
 
   constructor(apiKey: string, model: string, vendorConfig?: VendorConfig) {
     this.client = new OpenAI({
@@ -18,12 +19,15 @@ export class XAIChat implements ChatInstance {
     this.vendorConfig = vendorConfig;
   }
 
-  private ensureSystemMessage(content?: string) {
-    if (!content) return;
+  private ensureSystemMessage(update?: string) {
+    if (typeof update === "string") {
+      this.systemInstruction = update;
+    }
+    if (!this.systemInstruction) return;
     if (this.messages[0] && this.messages[0].role === "system") {
-      this.messages[0] = { role: "system", content };
+      this.messages[0] = { role: "system", content: this.systemInstruction };
     } else {
-      this.messages.unshift({ role: "system", content });
+      this.messages.unshift({ role: "system", content: this.systemInstruction });
     }
   }
 
@@ -54,7 +58,7 @@ export class XAIChat implements ChatInstance {
     let visible = "";
 
     if (wantStream) {
-      const stream = await this.client.chat.completions.create({
+      const stream: AsyncIterable<any> = await (this.client.chat.completions.create as any)({
         ...(body as any),
         stream: true,
       });
@@ -67,7 +71,7 @@ export class XAIChat implements ChatInstance {
       }
       process.stdout.write("\n");
     } else {
-      const resp: any = await this.client.chat.completions.create(body as any);
+      const resp: any = await (this.client.chat.completions.create as any)(body as any);
       const msg: any = resp.choices?.[0]?.message ?? {};
       visible = msg.content ?? "";
       if (visible) {

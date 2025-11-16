@@ -3,7 +3,7 @@ import type { AskOptions, ChatInstance, VendorConfig } from "../GenAI";
 
 type Role = "user" | "assistant";
 
-const DEFAULT_MAX_TOKENS = 64000;
+const DEFAULT_MAX_TOKENS = 32000;
 const MIN_THINKING_BUDGET = 1024;
 const MIN_ANSWER_RESERVE = 2048;
 
@@ -12,6 +12,8 @@ export class AnthropicChat implements ChatInstance {
   private readonly model: string;
   private readonly vendorConfig?: VendorConfig;
   private readonly messages: { role: Role; content: string }[] = [];
+  private systemPrompt?: string;
+  private systemCacheable = false;
 
   constructor(apiKey: string, model: string, vendorConfig?: VendorConfig) {
     this.client = new Anthropic({
@@ -33,6 +35,12 @@ export class AnthropicChat implements ChatInstance {
     }
 
     const wantStream = options.stream !== false;
+    if (typeof options.system === "string") {
+      this.systemPrompt = options.system;
+    }
+    if (typeof options.system_cacheable === "boolean") {
+      this.systemCacheable = options.system_cacheable;
+    }
     const mergedAnthropicConfig = {
       ...this.vendorConfig?.anthropic,
       ...options.vendorConfig?.anthropic,
@@ -46,10 +54,10 @@ export class AnthropicChat implements ChatInstance {
       messages: this.messages,
     };
 
-    if (options.system) {
-      params.system = options.system_cacheable
-        ? [{ type: "text", text: options.system, cache_control: { type: "ephemeral" } }]
-        : options.system;
+    if (this.systemPrompt) {
+      params.system = this.systemCacheable
+        ? [{ type: "text", text: this.systemPrompt, cache_control: { type: "ephemeral" } }]
+        : this.systemPrompt;
     }
 
     const thinking = mergedAnthropicConfig?.thinking;

@@ -7,7 +7,6 @@ async function main() {
   // Options
   const opts = {
     system: "You are a helpful assistant.",
-    temperature: 0.0,
     stream: true,
   };
 

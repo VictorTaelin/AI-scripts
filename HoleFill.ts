@@ -6,15 +6,20 @@ import * as path from 'path';
 import * as process from 'process';
 import { GenAI, resolveModelSpec, tokenCount, AskOptions } from './GenAI';
 
-const SYSTEM = `You're a file completion assistant.`;
-const FILL   = '{:FILL_HERE:}';
-const TASK =
-  "### TASK\n\n" +
-  "- Complete the ${FILL} hole / gap on the file above.\n" +
-  "- Include your answer inside a <COMPLETION></COMPLETION> tag.\n" +
-  "- We will replace ${FILL} by the contents inside that tag.\n" +
-  "- Make sure to use context-aware spacing and indentation.\n" +
-  "- Do not include anything else in your final answer.";
+const FILL = '{:FILL_HERE:}';
+const SYSTEM = [
+  "You fill exactly one placeholder inside a user-provided file.",
+  "",
+  "Rules:",
+  `- The user sends the complete file text containing a single ${FILL} marker.`,
+  `- Inspect the surrounding text to understand the context (code, prose, question, etc.) and produce content that fits seamlessly.`,
+  "- Preserve indentation, spacing, and style so the replacement feels native to the file.",
+  "- Unless the user explicitly asks you to rewrite the entire file, output only the text that should replace the placeholder.",
+  "- When asked to rewrite the entire file, emit the full file contents while keeping everything else identical apart from the requested changes.",
+  "- Wrap the replacement in a single <COMPLETION>...</COMPLETION> block with no commentary before or after the tags.",
+  "- The text inside <COMPLETION> should be exactly what replaces the placeholder (no fences, no marker tokens).",
+  `- Never include ${FILL} in your response and never output more than one <COMPLETION> block.`,
+].join('\n');
 
 /* ------------------------------------------------------------------
  * Utility: force every ".?." placeholder to column-0
@@ -72,7 +77,7 @@ async function main(): Promise<void> {
   /* build prompt */
   const tokens = tokenCount(mini_code);
   const source = mini_code.replace('.?.', FILL);
-  const prompt = `${source}\n\n${TASK}`;
+  const prompt = source;
 
   await fs.mkdir(path.join(os.homedir(), '.ai'), { recursive: true });
   await fs.writeFile(path.join(os.homedir(), '.ai', '.holefill'),
