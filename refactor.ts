@@ -52,7 +52,8 @@ A file is considered IRRELEVANT when reading its contents is neither needed, nor
 helpful, to complete the TASK. Note that, even if a file is not directly related
 to the task, it can still be useful, if it provides helpful context, or simply
 helps the user better understand this project's style, organization and nuances.
-As such, exclude only files that are unequivocably unrelated to the TASK.
+Also, documentation files, and the main file, are almost always relevant.
+Exclude only files that are unequivocably unrelated to the TASK.
 
 To omit files located under a directory, issue the command:
 
