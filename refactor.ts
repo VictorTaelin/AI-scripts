@@ -25,7 +25,12 @@ interface PatchCommand {
   operations: PatchOperation[];
 }
 
-type EditCommand = WriteCommand | PatchCommand;
+interface DeleteCommand {
+  type: 'delete';
+  file: string;
+}
+
+type EditCommand = WriteCommand | PatchCommand | DeleteCommand;
 
 const COMPACTING_PROMPT_TEMPLATE = `You're a context compactor.
 
@@ -84,7 +89,11 @@ new code here
 >>>>>>> REPLACE
 </patch>
 
-Your response can include any number of <write/> and <patch/> commands.
+To delete a file entirely:
+
+<delete file=path_to_file/>
+
+Your response can include any number of <write/>, <patch/>, and <delete/> commands.
 
 Prefer <patch/> when:
 - editing small parts of large files
@@ -94,6 +103,8 @@ Prefer <write/> when:
 - creating a new file
 - the edited file is small
 - patching would be error-prone
+
+Use <delete/> to clean up.
 `;
 
 const IMPORT_PREFIXES = ['#[./', '--[./', '//[./'];
@@ -359,23 +370,34 @@ function parseOmitCommands(response: string, root: string): Set<string> {
 
 function parseCommands(response: string): EditCommand[] {
   const commands: EditCommand[] = [];
-  const regex = /<(write|patch)\b([^>]*)>([\s\S]*?)<\/\1>/gi;
+  const regex = /<(write|patch)\b([^>]*)>([\s\S]*?)<\/\1>|<delete\b([^>]*)(?:\/|>([\s\S]*?)<\/delete>)/gi;
   let match: RegExpExecArray | null;
   while ((match = regex.exec(response)) !== null) {
-    const type = match[1].toLowerCase() as 'write' | 'patch';
-    const attrs = match[2] || '';
-    const body = match[3] || '';
-    const fileAttr = extractFileAttribute(attrs);
-    if (!fileAttr) {
-      console.warn(`Skipping <${type}> command without a file attribute.`);
-      continue;
-    }
-    const normalizedFile = normalizeFileReference(fileAttr);
-    if (type === 'write') {
-      commands.push({ type: 'write', file: normalizedFile, content: body });
+    if (match[1]) {
+      const type = match[1].toLowerCase() as 'write' | 'patch';
+      const attrs = match[2] || '';
+      const body = match[3] || '';
+      const fileAttr = extractFileAttribute(attrs);
+      if (!fileAttr) {
+        console.warn(`Skipping <${type}> command without a file attribute.`);
+        continue;
+      }
+      const normalizedFile = normalizeFileReference(fileAttr);
+      if (type === 'write') {
+        commands.push({ type: 'write', file: normalizedFile, content: body });
+      } else {
+        const operations = parsePatchOperations(body);
+        commands.push({ type: 'patch', file: normalizedFile, operations });
+      }
     } else {
-      const operations = parsePatchOperations(body);
-      commands.push({ type: 'patch', file: normalizedFile, operations });
+      const attrs = match[4] || '';
+      const fileAttr = extractFileAttribute(attrs);
+      if (!fileAttr) {
+        console.warn('Skipping <delete> command without a file attribute.');
+        continue;
+      }
+      const normalizedFile = normalizeFileReference(fileAttr);
+      commands.push({ type: 'delete', file: normalizedFile });
     }
   }
   return commands;
@@ -399,8 +421,10 @@ async function applyCommands(commands: EditCommand[], root: string): Promise<voi
   for (const command of commands) {
     if (command.type === 'write') {
       await applyWrite(command, root);
-    } else {
+    } else if (command.type === 'patch') {
       await applyPatch(command, root);
+    } else if (command.type === 'delete') {
+      await applyDelete(command, root);
     }
   }
 }
@@ -433,6 +457,27 @@ async function applyPatch(command: PatchCommand, root: string): Promise<void> {
   }
   const finalContent = newline === '\r\n' ? current.replace(/\n/g, '\r\n') : current;
   await fs.writeFile(target, finalContent, 'utf8');
+}
+
+async function applyDelete(command: DeleteCommand, root: string): Promise<void> {
+  const target = path.resolve(root, command.file);
+  ensureInSandbox(target, root);
+  try {
+    const stats = await fs.stat(target);
+    if (!stats.isFile()) {
+      console.warn(`Skipping delete for ${command.file}: not a file.`);
+      return;
+    }
+    await fs.unlink(target);
+  } catch (err) {
+    const code = typeof err === 'object' && err && 'code' in err
+      ? (err as { code?: string }).code
+      : undefined;
+    if (code === 'ENOENT') {
+      return;
+    }
+    throw err;
+  }
 }
 
 function findImports(content: string): string[] {
