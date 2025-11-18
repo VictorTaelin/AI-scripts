@@ -27,8 +27,6 @@ interface PatchCommand {
 
 type EditCommand = WriteCommand | PatchCommand;
 
-const MARKERS = ['//!', '--!', '##!'];
-
 const COMPACTING_PROMPT_TEMPLATE = `You're a context compactor.
 
 Consider the following files:
@@ -83,13 +81,19 @@ new code here
 >>>>>>> REPLACE
 </patch>
 
-Your response can include any number of <write/> and <patch/> commands.`;
+Your response can include any number of <write/> and <patch/> commands.
 
-const COMMENT_IMPORT_PREFIXES = [
-  { start: '--./', end: '--' },
-  { start: '//./', end: '//' },
-  { start: '##./', end: '##' },
-];
+Prefer <patch/> when:
+- editing small parts of large files
+- the edits can be done unambiguously
+
+Prefer <write/> when:
+- creating a new file
+- the edited file is small
+- patching would be error-prone
+`;
+
+const IMPORT_PREFIXES = ['#[./', '--[./', '//[./'];
 
 function fail(message: string): never {
   console.error(`Error: ${message}`);
@@ -126,26 +130,22 @@ function buildModelSpec(base: ResolvedModelSpec, thinking: ThinkingLevel): strin
   return `${base.vendor}:${base.model}:${thinking}`;
 }
 
-function findMarker(content: string): { index: number; marker: string } | null {
-  let bestIndex = Number.POSITIVE_INFINITY;
-  let bestMarker: string | null = null;
-  for (const marker of MARKERS) {
-    const index = content.indexOf(marker);
-    if (index !== -1 && index < bestIndex) {
-      bestIndex = index;
-      bestMarker = marker;
-    }
+function formatContextEntries(entries: [string, string][]): string {
+  if (entries.length === 0) {
+    return '';
   }
-  return bestMarker ? { index: bestIndex, marker: bestMarker } : null;
+  return entries
+    .map(([file, contents]) => `${file}\n\`\`\`\n${contents}\n\`\`\``)
+    .join('\n\n');
+}
+
+function formatContextSubset(context: ContextMap, predicate: (file: string) => boolean): string {
+  const entries = Array.from(context.entries()).filter(([file]) => predicate(file));
+  return formatContextEntries(entries);
 }
 
 function formatContext(context: ContextMap): string {
-  if (context.size === 0) {
-    return '(no files loaded)';
-  }
-  return Array.from(context.entries())
-    .map(([file, contents]) => `${file}\n\`\`\`\n${contents}\n\`\`\``)
-    .join('\n\n');
+  return formatContextSubset(context, () => true) || '(no files loaded)';
 }
 
 function applyTemplate(template: string, filesSection: string, task: string): string {
@@ -214,6 +214,80 @@ function trimBlankEdges(text: string): string {
     return '';
   }
   return usesCRLF ? normalized.replace(/\n/g, '\r\n') : normalized;
+}
+
+function matchImportPath(line: string): string | null {
+  const trimmed = line.trim();
+  for (const prefix of IMPORT_PREFIXES) {
+    if (trimmed.startsWith(prefix) && trimmed.endsWith(']')) {
+      const inner = trimmed.slice(prefix.length, trimmed.length - 1).trim();
+      if (inner) {
+        return inner;
+      }
+    }
+  }
+  const includeMatch = trimmed.match(/^#include\s+(?:"([^"]+)"|'([^']+)')/);
+  if (includeMatch) {
+    return includeMatch[1] || includeMatch[2] || null;
+  }
+  return null;
+}
+
+function getInstructionText(line: string): string | null {
+  const trimmedLeft = line.replace(/^\s+/, '');
+  if (!trimmedLeft) {
+    return null;
+  }
+  if (matchImportPath(trimmedLeft)) {
+    return null;
+  }
+  if (trimmedLeft.startsWith('//')) {
+    return trimmedLeft.slice(2).replace(/^\s+/, '');
+  }
+  if (trimmedLeft.startsWith('--')) {
+    return trimmedLeft.slice(2).replace(/^\s+/, '');
+  }
+  if (trimmedLeft.startsWith('#')) {
+    return trimmedLeft.slice(1).replace(/^\s+/, '');
+  }
+  return null;
+}
+
+function extractPromptSections(raw: string): { body: string; prompt: string } {
+  const newline = raw.includes('\r\n') ? '\r\n' : '\n';
+  const normalized = raw.replace(/\r\n/g, '\n');
+  const lines = normalized.split('\n');
+  let idx = lines.length - 1;
+  while (idx >= 0 && lines[idx].trim() === '') {
+    idx--;
+  }
+  if (idx < 0) {
+    fail('File must end with a comment block describing the task.');
+  }
+  const promptLines: string[] = [];
+  while (idx >= 0) {
+    const line = lines[idx];
+    const instruction = getInstructionText(line);
+    if (instruction === null) {
+      break;
+    }
+    promptLines.push(instruction);
+    idx--;
+  }
+  if (promptLines.length === 0) {
+    fail('File must end with a comment block using //, --, or #.');
+  }
+  const prompt = trimBlankEdges(promptLines.reverse().join('\n'));
+  if (!prompt) {
+    fail('Prompt section is empty. Add instructions using a trailing comment block.');
+  }
+  const bodyLines = lines.slice(0, idx + 1);
+  while (bodyLines.length > 0 && bodyLines[bodyLines.length - 1].trim() === '') {
+    bodyLines.pop();
+  }
+  const bodyNormalized = bodyLines.join('\n');
+  const body = newline === '\r\n' ? bodyNormalized.replace(/\n/g, '\r\n') : bodyNormalized;
+  return { body, prompt };
 }
 
 function extractFileAttribute(attrs: string): string | null {
@@ -341,25 +415,9 @@ function findImports(content: string): string[] {
   const imports = new Set<string>();
   const lines = content.split(/\r?\n/);
   for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    let matched = false;
-    for (const { start, end } of COMMENT_IMPORT_PREFIXES) {
-      if (trimmed.startsWith(start) && trimmed.endsWith(end)) {
-        const inner = trimmed.slice(start.length, trimmed.length - end.length).trim();
-        if (inner) {
-          imports.add(inner);
-        }
-        matched = true;
-        break;
-      }
-    }
-    if (matched) {
-      continue;
-    }
-    const includeMatch = trimmed.match(/^#include\s+"([^\"]+)"/);
-    if (includeMatch) {
-      imports.add(includeMatch[1]);
+    const match = matchImportPath(line);
+    if (match) {
+      imports.add(match);
     }
   }
   return Array.from(imports);
@@ -373,20 +431,38 @@ async function collectContext(
   const context: ContextMap = new Map();
   const visited = new Set<string>();
 
-  async function visit(filePath: string, contents: string | null): Promise<void> {
+  async function visit(filePath: string, contents: string | null, importer?: string): Promise<void> {
     const resolved = path.resolve(filePath);
     ensureInSandbox(resolved, root);
     if (visited.has(resolved)) {
       return;
     }
+    let text: string;
+    if (contents !== null) {
+      text = contents;
+    } else {
+      try {
+        text = await fs.readFile(resolved, 'utf8');
+      } catch (err) {
+        const code = typeof err === 'object' && err && 'code' in err
+          ? (err as { code?: string }).code
+          : undefined;
+        if (code === 'ENOENT') {
+          const relMissing = toPosix(path.relative(root, resolved));
+          const suffix = importer ? ` (imported from ${importer})` : '';
+          console.warn(`WARNING: missing import ${relMissing}${suffix}`);
+          return;
+        }
+        throw err;
+      }
+    }
     visited.add(resolved);
-    const text = contents ?? await fs.readFile(resolved, 'utf8');
     const rel = toPosix(path.relative(root, resolved));
     context.set(rel, text);
     const imports = findImports(text);
     for (const importPath of imports) {
       const absoluteImport = path.resolve(path.dirname(resolved), importPath);
-      await visit(absoluteImport, null);
+      await visit(absoluteImport, null, rel);
     }
   }
 
@@ -405,45 +481,34 @@ async function main(): Promise<void> {
   const absoluteFile = path.resolve(workspaceRoot, fileArg);
   ensureInSandbox(absoluteFile, workspaceRoot);
 
-  const raw = await fs.readFile(absoluteFile, 'utf8');
-  const markerInfo = findMarker(raw);
-  if (!markerInfo) {
-    fail('No task marker found. Use one of //!, --!, or ##!');
-  }
-
-  const prompt = raw.slice(markerInfo.index + markerInfo.marker.length).trim();
-  if (!prompt) {
-    fail('Prompt section is empty. Add instructions after the marker.');
-  }
-
-  const fileContents = raw.slice(0, markerInfo.index);
   const baseResolved = await realpathSafe(absoluteFile);
   ensureInSandbox(baseResolved, workspaceRoot);
-
-  const context = await collectContext(baseResolved, fileContents, workspaceRoot);
-  const baseRel = toPosix(path.relative(workspaceRoot, baseResolved));
 
   const modelSpec = modelArg || 'g';
   const resolvedModel = resolveModelSpec(modelSpec);
   const resolvedModelId = `${resolvedModel.vendor}:${resolvedModel.model}:${resolvedModel.thinking}`;
-
-  const baseTokenCount = tokenCount(fileContents);
   console.log(`model: ${resolvedModelId}`);
-  console.log(`tokens: ${baseTokenCount}`);
+
+  const raw = await fs.readFile(absoluteFile, 'utf8');
+  const { body: fileContents, prompt } = extractPromptSections(raw);
+  const baseTokenCount = tokenCount(fileContents);
+  const context = await collectContext(baseResolved, fileContents, workspaceRoot);
+  const baseRel = toPosix(path.relative(workspaceRoot, baseResolved));
 
   let contextBlock = formatContext(context);
+  const importsBlock = formatContextSubset(context, file => file !== baseRel);
+  const importTokens = importsBlock ? tokenCount(importsBlock) : 0;
+  console.log(`token: ${baseTokenCount} + ${importTokens} = ${baseTokenCount + importTokens}`);
   const totalTokens = tokenCount(`${contextBlock}\n\n${prompt}`);
   const hasImports = context.size > 1;
   const shouldCompact = hasImports && totalTokens >= 8000;
   let compactPrompt = '';
   let compactResponse = '';
 
-  console.log(`Loaded ${context.size} context file(s).`);
-
   if (shouldCompact) {
+    const compactorSpec = buildModelSpec(resolvedModel, 'low');
     compactPrompt = applyTemplate(COMPACTING_PROMPT_TEMPLATE, contextBlock, prompt);
-    console.log('Running compaction...');
-    compactResponse = await askAI(buildModelSpec(resolvedModel, 'low'), compactPrompt);
+    compactResponse = await askAI(compactorSpec, compactPrompt);
 
     const omits = parseOmitCommands(compactResponse, workspaceRoot);
     for (const omit of omits) {
@@ -456,20 +521,20 @@ async function main(): Promise<void> {
       }
     }
     contextBlock = formatContext(context);
-    console.log(`Compacted to ${context.size} file(s).`);
+    const compactTokens = tokenCount(`${contextBlock}\n\n${prompt}`);
+    console.log(`token: ${compactTokens} (compacted)`);
   } else {
     const reasons: string[] = [];
     if (!hasImports) reasons.push('no imports detected');
     if (totalTokens < 8000) reasons.push('context under 8k tokens');
     const reasonText = reasons.join(' and ') || 'conditions not met';
-    console.log(`Skipping compaction (${reasonText}).`);
     compactPrompt = `[compaction skipped: ${reasonText}]`;
     compactResponse = '[compaction skipped]';
   }
 
-  console.log('Requesting edits...');
   const editingPrompt = applyTemplate(EDITING_PROMPT_TEMPLATE, contextBlock, prompt);
-  const editingResponse = await askAI(buildModelSpec(resolvedModel, 'high'), editingPrompt);
+  const editorSpec = buildModelSpec(resolvedModel, resolvedModel.thinking);
+  const editingResponse = await askAI(editorSpec, editingPrompt);
 
   try {
     await logHolefill2Session(compactPrompt, compactResponse, editingPrompt, editingResponse);
