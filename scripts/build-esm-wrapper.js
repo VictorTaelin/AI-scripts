@@ -13,10 +13,10 @@ writeFileSync('./dist/index.mjs', esmWrapper);
 console.log('Created ES module wrapper at dist/index.mjs');
 
 try {
-  if (existsSync('./dist/holefill2.js')) {
-    chmodSync('./dist/holefill2.js', 0o755);
-    console.log('Marked dist/holefill2.js as executable');
+  if (existsSync('./dist/refactor.js')) {
+    chmodSync('./dist/refactor.js', 0o755);
+    console.log('Marked dist/refactor.js as executable');
   }
 } catch (err) {
-  console.warn('Failed to adjust dist/holefill2.js permissions:', err);
+  console.warn('Failed to adjust dist/refactor.js permissions:', err);
 }

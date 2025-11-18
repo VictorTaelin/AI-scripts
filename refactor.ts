@@ -45,11 +45,14 @@ to the task, it can still be useful, if it provides helpful context, or simply
 helps the user better understand this project's style, organization and nuances.
 As such, exclude only files that are unequivocably unrelated to the TASK.
 
-To omit a file, you must use the following command:
+To omit files located under a directory, issue the command:
 
-<omit file=path_fo_file/>
+<omit path="./some/dir">
+file_a.ext
+file_b.ext
+</omit>
 
-Your response can include any number of <omit/> commands.`;
+List each file name on its own line inside the block. You can include multiple <omit/> commands.`;
 
 const EDITING_PROMPT_TEMPLATE = `You're a code editor.
 
@@ -165,14 +168,14 @@ function formatTimestamp(date: Date): string {
   return `${year}-${month}-${day}-${hours}-${minutes}-${seconds}`;
 }
 
-async function logHolefill2Session(
+async function logRefactorSession(
   compactPrompt: string,
   compactResponse: string,
   editingPrompt: string,
   editingResponse: string,
 ): Promise<void> {
   const aiDir = path.join(os.homedir(), '.ai');
-  const historyDir = path.join(aiDir, 'holefill2_history');
+  const historyDir = path.join(aiDir, 'refactor_history');
   await fs.mkdir(aiDir, { recursive: true });
   await fs.mkdir(historyDir, { recursive: true });
   const timestamp = formatTimestamp(new Date());
@@ -195,7 +198,7 @@ async function logHolefill2Session(
   for (const entry of entries) {
     const historyPath = path.join(historyDir, `${timestamp}-${entry.suffix}`);
     await fs.writeFile(historyPath, entry.content, 'utf8');
-    const latestPath = path.join(aiDir, `holefill2-${entry.suffix}`);
+    const latestPath = path.join(aiDir, `refactor-${entry.suffix}`);
     await fs.writeFile(latestPath, entry.content, 'utf8');
   }
 }
@@ -290,12 +293,17 @@ function extractPromptSections(raw: string): { body: string; prompt: string } {
   return { body, prompt };
 }
 
-function extractFileAttribute(attrs: string): string | null {
-  const match = attrs.match(/file\s*=\s*("([^\"]+)"|'([^']+)'|([^\s>]+))/i);
+function extractAttribute(attrs: string, name: string): string | null {
+  const regex = new RegExp(`${name}\\s*=\\s*("([^\\"]+)"|'([^']+)'|([^\\s>]+))`, 'i');
+  const match = attrs.match(regex);
   if (!match) {
     return null;
   }
   return match[2] ?? match[3] ?? match[4] ?? null;
+}
+
+function extractFileAttribute(attrs: string): string | null {
+  return extractAttribute(attrs, 'file');
 }
 
 function normalizeFileReference(reference: string): string {
@@ -315,10 +323,33 @@ async function askAI(model: string, prompt: string): Promise<string> {
 }
 
 function parseOmitCommands(response: string, root: string): Set<string> {
-  const regex = /<omit\b([^>]*)\/>/gi;
   const results = new Set<string>();
+  const blockRegex = /<omit\b([^>]*)>([\s\S]*?)<\/omit>/gi;
   let match: RegExpExecArray | null;
-  while ((match = regex.exec(response)) !== null) {
+  while ((match = blockRegex.exec(response)) !== null) {
+    const attrs = match[1] || '';
+    const body = match[2] || '';
+    const dirAttr = extractAttribute(attrs, 'path') ?? extractAttribute(attrs, 'dir');
+    if (!dirAttr) {
+      continue;
+    }
+    const dirNormalized = normalizeFileReference(dirAttr);
+    const dirAbsolute = path.resolve(root, dirNormalized);
+    ensureInSandbox(dirAbsolute, root);
+    for (const line of body.split(/\r?\n/)) {
+      const fileName = line.trim();
+      if (!fileName) {
+        continue;
+      }
+      const target = path.resolve(dirAbsolute, fileName);
+      ensureInSandbox(target, root);
+      const rel = toPosix(path.relative(root, target));
+      results.add(rel);
+    }
+  }
+
+  const legacyRegex = /<omit\b([^>]*)\/>/gi;
+  while ((match = legacyRegex.exec(response)) !== null) {
     const fileAttr = extractFileAttribute(match[1] || '');
     if (!fileAttr) {
       continue;
@@ -328,6 +359,7 @@ function parseOmitCommands(response: string, root: string): Set<string> {
     const rel = toPosix(path.relative(root, resolved));
     results.add(rel);
   }
+
   return results;
 }
 
@@ -385,7 +417,6 @@ async function applyWrite(command: WriteCommand, root: string): Promise<void> {
   await fs.mkdir(path.dirname(target), { recursive: true });
   const trimmed = trimBlankEdges(command.content);
   await fs.writeFile(target, trimmed, 'utf8');
-  console.log(`Wrote ${toPosix(path.relative(root, target))}`);
 }
 
 async function applyPatch(command: PatchCommand, root: string): Promise<void> {
@@ -408,7 +439,6 @@ async function applyPatch(command: PatchCommand, root: string): Promise<void> {
   }
   const finalContent = newline === '\r\n' ? current.replace(/\n/g, '\r\n') : current;
   await fs.writeFile(target, finalContent, 'utf8');
-  console.log(`Patched ${toPosix(path.relative(root, target))}`);
 }
 
 function findImports(content: string): string[] {
@@ -473,7 +503,7 @@ async function collectContext(
 async function main(): Promise<void> {
   const [, , fileArg, modelArg] = process.argv;
   if (!fileArg) {
-    console.log('Usage: holefill2 <file> [model]');
+    console.log('Usage: refactor <file> [model]');
     process.exit(1);
   }
 
@@ -513,12 +543,9 @@ async function main(): Promise<void> {
     const omits = parseOmitCommands(compactResponse, workspaceRoot);
     for (const omit of omits) {
       if (omit === baseRel) {
-        console.log(`Ignoring omit for primary file ${omit}.`);
         continue;
       }
-      if (context.delete(omit)) {
-        console.log(`Omitted ${omit}`);
-      }
+      context.delete(omit);
     }
     contextBlock = formatContext(context);
     const compactTokens = tokenCount(`${contextBlock}\n\n${prompt}`);
@@ -537,14 +564,13 @@ async function main(): Promise<void> {
   const editingResponse = await askAI(editorSpec, editingPrompt);
 
   try {
-    await logHolefill2Session(compactPrompt, compactResponse, editingPrompt, editingResponse);
+    await logRefactorSession(compactPrompt, compactResponse, editingPrompt, editingResponse);
   } catch (err) {
-    console.warn('Failed to record holefill2 session history:', err);
+    console.warn('Failed to record refactor session history:', err);
   }
 
   const commands = parseCommands(editingResponse);
   if (commands.length === 0) {
-    console.log('No <write/> or <patch/> commands found in the AI response.');
     return;
   }
 

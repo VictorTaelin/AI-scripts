@@ -12,7 +12,7 @@
     }
   },
   "bin": {
-    "holefill2": "./dist/holefill2.js"
+    "refactor": "./dist/refactor.js"
   },
   "files": [
     "dist"
