@@ -4,7 +4,11 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import * as process from 'process';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { GenAI, resolveModelSpec, ResolvedModelSpec, ThinkingLevel, tokenCount } from './GenAI';
+
+const execFileAsync = promisify(execFile);
 
 type ContextMap = Map<string, string>;
 
@@ -141,6 +145,42 @@ async function realpathSafe(p: string): Promise<string> {
   }
 }
 
+async function pathExists(p: string): Promise<boolean> {
+  try {
+    await fs.stat(p);
+    return true;
+  } catch (err) {
+    if ((err as { code?: string }).code === 'ENOENT') {
+      return false;
+    }
+    throw err;
+  }
+}
+
+async function runGit(args: string[], root: string): Promise<void> {
+  await execFileAsync('git', args, { cwd: root });
+}
+
+async function gitAddFile(relativePath: string, root: string, gitAvailable: boolean): Promise<void> {
+  if (!gitAvailable) return;
+  try {
+    await runGit(['add', relativePath], root);
+  } catch (err) {
+    console.warn(`Failed to git add ${relativePath}:`, err);
+  }
+}
+
+async function gitRemoveFile(relativePath: string, root: string, gitAvailable: boolean): Promise<boolean> {
+  if (!gitAvailable) return false;
+  try {
+    await runGit(['rm', '-f', relativePath], root);
+    return true;
+  } catch (err) {
+    console.warn(`Failed to git rm ${relativePath}:`, err);
+    return false;
+  }
+}
+
 function buildModelSpec(base: ResolvedModelSpec, thinking: ThinkingLevel): string {
   return `${base.vendor}:${base.model}:${thinking}`;
 }
@@ -271,7 +311,7 @@ function extractPromptSections(raw: string): { body: string; prompt: string } {
     idx--;
   }
   if (idx < 0) {
-    fail('File must end with a comment block describing the task.');
+    throw new Error('File must end with a comment block describing the task.');
   }
   const promptLines: string[] = [];
   while (idx >= 0) {
@@ -284,11 +324,11 @@ function extractPromptSections(raw: string): { body: string; prompt: string } {
     idx--;
   }
   if (promptLines.length === 0) {
-    fail('File must end with a comment block using //, --, or #.');
+    throw new Error('File must end with a comment block using //, --, or #.');
   }
   const prompt = trimBlankEdges(promptLines.reverse().join('\n'));
   if (!prompt) {
-    fail('Prompt section is empty. Add instructions using a trailing comment block.');
+    throw new Error('Prompt section is empty. Add instructions using a trailing comment block.');
   }
   const bodyLines = lines.slice(0, idx + 1);
   while (bodyLines.length > 0 && bodyLines[bodyLines.length - 1].trim() === '') {
@@ -418,24 +458,38 @@ function parsePatchOperations(body: string): PatchOperation[] {
   return operations;
 }
 
-async function applyCommands(commands: EditCommand[], root: string): Promise<void> {
+async function applyCommands(commands: EditCommand[], root: string, gitAvailable: boolean): Promise<void> {
   for (const command of commands) {
     if (command.type === 'write') {
-      await applyWrite(command, root);
+      await applyWrite(command, root, gitAvailable);
     } else if (command.type === 'patch') {
       await applyPatch(command, root);
     } else if (command.type === 'delete') {
-      await applyDelete(command, root);
+      await applyDelete(command, root, gitAvailable);
     }
   }
 }
 
-async function applyWrite(command: WriteCommand, root: string): Promise<void> {
+async function applyWrite(command: WriteCommand, root: string, gitAvailable: boolean): Promise<void> {
   const target = path.resolve(root, command.file);
   ensureInSandbox(target, root);
+  let existed = true;
+  try {
+    await fs.stat(target);
+  } catch (err) {
+    if ((err as { code?: string }).code === 'ENOENT') {
+      existed = false;
+    } else {
+      throw err;
+    }
+  }
   await fs.mkdir(path.dirname(target), { recursive: true });
   const trimmed = trimBlankEdges(command.content);
   await fs.writeFile(target, trimmed, 'utf8');
+  if (!existed) {
+    const relative = toPosix(path.relative(root, target));
+    await gitAddFile(relative, root, gitAvailable);
+  }
 }
 
 async function applyPatch(command: PatchCommand, root: string): Promise<void> {
@@ -460,24 +514,35 @@ async function applyPatch(command: PatchCommand, root: string): Promise<void> {
   await fs.writeFile(target, finalContent, 'utf8');
 }
 
-async function applyDelete(command: DeleteCommand, root: string): Promise<void> {
+async function applyDelete(command: DeleteCommand, root: string, gitAvailable: boolean): Promise<void> {
   const target = path.resolve(root, command.file);
   ensureInSandbox(target, root);
+  let stats;
   try {
-    const stats = await fs.stat(target);
-    if (!stats.isFile()) {
-      console.warn(`Skipping delete for ${command.file}: not a file.`);
-      return;
-    }
-    await fs.unlink(target);
+    stats = await fs.stat(target);
   } catch (err) {
     const code = typeof err === 'object' && err && 'code' in err
       ? (err as { code?: string }).code
       : undefined;
     if (code === 'ENOENT') {
+      if (gitAvailable) {
+        const relative = toPosix(path.relative(root, target));
+        await gitRemoveFile(relative, root, gitAvailable);
+      }
       return;
     }
     throw err;
+  }
+
+  if (!stats.isFile()) {
+    console.warn(`Skipping delete for ${command.file}: not a file.`);
+    return;
+  }
+
+  const relative = toPosix(path.relative(root, target));
+  const removedViaGit = await gitRemoveFile(relative, root, gitAvailable);
+  if (!removedViaGit) {
+    await fs.unlink(target);
   }
 }
 
@@ -550,6 +615,7 @@ async function main(): Promise<void> {
   const workspaceRoot = await realpathSafe(process.cwd());
   const absoluteFile = path.resolve(workspaceRoot, fileArg);
   ensureInSandbox(absoluteFile, workspaceRoot);
+  const gitAvailable = await pathExists(path.join(workspaceRoot, '.git'));
   const logContext = await initSessionLogContext();
 
   const baseResolved = await realpathSafe(absoluteFile);
@@ -571,7 +637,7 @@ async function main(): Promise<void> {
     baseTokenCount = tokenCount(fileContents);
   } catch (err) {
     const fallbackTokens = tokenCount(trimBlankEdges(raw));
-    console.log(`token: ${fallbackTokens} + 0 = ${fallbackTokens}`);
+    console.log(`count: ${fallbackTokens} + 0 = ${fallbackTokens} tokens`);
     throw err;
   }
   const context = await collectContext(baseResolved, fileContents, workspaceRoot);
@@ -581,7 +647,8 @@ async function main(): Promise<void> {
   const fullContextBlock = contextBlock;
   const importsBlock = formatContextSubset(context, file => file !== baseRel);
   const importTokens = importsBlock ? tokenCount(importsBlock) : 0;
-  console.log(`token: ${baseTokenCount} + ${importTokens} = ${baseTokenCount + importTokens}`);
+  const baseLineTotal = baseTokenCount + importTokens;
+  console.log(`count: ${baseTokenCount} + ${importTokens} = ${baseLineTotal} tokens`);
   const totalTokens = tokenCount(`${fullContextBlock}\n\n${prompt}`);
   const hasImports = context.size > 1;
   const shouldCompact = hasImports && totalTokens >= 8000;
@@ -603,8 +670,15 @@ async function main(): Promise<void> {
       context.delete(omit);
     }
     contextBlock = formatContext(context);
-    const compactTokens = tokenCount(`${contextBlock}\n\n${prompt}`);
-    console.log(`token: ${compactTokens} (compacted)`);
+    const compactImportsBlock = formatContextSubset(context, file => file !== baseRel);
+    const compactImportTokens = compactImportsBlock ? tokenCount(compactImportsBlock) : 0;
+    const compactTotal = baseTokenCount + compactImportTokens;
+    const compactionPercent = importTokens > 0
+      ? Math.max(0, Math.min(100, Math.round((importTokens - compactImportTokens) * 100 / importTokens)))
+      : 0;
+    console.log(
+      `count: ${baseTokenCount} + ${compactImportTokens} = ${compactTotal} tokens (compaction: ${compactionPercent}%)`,
+    );
   } else {
     const reasons: string[] = [];
     if (!hasImports) reasons.push('no imports detected');
@@ -636,10 +710,11 @@ async function main(): Promise<void> {
     return;
   }
 
-  await applyCommands(commands, workspaceRoot);
+  await applyCommands(commands, workspaceRoot, gitAvailable);
 }
 
 main().catch(err => {
-  console.error(err);
+  const message = err instanceof Error ? err.message : String(err);
+  console.error(`Error: ${message}`);
   process.exit(1);
 });
