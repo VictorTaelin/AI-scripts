@@ -104,7 +104,8 @@ Prefer <write/> when:
 - the edited file is small
 - patching would be error-prone
 
-Use <delete/> to clean up.
+Always use <delete/> to clean up (ex: when you "rename" a file by writing a new
+one, when you combine files, etc.).
 `;
 
 const IMPORT_PREFIXES = ['#[./', '--[./', '//[./'];
