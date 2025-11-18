@@ -168,12 +168,15 @@ function formatTimestamp(date: Date): string {
   return `${year}-${month}-${day}-${hours}-${minutes}-${seconds}`;
 }
 
-async function logRefactorSession(
-  compactPrompt: string,
-  compactResponse: string,
-  editingPrompt: string,
-  editingResponse: string,
-): Promise<void> {
+interface SessionLogData {
+  fullEditingPrompt: string;
+  compactedEditingPrompt: string;
+  editingResponse: string;
+  compactorPrompt: string;
+  compactorResponse: string;
+}
+
+async function logRefactorSession(data: SessionLogData): Promise<void> {
   const aiDir = path.join(os.homedir(), '.ai');
   const historyDir = path.join(aiDir, 'refactor_history');
   await fs.mkdir(aiDir, { recursive: true });
@@ -181,18 +184,22 @@ async function logRefactorSession(
   const timestamp = formatTimestamp(new Date());
 
   const entries: { suffix: string; content: string }[] = [
-    { suffix: 'prompt.txt', content: editingPrompt },
+    { suffix: 'prompt.txt', content: data.fullEditingPrompt },
+    { suffix: 'compact.txt', content: data.compactedEditingPrompt },
     {
-      suffix: 'compact.txt',
+      suffix: 'response.txt',
       content: [
-        '=== COMPACTING PROMPT ===\n',
-        compactPrompt,
-        '\n\n=== COMPACTING RESPONSE ===\n',
-        compactResponse,
-        '\n',
-      ].join(''),
+        '=== COMPACTOR PROMPT ===',
+        data.compactorPrompt,
+        '',
+        '=== COMPACTOR RESPONSE ===',
+        data.compactorResponse,
+        '',
+        '=== EDITOR RESPONSE ===',
+        data.editingResponse,
+        '',
+      ].join('\n'),
     },
-    { suffix: 'response.txt', content: editingResponse },
   ];
 
   for (const entry of entries) {
@@ -526,14 +533,16 @@ async function main(): Promise<void> {
   const baseRel = toPosix(path.relative(workspaceRoot, baseResolved));
 
   let contextBlock = formatContext(context);
+  const fullContextBlock = contextBlock;
   const importsBlock = formatContextSubset(context, file => file !== baseRel);
   const importTokens = importsBlock ? tokenCount(importsBlock) : 0;
   console.log(`token: ${baseTokenCount} + ${importTokens} = ${baseTokenCount + importTokens}`);
-  const totalTokens = tokenCount(`${contextBlock}\n\n${prompt}`);
+  const totalTokens = tokenCount(`${fullContextBlock}\n\n${prompt}`);
   const hasImports = context.size > 1;
   const shouldCompact = hasImports && totalTokens >= 8000;
   let compactPrompt = '';
   let compactResponse = '';
+  const hypotheticalEditingPrompt = applyTemplate(EDITING_PROMPT_TEMPLATE, fullContextBlock, prompt);
 
   if (shouldCompact) {
     const compactorSpec = buildModelSpec(resolvedModel, 'low');
@@ -564,7 +573,13 @@ async function main(): Promise<void> {
   const editingResponse = await askAI(editorSpec, editingPrompt);
 
   try {
-    await logRefactorSession(compactPrompt, compactResponse, editingPrompt, editingResponse);
+    await logRefactorSession({
+      fullEditingPrompt: hypotheticalEditingPrompt,
+      compactedEditingPrompt: editingPrompt,
+      editingResponse,
+      compactorPrompt: compactPrompt,
+      compactorResponse: compactResponse,
+    });
   } catch (err) {
     console.warn('Failed to record refactor session history:', err);
   }
