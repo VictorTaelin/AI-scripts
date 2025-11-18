@@ -26,10 +26,10 @@ export const MODELS: Record<string, string> = {
   'O'  : 'anthropic:claude-opus-4-1-20250805:high',
 
   // Google Gemini
-  'i-' : 'google:gemini-2.5-pro:low',
-  'i'  : 'google:gemini-2.5-pro:medium',
-  'i+' : 'google:gemini-2.5-pro:high',
-  'I'  : 'google:gemini-2.5-pro:high',
+  'i-' : 'google:gemini-3-pro-preview:low',
+  'i'  : 'google:gemini-3-pro-preview:medium',
+  'i+' : 'google:gemini-3-pro-preview:high',
+  'I'  : 'google:gemini-3-pro-preview:high',
 
   // xAI Grok
   'x-' : 'xai:grok-4-0709:low',
