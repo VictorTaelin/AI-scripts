@@ -168,45 +168,32 @@ function formatTimestamp(date: Date): string {
   return `${year}-${month}-${day}-${hours}-${minutes}-${seconds}`;
 }
 
-interface SessionLogData {
-  fullEditingPrompt: string;
-  compactedEditingPrompt: string;
-  editingResponse: string;
-  compactorPrompt: string;
-  compactorResponse: string;
+interface SessionLogContext {
+  aiDir: string;
+  historyDir: string;
+  timestamp: string;
 }
 
-async function logRefactorSession(data: SessionLogData): Promise<void> {
+async function initSessionLogContext(): Promise<SessionLogContext> {
   const aiDir = path.join(os.homedir(), '.ai');
   const historyDir = path.join(aiDir, 'refactor_history');
   await fs.mkdir(aiDir, { recursive: true });
   await fs.mkdir(historyDir, { recursive: true });
-  const timestamp = formatTimestamp(new Date());
+  return { aiDir, historyDir, timestamp: formatTimestamp(new Date()) };
+}
 
-  const entries: { suffix: string; content: string }[] = [
-    { suffix: 'prompt.txt', content: data.fullEditingPrompt },
-    { suffix: 'compact.txt', content: data.compactedEditingPrompt },
-    {
-      suffix: 'response.txt',
-      content: [
-        '=== COMPACTOR PROMPT ===',
-        data.compactorPrompt,
-        '',
-        '=== COMPACTOR RESPONSE ===',
-        data.compactorResponse,
-        '',
-        '=== EDITOR RESPONSE ===',
-        data.editingResponse,
-        '',
-      ].join('\n'),
-    },
-  ];
-
-  for (const entry of entries) {
-    const historyPath = path.join(historyDir, `${timestamp}-${entry.suffix}`);
-    await fs.writeFile(historyPath, entry.content, 'utf8');
-    const latestPath = path.join(aiDir, `refactor-${entry.suffix}`);
-    await fs.writeFile(latestPath, entry.content, 'utf8');
+async function writeSessionLog(
+  ctx: SessionLogContext,
+  suffix: 'full_prompt.txt' | 'mini_prompt.txt' | 'response.txt',
+  content: string,
+): Promise<void> {
+  try {
+    const historyPath = path.join(ctx.historyDir, `${ctx.timestamp}-${suffix}`);
+    await fs.writeFile(historyPath, content, 'utf8');
+    const latestPath = path.join(ctx.aiDir, `refactor-${suffix}`);
+    await fs.writeFile(latestPath, content, 'utf8');
+  } catch (err) {
+    console.warn(`Failed to write refactor ${suffix}:`, err);
   }
 }
 
@@ -517,6 +504,7 @@ async function main(): Promise<void> {
   const workspaceRoot = await realpathSafe(process.cwd());
   const absoluteFile = path.resolve(workspaceRoot, fileArg);
   ensureInSandbox(absoluteFile, workspaceRoot);
+  const logContext = await initSessionLogContext();
 
   const baseResolved = await realpathSafe(absoluteFile);
   ensureInSandbox(baseResolved, workspaceRoot);
@@ -527,8 +515,19 @@ async function main(): Promise<void> {
   console.log(`model: ${resolvedModelId}`);
 
   const raw = await fs.readFile(absoluteFile, 'utf8');
-  const { body: fileContents, prompt } = extractPromptSections(raw);
-  const baseTokenCount = tokenCount(fileContents);
+  let fileContents = '';
+  let prompt = '';
+  let baseTokenCount = 0;
+  try {
+    const extracted = extractPromptSections(raw);
+    fileContents = extracted.body;
+    prompt = extracted.prompt;
+    baseTokenCount = tokenCount(fileContents);
+  } catch (err) {
+    const fallbackTokens = tokenCount(trimBlankEdges(raw));
+    console.log(`token: ${fallbackTokens} + 0 = ${fallbackTokens}`);
+    throw err;
+  }
   const context = await collectContext(baseResolved, fileContents, workspaceRoot);
   const baseRel = toPosix(path.relative(workspaceRoot, baseResolved));
 
@@ -543,6 +542,7 @@ async function main(): Promise<void> {
   let compactPrompt = '';
   let compactResponse = '';
   const hypotheticalEditingPrompt = applyTemplate(EDITING_PROMPT_TEMPLATE, fullContextBlock, prompt);
+  await writeSessionLog(logContext, 'full_prompt.txt', hypotheticalEditingPrompt);
 
   if (shouldCompact) {
     const compactorSpec = buildModelSpec(resolvedModel, 'low');
@@ -569,20 +569,21 @@ async function main(): Promise<void> {
   }
 
   const editingPrompt = applyTemplate(EDITING_PROMPT_TEMPLATE, contextBlock, prompt);
+  await writeSessionLog(logContext, 'mini_prompt.txt', editingPrompt);
   const editorSpec = buildModelSpec(resolvedModel, resolvedModel.thinking);
   const editingResponse = await askAI(editorSpec, editingPrompt);
-
-  try {
-    await logRefactorSession({
-      fullEditingPrompt: hypotheticalEditingPrompt,
-      compactedEditingPrompt: editingPrompt,
-      editingResponse,
-      compactorPrompt: compactPrompt,
-      compactorResponse: compactResponse,
-    });
-  } catch (err) {
-    console.warn('Failed to record refactor session history:', err);
-  }
+  const responseLog = [
+    '=== COMPACTOR PROMPT ===',
+    compactPrompt,
+    '',
+    '=== COMPACTOR RESPONSE ===',
+    compactResponse,
+    '',
+    '=== EDITOR RESPONSE ===',
+    editingResponse,
+    '',
+  ].join('\n');
+  await writeSessionLog(logContext, 'response.txt', responseLog);
 
   const commands = parseCommands(editingResponse);
   if (commands.length === 0) {
