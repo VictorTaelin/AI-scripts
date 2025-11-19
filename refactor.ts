@@ -99,7 +99,7 @@ The task you must perform is:
 
 To replace a file, or to create a new file, output:
 
-<write file=path_to_file>
+<write file=path-to-file>
 complete file contents
 </write>
 
@@ -111,11 +111,11 @@ new block contents
 
 To delete a file entirely, output:
 
-<delete file=path_to_file/>
+<delete file=path-to-file/>
 
 For example, given the file:
 
-/hello_10.js
+./hello-10.js:
 
 !0
 // prints hello 10 times
@@ -347,8 +347,12 @@ function formatBlocks(state: BlockState, omit?: Set<number>): string {
   const includeBlock = (block: BlockEntry) => !omit || !omit.has(block.id);
   const sections: string[] = [];
   for (const group of state.files) {
-    const lines: string[] = [`/${group.file}`];
     const visibleBlocks = group.blocks.filter(includeBlock);
+    if (omit && omit.size > 0 && visibleBlocks.length === 0) {
+      continue;
+    }
+    const prefix = group.file.startsWith('./') ? group.file : `./${group.file}`;
+    const lines: string[] = [`${prefix}:`];
     if (visibleBlocks.length > 0) {
       for (const block of visibleBlocks) {
         lines.push('');
@@ -357,6 +361,9 @@ function formatBlocks(state: BlockState, omit?: Set<number>): string {
       }
     }
     sections.push(lines.join('\n'));
+  }
+  if (sections.length === 0) {
+    return '';
   }
   return sections.join('\n\n');
 }
@@ -403,7 +410,7 @@ interface SessionLogContext {
 
 async function initSessionLogContext(): Promise<SessionLogContext> {
   const aiDir = path.join(os.homedir(), '.ai');
-  const historyDir = path.join(aiDir, 'refactor_history');
+  const historyDir = path.join(aiDir, 'refactor-history');
   await fs.mkdir(aiDir, { recursive: true });
   await fs.mkdir(historyDir, { recursive: true });
   return { aiDir, historyDir, timestamp: formatTimestamp(new Date()) };
@@ -411,7 +418,7 @@ async function initSessionLogContext(): Promise<SessionLogContext> {
 
 async function writeSessionLog(
   ctx: SessionLogContext,
-  suffix: 'full_prompt.txt' | 'mini_prompt.txt' | 'response.txt',
+  suffix: 'full-prompt.txt' | 'mini-prompt.txt' | 'response.txt',
   content: string,
 ): Promise<void> {
   try {
@@ -859,7 +866,7 @@ async function main(): Promise<void> {
   let compactPrompt = '';
   let compactResponse = '';
   const hypotheticalEditingPrompt = applyTemplate(EDITING_PROMPT_TEMPLATE, fullContextBlock, prompt);
-  await writeSessionLog(logContext, 'full_prompt.txt', hypotheticalEditingPrompt);
+  await writeSessionLog(logContext, 'full-prompt.txt', hypotheticalEditingPrompt);
 
   if (shouldCompact) {
     const compactorSpec = buildModelSpec(resolvedModel, 'low');
@@ -887,7 +894,7 @@ async function main(): Promise<void> {
   }
 
   const editingPrompt = applyTemplate(EDITING_PROMPT_TEMPLATE, contextBlock, prompt);
-  await writeSessionLog(logContext, 'mini_prompt.txt', editingPrompt);
+  await writeSessionLog(logContext, 'mini-prompt.txt', editingPrompt);
   const editorSpec = buildModelSpec(resolvedModel, resolvedModel.thinking);
   const editingResponse = await askAI(editorSpec, editingPrompt);
   const responseLog = [
