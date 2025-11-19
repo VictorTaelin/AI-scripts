@@ -56,6 +56,8 @@ Consider the following files, split into labeled blocks:
 
 {{FILES}}
 
+(Each block is annotated with a leading '!id' marker, identifying it.)
+
 And consider the following TASK:
 
 {{TASK}}
@@ -64,17 +66,20 @@ Your goal is NOT to complete the TASK.
 
 Your goal is to omit EVERY block that is IRRELEVANT to the TASK.
 
-A block is considered IRRELEVANT when reading its contents is neither needed,
-nor helpful, to complete the TASK. If a block must be directly edited to
-complete the TASK, it is RELEVANT. If a block contains helpful documentation
-about the domain, it is RELEVANT. If a block contains similar functions, or even
-captures the codebase's style in a way that will be helpful to solve the TASK,
-it is RELEVANT. When a block is unequivocally unrelated to the TASK, then, and
-only then, it is IRRELEVANT.
+A block is RELEVANT when:
+- It must be directly edited to complete the TASK.
+- It declares types used on blocks that must be edited.
+- It defines functions used on blocks that must be edited.
+- It declares types or functions used on blocks that declare types of functions
+  that must be used (and so on, transitively).
+- It contains helpful documentation about the domain.
+- It contain similar functions that can serve as inspiration.
+- It helps understanding the codebase's style.
 
-Each block is annotated with a leading '!id' marker, identifying it.
+A block is IRRELEVANT when:
+- It is unequivocally, completely unrelated to the TASK at hands.
 
-To omit blocks, output an omit command listing their ids:
+To omit blocks, output an <omit> command listing their ids:
 
 <omit>
 12
