@@ -76,7 +76,7 @@ A block is RELEVANT when:
   (and so on, transitively).
 - It contains helpful documentation about the domain.
 - It contain similar functions that can serve as inspiration.
-- It helps understanding the codebase's style.
+- It can help understanding the codebase's style or domain.
 
 A block is IRRELEVANT when:
 - It is unequivocally, completely unrelated to the TASK at hands.
