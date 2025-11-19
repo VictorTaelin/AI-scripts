@@ -99,7 +99,7 @@ You must complete a code editing task on the following files:
 
 Note that the files were split into blocks (sequences of non-empty lines). Each
 block is annotated with a leading '!id'. These markers are NOT part of the file;
-they just identifiers used to let you choose which parts of the file to patch.
+they're identifiers designed to let you choose which parts of the file to patch.
 
 The task you must perform is:
 
