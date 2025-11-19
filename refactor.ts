@@ -925,9 +925,8 @@ async function main(): Promise<void> {
     const compactionPercent = originalTotal > 0
       ? Math.max(0, Math.min(100, Math.round((originalTotal - compactTotal) * 100 / originalTotal)))
       : 0;
-    const compactionDisplay = 100 - compactionPercent;
     console.log(
-      `count: ${compactBreakdown.base} + ${compactBreakdown.imports} = ${compactTotal} tokens (compaction: ${compactionDisplay}%)`,
+      `count: ${compactBreakdown.base} + ${compactBreakdown.imports} = ${compactTotal} tokens (compaction: ${compactionPercent}%)`,
     );
   } else {
     const reasons: string[] = [];
