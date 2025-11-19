@@ -399,7 +399,7 @@ function computeTokenBreakdown(state: BlockState, baseFile: string, omit?: Set<n
 function applyTemplate(template: string, filesSection: string, task: string): string {
   return template
     .replace(/{{FILES}}/g, filesSection)
-    .replace(/{{TASK}}/g, task.split("\n").map(x => "> " + x).join("").trim());
+    .replace(/{{TASK}}/g, task.split("\n").map(x => "> " + x).join("\n").trim());
 }
 
 function formatTimestamp(date: Date): string {
