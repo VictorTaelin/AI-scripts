@@ -114,9 +114,9 @@ one, when you combine files, etc.).
 `;
 
 const IMPORT_PATTERNS = [
-  /^#\[(\.\/[^]]+)\]\s*$/,
-  /^--\[(\.\/[^]]+)\]\s*$/,
-  /^\/\/\[(\.\/[^]]+)\]\s*$/,
+  /^#\[(\.\/[^\]]+)\]$/,
+  /^--\[(\.\/[^\]]+)\]$/,
+  /^\/\/\[(\.\/[^\]]+)\]$/,
 ];
 
 function fail(message: string): never {
@@ -271,27 +271,26 @@ function trimBlankEdges(text: string): string {
 }
 
 function matchImportPath(line: string): string | null {
-  const trimmed = line.trim();
   for (const pattern of IMPORT_PATTERNS) {
-    const match = trimmed.match(pattern);
+    const match = line.match(pattern);
     if (match && match[1]) {
-      return match[1].trim();
+      return match[1];
     }
   }
-  const includeMatch = trimmed.match(/^#include\s+(?:\"([^\"]+)\"|'([^']+)')/);
+  const includeMatch = line.match(/^#include "([^"]+)"$/);
   if (includeMatch) {
-    return includeMatch[1] || includeMatch[2] || null;
+    return includeMatch[1];
   }
   return null;
 }
 
 
 function getInstructionText(line: string): string | null {
-  const trimmedLeft = line.replace(/^\s+/, '');
-  if (!trimmedLeft) {
+  if (matchImportPath(line)) {
     return null;
   }
-  if (matchImportPath(trimmedLeft)) {
+  const trimmedLeft = line.replace(/^\s+/, '');
+  if (!trimmedLeft) {
     return null;
   }
   if (trimmedLeft.startsWith('//')) {
@@ -631,30 +630,34 @@ async function main(): Promise<void> {
   console.log(`model: ${resolvedModelId}`);
 
   const raw = await fs.readFile(absoluteFile, 'utf8');
-  let fileContents: string;
-  let promptStr: string;
+  let fileContents = '';
+  let promptStr = '';
+  let promptError: Error | null = null;
   try {
     const extraction = extractPromptSections(raw);
     fileContents = extraction.body;
     promptStr = extraction.prompt;
   } catch (err) {
-    const fallbackTokens = tokenCount(trimBlankEdges(raw));
-    console.log(`count: ${fallbackTokens} tokens`);
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`Error: ${message}`);
-    process.exit(1);
+    promptError = err instanceof Error ? err : new Error(String(err));
+    fileContents = trimBlankEdges(raw);
   }
-  const prompt = promptStr;
-  const baseTokenCount = tokenCount(fileContents);
+
   const context = await collectContext(baseResolved, fileContents, workspaceRoot);
   const baseRel = toPosix(path.relative(workspaceRoot, baseResolved));
-
-  let contextBlock = formatContext(context);
-  const fullContextBlock = contextBlock;
   const importsBlock = formatContextSubset(context, file => file !== baseRel);
+  const baseTokenCount = tokenCount(fileContents);
   const importTokens = importsBlock ? tokenCount(importsBlock) : 0;
   const baseLineTotal = baseTokenCount + importTokens;
   console.log(`count: ${baseTokenCount} + ${importTokens} = ${baseLineTotal} tokens`);
+
+  if (promptError) {
+    console.error(`Error: ${promptError.message}`);
+    process.exit(1);
+  }
+
+  const prompt = promptStr;
+  let contextBlock = formatContext(context);
+  const fullContextBlock = contextBlock;
   const totalTokens = tokenCount(`${fullContextBlock}\n\n${prompt}`);
   const hasImports = context.size > 1;
   const shouldCompact = hasImports && totalTokens >= 8000;
