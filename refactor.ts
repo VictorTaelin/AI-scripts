@@ -93,7 +93,7 @@ For example, "100-103" omits blocks 100, 101, and 102.`;
 
 const EDITING_PROMPT_TEMPLATE = `You're a code editor.
 
-You must complete a code editing task on the following files:
+You must complete a code editing TASK on the following files:
 
 {{FILES}}
 
@@ -101,7 +101,7 @@ Note that the files were split into blocks (sequences of non-empty lines). Each
 block is annotated with a leading '!id'. These markers are NOT part of the file;
 they're identifiers designed to let you choose which parts of the file to patch.
 
-The task you must perform is:
+The TASK you must perform is:
 
 {{TASK}}
 
@@ -187,8 +187,11 @@ Prefer <patch/> when:
 Prefer <write/> when:
 - creating a new file
 - rewriting a small file
+- patching would be longer than just rewriting
 
 Always use <delete/> to clean up leftover files.
+
+Now, output a series of commands to complete the TASK.
 `;
 
 const IMPORT_PATTERNS = [
