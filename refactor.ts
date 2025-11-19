@@ -78,10 +78,11 @@ To omit blocks, output an omit command listing their ids:
 
 <omit>
 12
-45
+100-103
 </omit>
 
-List one block id per line inside the command.`;
+List one block id per line, or use START-END (end exclusive) to omit a range.
+For example, "100-103" omits blocks 100, 101, and 102.`;
 
 const EDITING_PROMPT_TEMPLATE = `You're a code editor.
 
@@ -105,7 +106,7 @@ complete file contents
 
 To replace an existing block, output:
 
-<patch block=BLOCK_ID>
+<patch id=BLOCK_ID>
 new block contents
 </patch>
 
@@ -139,20 +140,20 @@ And given the task:
 
 You should output:
 
-<patch block=2>
+<patch id=2>
   for (var i = 0; i < 10; ++i) {
     console.log("hello " + i);
 </patch>
 
 You can delete a block by making it empty. For example:
 
-<patch block=0></patch>
+<patch id=0></patch>
 
 (This would delete the initial comment.)
 
 You can split a block by including empty lines. For example:
 
-<patch block=2>
+<patch id=2>
   for (var i = 0; i < 10; ++i) {
 
     console.log("hello " + i);
@@ -162,13 +163,13 @@ You can split a block by including empty lines. For example:
 
 You can merge blocks by moving contents and deleting. For example:
 
-<patch block=2>
+<patch id=2>
   for (var i = 0; i < 10; ++i) {
     console.log("hello " + i);
   }
 </patch>
 
-<patch block=3>
+<patch id=3>
 </patch>
 
 (This would merge blocks 2 and 3.)
@@ -548,6 +549,58 @@ async function askAI(model: string, prompt: string): Promise<string> {
   return String(reply);
 }
 
+function addOmitValue(token: string, collector: Set<number>): void {
+  const trimmed = token.trim();
+  if (!trimmed) {
+    return;
+  }
+  const rangeMatch = trimmed.match(/^(-?\d+)\s*-\s*(-?\d+)$/);
+  if (rangeMatch) {
+    const start = Number(rangeMatch[1]);
+    const end = Number(rangeMatch[2]);
+    if (
+      Number.isFinite(start) &&
+      Number.isFinite(end) &&
+      Number.isInteger(start) &&
+      Number.isInteger(end) &&
+      start < end
+    ) {
+      for (let id = start; id < end; id++) {
+        collector.add(id);
+      }
+      return;
+    }
+  }
+  const id = Number(trimmed);
+  if (!Number.isNaN(id) && Number.isInteger(id)) {
+    collector.add(id);
+  }
+}
+
+function stripOmitComments(line: string): string {
+  const hashIndex = line.indexOf('#');
+  const slashIndex = line.indexOf('//');
+  let end = line.length;
+  if (hashIndex !== -1 && hashIndex < end) {
+    end = hashIndex;
+  }
+  if (slashIndex !== -1 && slashIndex < end) {
+    end = slashIndex;
+  }
+  return line.slice(0, end);
+}
+
+function parseOmitLine(line: string, collector: Set<number>): void {
+  const withoutComments = stripOmitComments(line).trim();
+  if (!withoutComments) {
+    return;
+  }
+  const tokens = withoutComments.split(/[\s,]+/);
+  for (const token of tokens) {
+    addOmitValue(token, collector);
+  }
+}
+
 function parseOmitCommands(response: string): Set<number> {
   const results = new Set<number>();
   const blockRegex = /<omit\b([^>]*)>([\s\S]*?)<\/omit>/gi;
@@ -555,28 +608,18 @@ function parseOmitCommands(response: string): Set<number> {
   while ((match = blockRegex.exec(response)) !== null) {
     const body = match[2] || '';
     for (const line of body.split(/\r?\n/)) {
-      const trimmed = line.trim();
-      if (!trimmed) {
-        continue;
-      }
-      const id = Number(trimmed);
-      if (!Number.isNaN(id) && Number.isInteger(id)) {
-        results.add(id);
-      }
+      parseOmitLine(line, results);
     }
   }
 
   const legacyRegex = /<omit\b([^>]*)\/>/gi;
   while ((match = legacyRegex.exec(response)) !== null) {
     const attrs = match[1] || '';
-    const blockAttr = extractAttribute(attrs, 'block') ?? extractAttribute(attrs, 'id');
+    const blockAttr = extractAttribute(attrs, 'id') ?? extractAttribute(attrs, 'block');
     if (!blockAttr) {
       continue;
     }
-    const id = Number(blockAttr.trim());
-    if (!Number.isNaN(id) && Number.isInteger(id)) {
-      results.add(id);
-    }
+    addOmitValue(blockAttr, results);
   }
 
   return results;
@@ -600,14 +643,14 @@ function parseCommands(response: string): EditCommand[] {
         const normalizedFile = normalizeFileReference(fileAttr);
         commands.push({ type: 'write', file: normalizedFile, content: body });
       } else {
-        const blockAttr = extractAttribute(attrs, 'block') ?? extractAttribute(attrs, 'id');
-        if (!blockAttr) {
-          console.warn('Skipping <patch> command without a block attribute.');
+        const idAttr = extractAttribute(attrs, 'id') ?? extractAttribute(attrs, 'block');
+        if (!idAttr) {
+          console.warn('Skipping <patch> command without an id attribute.');
           continue;
         }
-        const blockId = Number(blockAttr.trim());
+        const blockId = Number(idAttr.trim());
         if (Number.isNaN(blockId) || !Number.isInteger(blockId)) {
-          console.warn(`Skipping <patch> command with invalid block id: ${blockAttr}`);
+          console.warn(`Skipping <patch> command with invalid block id: ${idAttr}`);
           continue;
         }
         commands.push({ type: 'patch', blockId, content: body });
@@ -869,6 +912,7 @@ async function main(): Promise<void> {
   await writeSessionLog(logContext, 'full-prompt.txt', hypotheticalEditingPrompt);
 
   if (shouldCompact) {
+    console.log('\n**Calling compaction model...**\n');
     const compactorSpec = buildModelSpec(resolvedModel, 'low');
     compactPrompt = applyTemplate(COMPACTING_PROMPT_TEMPLATE, contextBlock, prompt);
     compactResponse = await askAI(compactorSpec, compactPrompt);
@@ -881,8 +925,9 @@ async function main(): Promise<void> {
     const compactionPercent = originalTotal > 0
       ? Math.max(0, Math.min(100, Math.round((originalTotal - compactTotal) * 100 / originalTotal)))
       : 0;
+    const compactionDisplay = 100 - compactionPercent;
     console.log(
-      `count: ${compactBreakdown.base} + ${compactBreakdown.imports} = ${compactTotal} tokens (compaction: ${compactionPercent}%)`,
+      `count: ${compactBreakdown.base} + ${compactBreakdown.imports} = ${compactTotal} tokens (compaction: ${compactionDisplay}%)`,
     );
   } else {
     const reasons: string[] = [];
@@ -895,6 +940,7 @@ async function main(): Promise<void> {
 
   const editingPrompt = applyTemplate(EDITING_PROMPT_TEMPLATE, contextBlock, prompt);
   await writeSessionLog(logContext, 'mini-prompt.txt', editingPrompt);
+  console.log('\n**Calling coding model...**\n');
   const editorSpec = buildModelSpec(resolvedModel, resolvedModel.thinking);
   const editingResponse = await askAI(editorSpec, editingPrompt);
   const responseLog = [
