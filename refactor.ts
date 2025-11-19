@@ -58,7 +58,7 @@ Consider the following files, split into labeled blocks:
 
 (Each block is annotated with a leading '!id' marker, identifying it.)
 
-And consider the following TASK:
+Now, consider the following TASK:
 
 {{TASK}}
 
