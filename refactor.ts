@@ -18,15 +18,10 @@ interface WriteCommand {
   content: string;
 }
 
-interface PatchOperation {
-  search: string;
-  replace: string;
-}
-
-interface PatchCommand {
+interface BlockPatchCommand {
   type: 'patch';
-  file: string;
-  operations: PatchOperation[];
+  blockId: number;
+  content: string;
 }
 
 interface DeleteCommand {
@@ -34,11 +29,30 @@ interface DeleteCommand {
   file: string;
 }
 
-type EditCommand = WriteCommand | PatchCommand | DeleteCommand;
+type EditCommand = WriteCommand | BlockPatchCommand | DeleteCommand;
+
+type LineEnding = '\n' | '\r\n';
+
+interface BlockEntry {
+  id: number;
+  file: string;
+  content: string;
+}
+
+interface FileBlockGroup {
+  file: string;
+  newline: LineEnding;
+  blocks: BlockEntry[];
+}
+
+interface BlockState {
+  files: FileBlockGroup[];
+  blockMap: Map<number, BlockEntry>;
+}
 
 const COMPACTING_PROMPT_TEMPLATE = `You're a context compactor.
 
-Consider the following files:
+Consider the following files, split into labeled blocks:
 
 {{FILES}}
 
@@ -46,71 +60,127 @@ And consider the following TASK:
 
 {{TASK}}
 
-Your goal is to omit EVERY file that is IRRELEVANT to the TASK.
+Your goal is NOT to complete the TASK.
 
-A file is considered IRRELEVANT when reading its contents is neither needed, nor
-helpful, to complete the TASK. Note that, even if a file is not directly related
-to the task, it can still be useful, if it provides helpful context, or simply
-helps the user better understand this project's style, organization and nuances.
-Also, documentation files, and the main file, are almost always relevant.
-Exclude only files that are unequivocably unrelated to the TASK.
+Your goal is to omit EVERY block that is IRRELEVANT to the TASK.
 
-To omit files located under a directory, issue the command:
+A block is considered IRRELEVANT when reading its contents is neither needed,
+nor helpful, to complete the TASK. If a block must be directly edited to
+complete the TASK, it is RELEVANT. If a block contains helpful documentation
+about the domain, it is RELEVANT. If a block contains similar functions, or even
+captures the codebase's style in a way that will be helpful to solve the TASK,
+it is RELEVANT. When a block is unequivocally unrelated to the TASK, then, and
+only then, it is IRRELEVANT.
 
-<omit path="./some/dir">
-file_a.ext
-file_b.ext
+Each block is annotated with a leading '!id' marker, identifying it.
+
+To omit blocks, output an omit command listing their ids:
+
+<omit>
+12
+45
 </omit>
 
-List each file name on its own line inside the block. You can include multiple <omit/> commands.`;
+List one block id per line inside the command.`;
 
 const EDITING_PROMPT_TEMPLATE = `You're a code editor.
 
-You will perform a one-shot code editing task on the following files:
+You must complete a code editing task on the following files:
 
 {{FILES}}
+
+Note that the files were split into blocks (sequences of non-empty lines). Each
+block is annotated with a leading '!id'. These markers are NOT part of the file;
+they just identifiers used to let you choose which parts of the file to patch.
 
 The task you must perform is:
 
 {{TASK}}
 
-To complete this task, you must use the commands below:
-
-To edit or create a file in "whole mode":
+To replace a file, or to create a new file, output:
 
 <write file=path_to_file>
-complete code here
+complete file contents
 </write>
 
-To edit a file in "diff mode":
+To replace an existing block, output:
 
-<patch file=path_to_file>
-<<<<<<< SEARCH
-some code here
-=======
-new code here
-some code here
-new code here
->>>>>>> REPLACE
+<patch block=BLOCK_ID>
+new block contents
 </patch>
 
-To delete a file entirely:
+To delete a file entirely, output:
 
 <delete file=path_to_file/>
 
-Your response can include any number of <write/>, <patch/>, and <delete/> commands.
+For example, given the file:
+
+/hello_10.js
+
+!0
+// prints hello 10 times
+
+!1
+function hello_10() {
+  
+!2
+  for (var i = 0; i < 10; ++i) {
+    console.log("hello " ++ i);
+
+!3
+  }
+
+!4
+}
+
+And given the task:
+
+> fix the error
+
+You should output:
+
+<patch block=2>
+  for (var i = 0; i < 10; ++i) {
+    console.log("hello " + i);
+</patch>
+
+You can delete a block by making it empty. For example:
+
+<patch block=0></patch>
+
+(This would delete the initial comment.)
+
+You can split a block by including empty lines. For example:
+
+<patch block=2>
+  for (var i = 0; i < 10; ++i) {
+
+    console.log("hello " + i);
+</patch>
+
+(This would split block 2 into two blocks.)
+
+You can merge blocks by moving contents and deleting. For example:
+
+<patch block=2>
+  for (var i = 0; i < 10; ++i) {
+    console.log("hello " + i);
+  }
+</patch>
+
+<patch block=3>
+</patch>
+
+(This would merge blocks 2 and 3.)
 
 Prefer <patch/> when:
-- editing small parts of large files
-- the edits can be done unambiguously
+- editing many parts of large files
 
 Prefer <write/> when:
 - creating a new file
-- the edited file is small
-- patching would be error-prone
+- rewriting a small file
 
-Always use <delete/> to clean up (ex: when you "rename" a file by writing a new
-one, when you combine files, etc.).
+Always use <delete/> to clean up leftover files.
 `;
 
 const IMPORT_PATTERNS = [
@@ -190,28 +260,128 @@ function buildModelSpec(base: ResolvedModelSpec, thinking: ThinkingLevel): strin
   return `${base.vendor}:${base.model}:${thinking}`;
 }
 
-function formatContextEntries(entries: [string, string][]): string {
-  if (entries.length === 0) {
+function detectLineEnding(text: string): LineEnding {
+  return text.includes('\r\n') ? '\r\n' : '\n';
+}
+
+function normalizeToLF(text: string): string {
+  return text.replace(/\r\n/g, '\n');
+}
+
+function toBlocks(text: string): string[] {
+  const normalized = normalizeToLF(text);
+  if (!normalized.trim()) {
+    return [];
+  }
+  const lines = normalized.split('\n');
+  let start = 0;
+  while (start < lines.length && lines[start].trim() === '') {
+    start++;
+  }
+  let end = lines.length - 1;
+  while (end >= start && lines[end].trim() === '') {
+    end--;
+  }
+  if (start > end) {
+    return [];
+  }
+  const trimmed = lines.slice(start, end + 1);
+  const blocks: string[] = [];
+  let current: string[] = [];
+  for (const line of trimmed) {
+    if (line.trim() === '') {
+      if (current.length > 0) {
+        blocks.push(current.join('\n'));
+        current = [];
+      }
+    } else {
+      current.push(line);
+    }
+  }
+  if (current.length > 0) {
+    blocks.push(current.join('\n'));
+  }
+  return blocks;
+}
+
+function canonicalizeBlocks(blocks: string[], newline: LineEnding): string {
+  if (blocks.length === 0) {
     return '';
   }
-  return entries
-    .map(([file, contents]) => `${file}\n\`\`\`\n${contents}\n\`\`\``)
-    .join('\n\n');
+  const joined = blocks.join('\n\n');
+  return newline === '\r\n' ? joined.replace(/\n/g, '\r\n') : joined;
 }
 
-function formatContextSubset(context: ContextMap, predicate: (file: string) => boolean): string {
-  const entries = Array.from(context.entries()).filter(([file]) => predicate(file));
-  return formatContextEntries(entries);
+function canonicalizeFileText(text: string, preferredNewline?: LineEnding): string {
+  const newline = preferredNewline ?? detectLineEnding(text);
+  const normalized = normalizeToLF(text);
+  const blocks = toBlocks(normalized);
+  if (blocks.length === 0) {
+    return '';
+  }
+  return canonicalizeBlocks(blocks, newline);
 }
 
-function formatContext(context: ContextMap): string {
-  return formatContextSubset(context, () => true) || '(no files loaded)';
+function buildBlockState(context: ContextMap): BlockState {
+  let nextId = 0;
+  const files: FileBlockGroup[] = [];
+  const blockMap = new Map<number, BlockEntry>();
+  for (const [file, contents] of context.entries()) {
+    const newline = detectLineEnding(contents);
+    const fileBlocks = toBlocks(contents);
+    const group: FileBlockGroup = { file, newline, blocks: [] };
+    for (const blockContent of fileBlocks) {
+      const block: BlockEntry = { id: nextId++, file, content: blockContent };
+      group.blocks.push(block);
+      blockMap.set(block.id, block);
+    }
+    files.push(group);
+  }
+  return { files, blockMap };
+}
+
+function formatBlocks(state: BlockState, omit?: Set<number>): string {
+  if (state.files.length === 0) {
+    return '(no files loaded)';
+  }
+  const includeBlock = (block: BlockEntry) => !omit || !omit.has(block.id);
+  const sections: string[] = [];
+  for (const group of state.files) {
+    const lines: string[] = [`/${group.file}`];
+    const visibleBlocks = group.blocks.filter(includeBlock);
+    if (visibleBlocks.length > 0) {
+      for (const block of visibleBlocks) {
+        lines.push('');
+        lines.push(`!${block.id}`);
+        lines.push(block.content);
+      }
+    }
+    sections.push(lines.join('\n'));
+  }
+  return sections.join('\n\n');
+}
+
+function computeTokenBreakdown(state: BlockState, baseFile: string, omit?: Set<number>): { base: number; imports: number } {
+  const includeBlock = (block: BlockEntry): boolean => !omit || !omit.has(block.id);
+  let baseTokens = 0;
+  let importTokens = 0;
+  for (const group of state.files) {
+    const blockTexts = group.blocks.filter(includeBlock).map(block => block.content);
+    const text = blockTexts.length > 0 ? blockTexts.join('\n\n') : '';
+    const tokens = text ? tokenCount(text) : 0;
+    if (group.file === baseFile) {
+      baseTokens += tokens;
+    } else {
+      importTokens += tokens;
+    }
+  }
+  return { base: baseTokens, imports: importTokens };
 }
 
 function applyTemplate(template: string, filesSection: string, task: string): string {
   return template
     .replace(/{{FILES}}/g, filesSection)
-    .replace(/{{TASK}}/g, task.trim());
+    .replace(/{{TASK}}/g, task.split("\n").map(x => "> " + x).join("").trim());
 }
 
 function formatTimestamp(date: Date): string {
@@ -371,42 +541,35 @@ async function askAI(model: string, prompt: string): Promise<string> {
   return String(reply);
 }
 
-function parseOmitCommands(response: string, root: string): Set<string> {
-  const results = new Set<string>();
+function parseOmitCommands(response: string): Set<number> {
+  const results = new Set<number>();
   const blockRegex = /<omit\b([^>]*)>([\s\S]*?)<\/omit>/gi;
   let match: RegExpExecArray | null;
   while ((match = blockRegex.exec(response)) !== null) {
-    const attrs = match[1] || '';
     const body = match[2] || '';
-    const dirAttr = extractAttribute(attrs, 'path') ?? extractAttribute(attrs, 'dir');
-    if (!dirAttr) {
-      continue;
-    }
-    const dirNormalized = normalizeFileReference(dirAttr);
-    const dirAbsolute = path.resolve(root, dirNormalized);
-    ensureInSandbox(dirAbsolute, root);
     for (const line of body.split(/\r?\n/)) {
-      const fileName = line.trim();
-      if (!fileName) {
+      const trimmed = line.trim();
+      if (!trimmed) {
         continue;
       }
-      const target = path.resolve(dirAbsolute, fileName);
-      ensureInSandbox(target, root);
-      const rel = toPosix(path.relative(root, target));
-      results.add(rel);
+      const id = Number(trimmed);
+      if (!Number.isNaN(id) && Number.isInteger(id)) {
+        results.add(id);
+      }
     }
   }
 
   const legacyRegex = /<omit\b([^>]*)\/>/gi;
   while ((match = legacyRegex.exec(response)) !== null) {
-    const fileAttr = extractFileAttribute(match[1] || '');
-    if (!fileAttr) {
+    const attrs = match[1] || '';
+    const blockAttr = extractAttribute(attrs, 'block') ?? extractAttribute(attrs, 'id');
+    if (!blockAttr) {
       continue;
     }
-    const resolved = path.resolve(root, normalizeFileReference(fileAttr));
-    ensureInSandbox(resolved, root);
-    const rel = toPosix(path.relative(root, resolved));
-    results.add(rel);
+    const id = Number(blockAttr.trim());
+    if (!Number.isNaN(id) && Number.isInteger(id)) {
+      results.add(id);
+    }
   }
 
   return results;
@@ -421,17 +584,26 @@ function parseCommands(response: string): EditCommand[] {
       const type = match[1].toLowerCase() as 'write' | 'patch';
       const attrs = match[2] || '';
       const body = match[3] || '';
-      const fileAttr = extractFileAttribute(attrs);
-      if (!fileAttr) {
-        console.warn(`Skipping <${type}> command without a file attribute.`);
-        continue;
-      }
-      const normalizedFile = normalizeFileReference(fileAttr);
       if (type === 'write') {
+        const fileAttr = extractFileAttribute(attrs);
+        if (!fileAttr) {
+          console.warn('Skipping <write> command without a file attribute.');
+          continue;
+        }
+        const normalizedFile = normalizeFileReference(fileAttr);
         commands.push({ type: 'write', file: normalizedFile, content: body });
       } else {
-        const operations = parsePatchOperations(body);
-        commands.push({ type: 'patch', file: normalizedFile, operations });
+        const blockAttr = extractAttribute(attrs, 'block') ?? extractAttribute(attrs, 'id');
+        if (!blockAttr) {
+          console.warn('Skipping <patch> command without a block attribute.');
+          continue;
+        }
+        const blockId = Number(blockAttr.trim());
+        if (Number.isNaN(blockId) || !Number.isInteger(blockId)) {
+          console.warn(`Skipping <patch> command with invalid block id: ${blockAttr}`);
+          continue;
+        }
+        commands.push({ type: 'patch', blockId, content: body });
       }
     } else {
       const attrs = match[4] || '';
@@ -447,26 +619,20 @@ function parseCommands(response: string): EditCommand[] {
   return commands;
 }
 
-function parsePatchOperations(body: string): PatchOperation[] {
-  const normalized = body.replace(/\r\n/g, '\n');
-  const pattern = /<<<<<<<\s*SEARCH\s*\n([\s\S]*?)\n=======\s*\n([\s\S]*?)\n>>>>>>>[ \t]*REPLACE/gi;
-  const operations: PatchOperation[] = [];
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(normalized)) !== null) {
-    operations.push({ search: match[1], replace: match[2] });
+async function applyCommands(
+  commands: EditCommand[],
+  root: string,
+  gitAvailable: boolean,
+  blockState: BlockState,
+): Promise<void> {
+  const patchCommands = commands.filter((cmd): cmd is BlockPatchCommand => cmd.type === 'patch');
+  if (patchCommands.length > 0) {
+    await applyBlockPatches(patchCommands, blockState, root);
   }
-  if (operations.length === 0) {
-    throw new Error('No valid <<<<<<< SEARCH blocks found inside <patch>.');
-  }
-  return operations;
-}
 
-async function applyCommands(commands: EditCommand[], root: string, gitAvailable: boolean): Promise<void> {
   for (const command of commands) {
     if (command.type === 'write') {
       await applyWrite(command, root, gitAvailable);
-    } else if (command.type === 'patch') {
-      await applyPatch(command, root);
     } else if (command.type === 'delete') {
       await applyDelete(command, root, gitAvailable);
     }
@@ -477,8 +643,11 @@ async function applyWrite(command: WriteCommand, root: string, gitAvailable: boo
   const target = path.resolve(root, command.file);
   ensureInSandbox(target, root);
   let existed = true;
+  let preferredNewline: LineEnding | undefined;
   try {
     await fs.stat(target);
+    const current = await fs.readFile(target, 'utf8');
+    preferredNewline = detectLineEnding(current);
   } catch (err) {
     if ((err as { code?: string }).code === 'ENOENT') {
       existed = false;
@@ -487,34 +656,59 @@ async function applyWrite(command: WriteCommand, root: string, gitAvailable: boo
     }
   }
   await fs.mkdir(path.dirname(target), { recursive: true });
-  const trimmed = trimBlankEdges(command.content);
-  await fs.writeFile(target, trimmed, 'utf8');
+  const canonical = canonicalizeFileText(command.content, preferredNewline);
+  await fs.writeFile(target, canonical, 'utf8');
   if (!existed) {
     const relative = toPosix(path.relative(root, target));
     await gitAddFile(relative, root, gitAvailable);
   }
 }
 
-async function applyPatch(command: PatchCommand, root: string): Promise<void> {
-  const target = path.resolve(root, command.file);
-  ensureInSandbox(target, root);
-  const raw = await fs.readFile(target, 'utf8');
-  const newline = raw.includes('\r\n') ? '\r\n' : '\n';
-  let current = raw.replace(/\r\n/g, '\n');
-  for (const op of command.operations) {
-    const search = op.search.replace(/\r\n/g, '\n');
-    if (search.length === 0) {
-      throw new Error(`Empty SEARCH block encountered for patch on ${command.file}.`);
+async function applyBlockPatches(commands: BlockPatchCommand[], state: BlockState, root: string): Promise<void> {
+  const replacements = new Map<number, string[]>();
+  for (const command of commands) {
+    if (replacements.has(command.blockId)) {
+      throw new Error(`Duplicate patch for block ${command.blockId}.`);
     }
-    const replace = op.replace.replace(/\r\n/g, '\n');
-    const idx = current.indexOf(search);
-    if (idx === -1) {
-      throw new Error(`Failed to apply patch: search block not found in ${command.file}.`);
+    const block = state.blockMap.get(command.blockId);
+    if (!block) {
+      throw new Error(`Unknown block id ${command.blockId}.`);
     }
-    current = current.slice(0, idx) + replace + current.slice(idx + search.length);
+    const normalized = normalizeToLF(command.content);
+    const replacementBlocks = toBlocks(normalized);
+    replacements.set(command.blockId, replacementBlocks);
   }
-  const finalContent = newline === '\r\n' ? current.replace(/\n/g, '\r\n') : current;
-  await fs.writeFile(target, finalContent, 'utf8');
+  await saveBlocks(state, replacements, root);
+}
+
+async function saveBlocks(state: BlockState, replacements: Map<number, string[]>, root: string): Promise<void> {
+  const filesToWrite = new Map<string, { newline: LineEnding; blocks: string[] }>();
+  for (const group of state.files) {
+    let mutated = false;
+    const newBlocks: string[] = [];
+    for (const block of group.blocks) {
+      const replacement = replacements.get(block.id);
+      if (replacement) {
+        mutated = true;
+        for (const blockContent of replacement) {
+          newBlocks.push(blockContent);
+        }
+      } else {
+        newBlocks.push(block.content);
+      }
+    }
+    if (mutated) {
+      filesToWrite.set(group.file, { newline: group.newline, blocks: newBlocks });
+    }
+  }
+
+  for (const [relativePath, data] of filesToWrite.entries()) {
+    const absolutePath = path.resolve(root, relativePath);
+    ensureInSandbox(absolutePath, root);
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    const finalContent = canonicalizeBlocks(data.blocks, data.newline);
+    await fs.writeFile(absolutePath, finalContent, 'utf8');
+  }
 }
 
 async function applyDelete(command: DeleteCommand, root: string, gitAvailable: boolean): Promise<void> {
@@ -596,8 +790,9 @@ async function collectContext(
     }
     visited.add(resolved);
     const rel = toPosix(path.relative(root, resolved));
-    context.set(rel, text);
-    const imports = findImports(text);
+    const normalizedText = trimBlankEdges(text);
+    context.set(rel, normalizedText);
+    const imports = findImports(normalizedText);
     for (const importPath of imports) {
       const absoluteImport = path.resolve(path.dirname(resolved), importPath);
       await visit(absoluteImport, null, rel);
@@ -643,10 +838,9 @@ async function main(): Promise<void> {
   }
 
   const context = await collectContext(baseResolved, fileContents, workspaceRoot);
+  const blockState = buildBlockState(context);
   const baseRel = toPosix(path.relative(workspaceRoot, baseResolved));
-  const importsBlock = formatContextSubset(context, file => file !== baseRel);
-  const baseTokenCount = tokenCount(fileContents);
-  const importTokens = importsBlock ? tokenCount(importsBlock) : 0;
+  const { base: baseTokenCount, imports: importTokens } = computeTokenBreakdown(blockState, baseRel);
   const baseLineTotal = baseTokenCount + importTokens;
   console.log(`count: ${baseTokenCount} + ${importTokens} = ${baseLineTotal} tokens`);
 
@@ -656,10 +850,11 @@ async function main(): Promise<void> {
   }
 
   const prompt = promptStr;
-  let contextBlock = formatContext(context);
-  const fullContextBlock = contextBlock;
+  const fullContextBlock = formatBlocks(blockState);
+  let omitBlocks = new Set<number>();
+  let contextBlock = fullContextBlock;
   const totalTokens = tokenCount(`${fullContextBlock}\n\n${prompt}`);
-  const hasImports = context.size > 1;
+  const hasImports = blockState.files.length > 1;
   const shouldCompact = hasImports && totalTokens >= 8000;
   let compactPrompt = '';
   let compactResponse = '';
@@ -671,22 +866,16 @@ async function main(): Promise<void> {
     compactPrompt = applyTemplate(COMPACTING_PROMPT_TEMPLATE, contextBlock, prompt);
     compactResponse = await askAI(compactorSpec, compactPrompt);
 
-    const omits = parseOmitCommands(compactResponse, workspaceRoot);
-    for (const omit of omits) {
-      if (omit === baseRel) {
-        continue;
-      }
-      context.delete(omit);
-    }
-    contextBlock = formatContext(context);
-    const compactImportsBlock = formatContextSubset(context, file => file !== baseRel);
-    const compactImportTokens = compactImportsBlock ? tokenCount(compactImportsBlock) : 0;
-    const compactTotal = baseTokenCount + compactImportTokens;
-    const compactionPercent = importTokens > 0
-      ? Math.max(0, Math.min(100, Math.round((importTokens - compactImportTokens) * 100 / importTokens)))
+    omitBlocks = parseOmitCommands(compactResponse);
+    contextBlock = formatBlocks(blockState, omitBlocks);
+    const compactBreakdown = computeTokenBreakdown(blockState, baseRel, omitBlocks);
+    const compactTotal = compactBreakdown.base + compactBreakdown.imports;
+    const originalTotal = baseTokenCount + importTokens;
+    const compactionPercent = originalTotal > 0
+      ? Math.max(0, Math.min(100, Math.round((originalTotal - compactTotal) * 100 / originalTotal)))
       : 0;
     console.log(
-      `count: ${baseTokenCount} + ${compactImportTokens} = ${compactTotal} tokens (compaction: ${compactionPercent}%)`,
+      `count: ${compactBreakdown.base} + ${compactBreakdown.imports} = ${compactTotal} tokens (compaction: ${compactionPercent}%)`,
     );
   } else {
     const reasons: string[] = [];
@@ -719,7 +908,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  await applyCommands(commands, workspaceRoot, gitAvailable);
+  await applyCommands(commands, workspaceRoot, gitAvailable, blockState);
 }
 
 main().catch(err => {
