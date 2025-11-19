@@ -186,7 +186,7 @@ Prefer <patch/> when:
 
 Prefer <write/> when:
 - creating a new file
-- rewriting a small file
+- editing a small file
 - patching would be longer than just rewriting
 
 Always use <delete/> to clean up leftover files.
