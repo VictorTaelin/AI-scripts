@@ -70,8 +70,10 @@ A block is RELEVANT when:
 - It must be directly edited to complete the TASK.
 - It declares types used on blocks that must be edited.
 - It defines functions used on blocks that must be edited.
-- It declares types or functions used on blocks that declare types of functions
-  that must be used (and so on, transitively).
+- It declares types or functions used on blocks
+  ... that declare types of functions used on blocks
+  ... that must be edited to complete the TASK
+  (and so on, transitively).
 - It contains helpful documentation about the domain.
 - It contain similar functions that can serve as inspiration.
 - It helps understanding the codebase's style.
