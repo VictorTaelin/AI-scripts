@@ -941,7 +941,7 @@ async function main(): Promise<void> {
   } else {
     const reasons: string[] = [];
     if (!hasImports) reasons.push('no imports detected');
-    if (totalTokens < 16000) reasons.push('context under 8k tokens');
+    if (totalTokens < 16000) reasons.push('context under 16k tokens');
     const reasonText = reasons.join(' and ') || 'conditions not met';
     compactPrompt = `[compaction skipped: ${reasonText}]`;
     compactResponse = '[compaction skipped]';
