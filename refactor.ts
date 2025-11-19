@@ -113,7 +113,11 @@ Always use <delete/> to clean up (ex: when you "rename" a file by writing a new
 one, when you combine files, etc.).
 `;
 
-const IMPORT_PREFIXES = ['#[./', '--[./', '//[./'];
+const IMPORT_PATTERNS = [
+  /^#\[(\.\/[^]]+)\]\s*$/,
+  /^--\[(\.\/[^]]+)\]\s*$/,
+  /^\/\/\[(\.\/[^]]+)\]\s*$/,
+];
 
 function fail(message: string): never {
   console.error(`Error: ${message}`);
@@ -268,20 +272,19 @@ function trimBlankEdges(text: string): string {
 
 function matchImportPath(line: string): string | null {
   const trimmed = line.trim();
-  for (const prefix of IMPORT_PREFIXES) {
-    if (trimmed.startsWith(prefix) && trimmed.endsWith(']')) {
-      const inner = trimmed.slice(prefix.length, trimmed.length - 1).trim();
-      if (inner) {
-        return inner;
-      }
+  for (const pattern of IMPORT_PATTERNS) {
+    const match = trimmed.match(pattern);
+    if (match && match[1]) {
+      return match[1].trim();
     }
   }
-  const includeMatch = trimmed.match(/^#include\s+(?:"([^"]+)"|'([^']+)')/);
+  const includeMatch = trimmed.match(/^#include\s+(?:\"([^\"]+)\"|'([^']+)')/);
   if (includeMatch) {
     return includeMatch[1] || includeMatch[2] || null;
   }
   return null;
 }
+
 
 function getInstructionText(line: string): string | null {
   const trimmedLeft = line.replace(/^\s+/, '');
@@ -628,19 +631,21 @@ async function main(): Promise<void> {
   console.log(`model: ${resolvedModelId}`);
 
   const raw = await fs.readFile(absoluteFile, 'utf8');
-  let fileContents = '';
-  let prompt = '';
-  let baseTokenCount = 0;
+  let fileContents: string;
+  let promptStr: string;
   try {
-    const extracted = extractPromptSections(raw);
-    fileContents = extracted.body;
-    prompt = extracted.prompt;
-    baseTokenCount = tokenCount(fileContents);
+    const extraction = extractPromptSections(raw);
+    fileContents = extraction.body;
+    promptStr = extraction.prompt;
   } catch (err) {
     const fallbackTokens = tokenCount(trimBlankEdges(raw));
-    console.log(`count: ${fallbackTokens} + 0 = ${fallbackTokens} tokens`);
-    throw err;
+    console.log(`count: ${fallbackTokens} tokens`);
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`Error: ${message}`);
+    process.exit(1);
   }
+  const prompt = promptStr;
+  const baseTokenCount = tokenCount(fileContents);
   const context = await collectContext(baseResolved, fileContents, workspaceRoot);
   const baseRel = toPosix(path.relative(workspaceRoot, baseResolved));
 
