@@ -5,21 +5,11 @@ import * as os from 'os';
 import * as path from 'path';
 import * as readline from 'readline';
 import { Command } from 'commander';
-import { GenAI, tokenCount, resolveModelSpec } from './GenAI';
-import { RepoManager } from './RepoManager';
+import { GenAI, resolveModelSpec } from './GenAI';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
 const execAsync = promisify(exec);
-
-/**
- * Escapes special characters in a string for use in a regular expression.
- * @param string The string to escape.
- * @returns The escaped string.
- */
-function escapeRegex(string: string): string {
-  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
 
 /**
  * Executes a shell command and returns its output or an error message.
@@ -36,13 +26,11 @@ async function executeCommand(script: string): Promise<string> {
 }
 
 /**
- * Generates the system prompt for the AI, including context management instructions only if files are loaded.
- * @param repo The repository manager instance.
- * @param shownChunks Record of chunks to show or hide.
+ * Generates the system prompt for the AI.
  * @returns The formatted system prompt.
  */
-function getSystemPrompt(repo: RepoManager, shownChunks: Record<string, boolean>): string {
-  const basePrompt = `
+function getSystemPrompt(): string {
+  return `
 This conversation is running inside a terminal session, on ${os.platform()} ${os.release()}.
 
 To better assist the user, you can run bash commands on this computer.
@@ -77,86 +65,6 @@ Note: only include bash commands when explicitly asked. Example:
 IMPORTANT: Be CONCISE and DIRECT in your answers.
 Do not add any information beyond what has been explicitly asked.
 `.trim();
-
-  const workContext = repo.view(
-    Object.fromEntries(
-      Object.entries(shownChunks).filter(([_, value]) => value === true)
-    ) as Record<string, true>
-  );
-
-  if (workContext.trim() === '') {
-    return basePrompt;
-  }
-
-  const contextInstructions = `
-Below is a context of the files I'm working on.
-
-You can issue the following context management commands:
-
-- <SHOW id=XYZ/>: Expands a chunk.
-- <HIDE id=XYZ/>: Shortens a chunk.
-- <EDIT id=XYZ/>: Removes a chunk.
-- <EDIT id=XYZ>new_content</EDIT>: Replaces a chunk's contents.
-
-Include these commands anywhere in your answer to manage your context.
-
-For example, to show chunk id 000005000000, write:
-
-<SHOW id=000005000000/>
-
-The work context is:
-
-${workContext}
-
-Notes:
-- Chunks are labelled with a 12-number id.
-- Some chunks were shortened with a '...'.
-- Expand relevant chunks before refactors.
-
-Important:
-
-When issuing SHOW commands, DON'T issue any other command.
-Instead, wait for the next message, for it to take effect.
-  `.trim();
-
-  return `${basePrompt}\n\n${contextInstructions}`.trim();
-}
-
-/**
- * Parses a block ID from a '?' command input.
- * - Empty input after '?' returns null (show full context).
- * - 12-digit input returns as-is (full ID).
- * - Numeric input is multiplied by 1,000,000 and padded to 12 digits (partial ID).
- * - Invalid input returns undefined (error).
- * @param input The user's input string (e.g., '?', '?123', '?123456789012').
- * @returns Parsed block ID, null, or undefined.
- */
-function parseBlockId(input: string): string | null | undefined {
-  const trimmed = input.replace('?', '').trim();
-  if (trimmed === '') {
-    return null; // Show full context
-  }
-  if (/^\d{12}$/.test(trimmed)) {
-    return trimmed; // Full ID
-  }
-  const num = parseFloat(trimmed);
-  if (!isNaN(num)) {
-    const idNum = Math.floor(num * 1000000);
-    return idNum.toString().padStart(12, '0');
-  }
-  return undefined; // Invalid input
-}
-
-/**
- * Extracts the content of a specific block from the full context.
- * @param fullContext The complete context string.
- * @param blockId The 12-digit block ID to extract.
- * @returns The block content or an error message if not found.
- */
-function extractBlockContent(fullContext: string, blockId: string): string {
-  const blockPattern = new RegExp(`^${blockId}:\\s*\\n[\\s\\S]*?(?=^\\d{12}:|\\z)`, 'm');
-  const match = fullContext.match(blockPattern);
-  return match ? match[0].trim() : `Block ID ${blockId} not found.`;
 }
 
 /**
@@ -166,25 +74,13 @@ async function main() {
   const program = new Command();
   program
     .argument('<model>', 'Model shortcode')
-    .argument('[path]', 'Repository path', '.')
-    .option('-i, --include <patterns>', 'Include patterns', '')
-    .option('-e, --exclude <patterns>', 'Exclude patterns', '')
     .parse(process.argv);
 
-  const [model, repoPath = '.'] = program.args;
-
-  // Initialize with no files loaded
-  let includePatterns: RegExp[] = [];
-  const excludePatterns = program.opts().exclude
-    ? program.opts().exclude.split(',').map((p: string) => new RegExp(p))
-    : undefined;
-
-  const repo = await RepoManager.load(repoPath, { include: includePatterns, exclude: excludePatterns });
+  const [model] = program.args;
   const resolvedSpec = resolveModelSpec(model);
   const resolvedModelName = `${resolvedSpec.vendor}:${resolvedSpec.model}:${resolvedSpec.thinking}`;
   const ai = await GenAI(model);
 
-  let shownChunks: Record<string, boolean> = {};
   let aiCommandOutputs: string[] = [];
   let userCommandOutputs: string[] = [];
   const history: string[] = [];
@@ -216,55 +112,8 @@ async function main() {
   rl.on('line', async (line) => {
     process.stdout.write("\x1b[0m");
     line = line.trim();
-    if (line.startsWith('.')) {
-      const ext = line.slice(1).trim();
-      if (ext) {
-        const includePattern = new RegExp(`.*\\.${escapeRegex(ext)}$`);
-        includePatterns = [includePattern];
-        shownChunks = {}; // Reset shown chunks when changing context
-        await repo.refresh({ include: includePatterns, exclude: excludePatterns });
-        console.log(`Work context updated to include *.${ext} files.`);
-        log(`Work context updated to include *.${ext} files.`);
-      } else {
-        console.log('Invalid extension. Please specify an extension, e.g., ".hs".');
-        log('Invalid extension. Please specify an extension, e.g., ".hs".');
-      }
-    } else if (line.startsWith('?')) {
-      const blockId = parseBlockId(line);
-      if (blockId === undefined) {
-        console.log('Invalid block ID. Please enter a valid number or exactly 12 digits.');
-        log(`λ ${line}\nInvalid block ID. Please enter a valid number or exactly 12 digits.`);
-      } else {
-        const fullContext = repo.view(
-          Object.fromEntries(
-            Object.entries(shownChunks).filter(([_, value]) => value === true)
-          ) as Record<string, true>
-        );
-        let displayContext: string;
-        if (blockId === null) {
-          displayContext = fullContext;
-        } else {
-          displayContext = extractBlockContent(fullContext, blockId);
-        }
-        console.log(displayContext);
 
-        const systemPromptTokenCount = tokenCount(getSystemPrompt(repo, shownChunks));
-        const totalChatTokenCount = history.reduce((sum, msg) => sum + tokenCount(msg), 0);
-        const totalMessages = history.length;
-
-        console.log('\x1b[33m%s\x1b[0m', `msg_number: ${totalMessages}`);
-        console.log('\x1b[33m%s\x1b[0m', `msg_tokens: ${totalChatTokenCount}`);
-        console.log('\x1b[33m%s\x1b[0m', `sys_tokens: ${systemPromptTokenCount}`);
-        console.log('\x1b[33m%s\x1b[0m', `tot_tokens: ${systemPromptTokenCount + totalChatTokenCount}`);
-
-        log(`λ ${line}`);
-        log(displayContext);
-        log(`\x1b[33mmsg_number: ${totalMessages}\x1b[0m`);
-        log(`\x1b[33mmsg_tokens: ${totalChatTokenCount}\x1b[0m`);
-        log(`\x1b[33msys_tokens: ${systemPromptTokenCount}\x1b[0m`);
-        log(`\x1b[33mtot_tokens: ${systemPromptTokenCount + totalChatTokenCount}\x1b[0m`);
-      }
-    } else if (line.startsWith('!')) {
+    if (line.startsWith('!')) {
       const cmd = line.slice(1).trim();
       const output = await executeCommand(cmd);
       console.log(output); // Print output to console
@@ -282,39 +131,13 @@ async function main() {
 
       var response;
       try {
-        response = await ai.ask(fullMessage, { system: getSystemPrompt(repo, shownChunks), stream: true }) as string;
+        response = await ai.ask(fullMessage, { system: getSystemPrompt(), stream: true }) as string;
       } catch (e) {
         response = "<error>";
       }
 
       log(response);
       history.push(response);
-
-      // Parse AI response for commands using response
-      const showMatches = [...response.matchAll(/<SHOW id=([0-9]{12})\/>/g)];
-      for (const match of showMatches) {
-        const id = match[1];
-        shownChunks[id] = true;
-      }
-
-      const hideMatches = [...response.matchAll(/<HIDE id=([0-9]{12})\/>/g)];
-      for (const match of hideMatches) {
-        const id = match[1];
-        delete shownChunks[id];
-      }
-
-      const editMatches = [...response.matchAll(/<EDIT id=([0-9]{12})>(.*?)<\/EDIT>|<EDIT id=([0-9]{12})\/>/gs)];
-      const edits: Record<string, string> = {};
-      for (const match of editMatches) {
-        if (match[1] && match[2] !== undefined) {
-          edits[match[1]] = match[2];
-        } else if (match[3]) {
-          edits[match[3]] = '';
-        }
-      }
-      if (Object.keys(edits).length > 0) {
-        await repo.edit(edits);
-      }
 
       const runMatches = [...response.matchAll(/<RUN>(.*?)<\/RUN>/gs)];
       aiCommandOutputs = [];
@@ -338,7 +161,6 @@ async function main() {
       }
       userCommandOutputs = [];
     }
-    repo.refresh({ include: includePatterns, exclude: excludePatterns });
     rl.prompt();
   });
 }
