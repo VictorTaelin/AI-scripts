@@ -915,7 +915,7 @@ async function main(): Promise<void> {
   let contextBlock = fullContextBlock;
   const totalTokens = tokenCount(`${fullContextBlock}\n\n${prompt}`);
   const hasImports = blockState.files.length > 1;
-  const shouldCompact = hasImports && totalTokens >= 16000;
+  const shouldCompact = hasImports && totalTokens >= 32000;
   let compactPrompt = '';
   let compactResponse = '';
   const hypotheticalEditingPrompt = applyTemplate(EDITING_PROMPT_TEMPLATE, fullContextBlock, prompt);
@@ -941,7 +941,7 @@ async function main(): Promise<void> {
   } else {
     const reasons: string[] = [];
     if (!hasImports) reasons.push('no imports detected');
-    if (totalTokens < 16000) reasons.push('context under 16k tokens');
+    if (totalTokens < 32000) reasons.push('context under 32k tokens');
     const reasonText = reasons.join(' and ') || 'conditions not met';
     compactPrompt = `[compaction skipped: ${reasonText}]`;
     compactResponse = '[compaction skipped]';

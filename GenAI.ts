@@ -86,6 +86,16 @@ export interface ChatInstance {
 
 const SUPPORTED_VENDORS = new Set<Vendor>(['openai', 'anthropic', 'google', 'openrouter', 'xai']);
 
+const CEREBRAS_MODELS = new Set<string>([
+  'gpt-oss-120b',
+  'gpt-oss-20b',
+  'llama3.1-8b',
+  'llama-3.3-70b',
+  'qwen-3-32b',
+  'qwen-3-235b-a22b-instruct-2507',
+  'zai-glm-4.6',
+]);
+
 function inferVendor(model: string): Vendor {
   const normalized = model.toLowerCase();
   if (normalized.startsWith('gpt') || normalized.startsWith('o')) {
@@ -288,9 +298,11 @@ export async function GenAI(modelSpec: string): Promise<ChatInstance> {
   const vendorConfig = buildVendorConfig(resolved.vendor, resolved.model, resolved.thinking);
 
   if (resolved.vendor === 'openai' || resolved.vendor === 'openrouter') {
-    const apiKey = await getToken(resolved.vendor);
-    const baseURL =
-      resolved.vendor === 'openai'
+    const useCerebras = resolved.vendor === 'openai' && CEREBRAS_MODELS.has(resolved.model);
+    const apiKey = await getToken(useCerebras ? 'cerebras' : resolved.vendor);
+    const baseURL = useCerebras
+      ? process.env.CEREBRAS_BASE_URL ?? 'https://api.cerebras.ai/v1'
+      : resolved.vendor === 'openai'
         ? 'https://api.openai.com/v1'
         : 'https://openrouter.ai/api/v1';
     return new OpenAIChat(apiKey, baseURL, resolved.model, resolved.vendor, vendorConfig);
