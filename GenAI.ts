@@ -9,10 +9,10 @@ import { countTokens } from 'gpt-tokenizer/model/gpt-4o';
 
 export const MODELS: Record<string, string> = {
   // OpenAI GPT-5.1 family
-  'g-' : 'openai:gpt-5.1:low',
-  'g'  : 'openai:gpt-5.1:medium',
-  'g+' : 'openai:gpt-5.1:high',
-  'G'  : 'openai:gpt-5.1:high',
+  'g-' : 'openai:gpt-5.2:low',
+  'g'  : 'openai:gpt-5.2:medium',
+  'g+' : 'openai:gpt-5.2:high',
+  'G'  : 'openai:gpt-5.2:high',
 
   // Anthropic Claude
   's-' : 'anthropic:claude-sonnet-4-5-20250929:low',
@@ -20,10 +20,10 @@ export const MODELS: Record<string, string> = {
   's+' : 'anthropic:claude-sonnet-4-5-20250929:high',
   'S'  : 'anthropic:claude-sonnet-4-5-20250929:high',
 
-  'o-' : 'anthropic:claude-opus-4-1-20250805:low',
-  'o'  : 'anthropic:claude-opus-4-1-20250805:medium',
-  'o+' : 'anthropic:claude-opus-4-1-20250805:high',
-  'O'  : 'anthropic:claude-opus-4-1-20250805:high',
+  'o-' : 'anthropic:claude-opus-4-5-20251101:low',
+  'o'  : 'anthropic:claude-opus-4-5-20251101:medium',
+  'o+' : 'anthropic:claude-opus-4-5-20251101:high',
+  'O'  : 'anthropic:claude-opus-4-5-20251101:high',
 
   // Google Gemini
   'i-' : 'google:gemini-3-pro-preview:low',
