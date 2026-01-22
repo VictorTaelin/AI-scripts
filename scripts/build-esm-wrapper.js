@@ -12,11 +12,14 @@ export default pkg;
 writeFileSync('./dist/index.mjs', esmWrapper);
 console.log('Created ES module wrapper at dist/index.mjs');
 
-try {
-  if (existsSync('./dist/refactor.js')) {
-    chmodSync('./dist/refactor.js', 0o755);
-    console.log('Marked dist/refactor.js as executable');
+const binFiles = ['Refactor.js', 'HoleFill.js', 'ChatSH.js'];
+for (const file of binFiles) {
+  try {
+    if (existsSync(`./dist/${file}`)) {
+      chmodSync(`./dist/${file}`, 0o755);
+      console.log(`Marked dist/${file} as executable`);
+    }
+  } catch (err) {
+    console.warn(`Failed to adjust dist/${file} permissions:`, err);
   }
-} catch (err) {
-  console.warn('Failed to adjust dist/refactor.js permissions:', err);
 }

@@ -12,7 +12,7 @@
     }
   },
   "bin": {
-    "refactor": "./dist/refactor.js",
+    "refactor": "./dist/Refactor.js",
     "holefill": "./dist/HoleFill.js",
     "csh": "./dist/ChatSH.js"
   },
