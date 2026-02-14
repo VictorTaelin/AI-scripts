@@ -12,7 +12,7 @@ export default pkg;
 writeFileSync('./dist/index.mjs', esmWrapper);
 console.log('Created ES module wrapper at dist/index.mjs');
 
-const binFiles = ['Refactor.js', 'HoleFill.js', 'ChatSH.js'];
+const binFiles = ['Refactor.js', 'HoleFill.js', 'ChatSH.js', 'Shot.js'];
 for (const file of binFiles) {
   try {
     if (existsSync(`./dist/${file}`)) {

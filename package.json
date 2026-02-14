@@ -14,7 +14,8 @@
   "bin": {
     "refactor": "./dist/Refactor.js",
     "holefill": "./dist/HoleFill.js",
-    "csh": "./dist/ChatSH.js"
+    "csh": "./dist/ChatSH.js",
+    "shot": "./dist/Shot.js"
   },
   "files": [
     "dist"
