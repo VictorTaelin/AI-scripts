@@ -20,10 +20,10 @@ export const MODELS: Record<string, string> = {
   's+' : 'anthropic:claude-sonnet-4-5-20250929:high',
   'S'  : 'anthropic:claude-sonnet-4-5-20250929:high',
 
-  'o-' : 'anthropic:claude-opus-4-5-20251101:low',
-  'o'  : 'anthropic:claude-opus-4-5-20251101:medium',
-  'o+' : 'anthropic:claude-opus-4-5-20251101:high',
-  'O'  : 'anthropic:claude-opus-4-5-20251101:high',
+  'o-' : 'anthropic:claude-opus-4-6:low',
+  'o'  : 'anthropic:claude-opus-4-6:medium',
+  'o+' : 'anthropic:claude-opus-4-6:high',
+  'O'  : 'anthropic:claude-opus-4-6:high',
 
   // Google Gemini
   'i-' : 'google:gemini-3-pro-preview:low',
@@ -96,6 +96,15 @@ const CEREBRAS_MODELS = new Set<string>([
   'zai-glm-4.6',
 ]);
 
+const API_KEY_ENV_VARS: Record<string, string[]> = {
+  openai: ['OPENAI_API_KEY'],
+  anthropic: ['ANTHROPIC_API_KEY'],
+  google: ['GOOGLE_API_KEY', 'GEMINI_API_KEY'],
+  openrouter: ['OPENROUTER_API_KEY'],
+  xai: ['XAI_API_KEY'],
+  cerebras: ['CEREBRAS_API_KEY'],
+};
+
 function inferVendor(model: string): Vendor {
   const normalized = model.toLowerCase();
   if (normalized.startsWith('gpt') || normalized.startsWith('o')) {
@@ -117,12 +126,26 @@ function inferVendor(model: string): Vendor {
 }
 
 async function getToken(vendor: string): Promise<string> {
+  const envCandidates = API_KEY_ENV_VARS[vendor] ?? [`${vendor.toUpperCase()}_API_KEY`];
+  for (const envVar of envCandidates) {
+    const value = process.env[envVar]?.trim();
+    if (value) {
+      return value;
+    }
+  }
+
   const tokenPath = path.join(os.homedir(), '.config', `${vendor}.token`);
   try {
-    return (await fs.readFile(tokenPath, 'utf8')).trim();
+    const token = (await fs.readFile(tokenPath, 'utf8')).trim();
+    if (token) {
+      return token;
+    }
+    throw new Error(`${tokenPath} is empty`);
   } catch (err) {
-    console.error(`Error reading ${vendor}.token file:`, (err as Error).message);
-    process.exit(1);
+    throw new Error(
+      `Missing API key for "${vendor}". Set ${envCandidates.join(' or ')} or create ${tokenPath}. ` +
+      `Underlying error: ${(err as Error).message}`,
+    );
   }
 }
 

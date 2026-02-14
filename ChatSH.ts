@@ -67,6 +67,51 @@ Do not add any information beyond what has been explicitly asked.
 `.trim();
 }
 
+function formatModelError(error: unknown): string {
+  if (!error || typeof error !== 'object') {
+    return String(error);
+  }
+
+  const status = typeof (error as any).status === 'number' ? (error as any).status : undefined;
+  const rawMessage = typeof (error as any).message === 'string'
+    ? (error as any).message
+    : String(error);
+
+  let message = rawMessage.trim();
+  for (let depth = 0; depth < 5; depth++) {
+    try {
+      const parsed = JSON.parse(message);
+
+      if (typeof parsed === 'string') {
+        const next = parsed.trim();
+        if (next && next !== message) {
+          message = next;
+          continue;
+        }
+        break;
+      }
+
+      const nestedMessage =
+        (typeof parsed?.error?.message === 'string' && parsed.error.message.trim())
+        || (typeof parsed?.message === 'string' && parsed.message.trim());
+
+      if (nestedMessage) {
+        if (nestedMessage === message) {
+          break;
+        }
+        message = nestedMessage;
+        continue;
+      }
+
+      break;
+    } catch {
+      break;
+    }
+  }
+
+  return status ? `Model error (${status}): ${message}` : `Model error: ${message}`;
+}
+
 /**
  * Main application logic, handling user input and AI interactions.
  */
@@ -107,7 +152,15 @@ async function main() {
     prompt: '\x1b[1mλ ' // Bold prompt
   });
 
-  rl.prompt();
+  function promptIfOpen() {
+    try {
+      rl.prompt();
+    } catch {
+      // Readline can close between checks in non-interactive usage.
+    }
+  }
+
+  promptIfOpen();
 
   rl.on('line', async (line) => {
     process.stdout.write("\x1b[0m");
@@ -129,11 +182,18 @@ async function main() {
       log(`λ ${fullMessage}`);
       history.push(fullMessage);
 
-      var response;
+      let response: string;
       try {
         response = await ai.ask(fullMessage, { system: getSystemPrompt(), stream: true }) as string;
       } catch (e) {
-        response = "<error>";
+        const modelError = formatModelError(e);
+        const logMessage = `<error> ${modelError}`;
+        console.log('\x1b[31m%s\x1b[0m', modelError);
+        log(logMessage);
+        history.push(logMessage);
+        userCommandOutputs = [];
+        promptIfOpen();
+        return;
       }
 
       log(response);
@@ -161,7 +221,7 @@ async function main() {
       }
       userCommandOutputs = [];
     }
-    rl.prompt();
+    promptIfOpen();
   });
 }
 
