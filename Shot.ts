@@ -141,19 +141,116 @@ function trimTagContent(raw: string): string {
   return s;
 }
 
+type PatchCommand = {
+  file: string;
+  from: number;
+  to: number;
+  replacementLines: string[];
+  ordinal: number;
+};
+
+type WriteCommand = {
+  file: string;
+  content: string;
+  ordinal: number;
+};
+
+function parsePatchCommands(reply: string): PatchCommand[] {
+  const patchRegex = /<patch\s+file="([^"]+)"\s+from=(\d+)\s+to=(\d+)>([\s\S]*?)<\/patch>/g;
+  const commands: PatchCommand[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = patchRegex.exec(reply)) !== null) {
+    const [, file, fromStr, toStr, rawContent] = match;
+    const from = parseInt(fromStr, 10);
+    const to = parseInt(toStr, 10);
+    const trimmed = trimTagContent(rawContent);
+    const replacementLines = trimmed === '' ? [] : trimmed.split('\n');
+    commands.push({ file, from, to, replacementLines, ordinal: commands.length });
+  }
+  return commands;
+}
+
+function parseWriteCommands(reply: string): WriteCommand[] {
+  const writeRegex = /<write\s+file="([^"]+)">([\s\S]*?)<\/write>/g;
+  const commands: WriteCommand[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = writeRegex.exec(reply)) !== null) {
+    const [, file, rawContent] = match;
+    commands.push({ file, content: trimTagContent(rawContent), ordinal: commands.length });
+  }
+  return commands;
+}
+
+function groupByFile<T extends { file: string }>(commands: T[]): Map<string, T[]> {
+  const grouped = new Map<string, T[]>();
+  for (const command of commands) {
+    const arr = grouped.get(command.file);
+    if (arr === undefined) {
+      grouped.set(command.file, [command]);
+    } else {
+      arr.push(command);
+    }
+  }
+  return grouped;
+}
+
+function validatePatchCommands(lines: string[], patches: PatchCommand[]): string | null {
+  for (const patch of patches) {
+    if (patch.from < 0) {
+      return `invalid patch range ${patch.from}-${patch.to}: "from" must be >= 0`;
+    }
+    if (patch.to < patch.from) {
+      return `invalid patch range ${patch.from}-${patch.to}: "to" must be >= "from"`;
+    }
+    if (patch.to >= lines.length) {
+      return `invalid patch range ${patch.from}-${patch.to}: file has ${lines.length} lines`;
+    }
+  }
+  const sorted = patches.slice().sort((a, b) => {
+    if (a.from !== b.from) return a.from - b.from;
+    if (a.to !== b.to) return a.to - b.to;
+    return a.ordinal - b.ordinal;
+  });
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i].from <= sorted[i - 1].to) {
+      return `overlapping patch ranges ${sorted[i - 1].from}-${sorted[i - 1].to} and ${sorted[i].from}-${sorted[i].to}`;
+    }
+  }
+  return null;
+}
+
+function applyPatchCommands(lines: string[], patches: PatchCommand[]): string[] {
+  const out = lines.slice();
+  // Apply from bottom to top so ranges refer to the original snapshot.
+  const sorted = patches.slice().sort((a, b) => {
+    if (a.from !== b.from) return b.from - a.from;
+    if (a.to !== b.to) return b.to - a.to;
+    return b.ordinal - a.ordinal;
+  });
+  for (const patch of sorted) {
+    out.splice(patch.from, patch.to - patch.from + 1, ...patch.replacementLines);
+  }
+  return out;
+}
+
 const TOOL_PROMPT = `To complete the task, use the following tools:
+
+PATCH: Replaces lines START through END (inclusive, 0-indexed) with the replacement content. The replacement can have any number of lines.
 
 <patch file="./path/to/file" from=START to=END>
 replacement lines
 </patch>
 
-Replaces lines START through END (inclusive, 0-indexed) with the replacement content. The replacement can have any number of lines.
+Notes:
+- Set 'from' to the FIRST line that changes, and 'to' to the LAST one.
+- The script will REMOVE from..to (INCLUSIVE) and replace by your lines.
+- Edits are stable on line ranges and, thus, order-invariant.
+
+WRITE: creates a new file or completely overwrites an existing file.
 
 <write file="./path/to/file">
 complete file contents
 </write>
-
-Creates a new file or completely overwrites an existing file.
 
 When the user asks an open ended question, answer without invoking any tool. `;
 
@@ -195,34 +292,57 @@ async function main(): Promise<void> {
     ? replyRaw
     : (replyRaw as any).messages?.map((m: any) => m.content).join('\n') ?? String(replyRaw);
 
-  // Parse and execute <patch> commands
-  const patchRegex = /<patch\s+file="([^"]+)"\s+from=(\d+)\s+to=(\d+)>([\s\S]*?)<\/patch>/g;
-  let match;
-  while ((match = patchRegex.exec(reply)) !== null) {
-    const [, file, fromStr, toStr, rawContent] = match;
-    const from = parseInt(fromStr, 10);
-    const to = parseInt(toStr, 10);
+  const patchCommands = parsePatchCommands(reply);
+  const writeCommands = parseWriteCommands(reply);
+  const patchesByFile = groupByFile(patchCommands);
+  const writesByFile = groupByFile(writeCommands);
+  const conflictedFiles = new Set<string>();
+
+  for (const file of patchesByFile.keys()) {
+    if (writesByFile.has(file)) {
+      conflictedFiles.add(file);
+      console.error(`Conflict for ${file}: both <patch> and <write> present; skipping file.`);
+    }
+  }
+
+  // Parse and execute <patch> commands against per-file original snapshots.
+  for (const [file, patches] of patchesByFile) {
+    if (conflictedFiles.has(file)) {
+      continue;
+    }
     try {
       const fileContent = await fs.readFile(file, 'utf-8');
-      const lines = fileContent.split('\n');
-      const trimmed = trimTagContent(rawContent);
-      const replacementLines = trimmed === '' ? [] : trimmed.split('\n');
-      lines.splice(from, to - from + 1, ...replacementLines);
-      await fs.writeFile(file, lines.join('\n'), 'utf-8');
-      console.log(`Patched ${file} lines ${from}-${to}`);
+      const originalLines = fileContent.split('\n');
+      const validationError = validatePatchCommands(originalLines, patches);
+      if (validationError !== null) {
+        console.error(`Error patching ${file}: ${validationError}`);
+        continue;
+      }
+      const patchedLines = applyPatchCommands(originalLines, patches);
+      await fs.writeFile(file, patchedLines.join('\n'), 'utf-8');
+      const ranges = patches
+        .slice()
+        .sort((a, b) => a.from - b.from || a.to - b.to || a.ordinal - b.ordinal)
+        .map(p => `${p.from}-${p.to}`)
+        .join(', ');
+      console.log(`Patched ${file} lines ${ranges}`);
     } catch (err) {
       console.error(`Error patching ${file}: ${(err as Error).message}`);
     }
   }
 
-  // Parse and execute <write> commands
-  const writeRegex = /<write\s+file="([^"]+)">([\s\S]*?)<\/write>/g;
-  while ((match = writeRegex.exec(reply)) !== null) {
-    const [, file, rawContent] = match;
-    const content = trimTagContent(rawContent);
+  // Parse and execute <write> commands.
+  for (const [file, writes] of writesByFile) {
+    if (conflictedFiles.has(file)) {
+      continue;
+    }
+    const selected = writes.reduce((best, cur) => (cur.ordinal > best.ordinal ? cur : best));
+    if (writes.length > 1) {
+      console.error(`Warning: multiple <write> commands for ${file}; using last one.`);
+    }
     try {
       await fs.mkdir(path.dirname(file), { recursive: true });
-      await fs.writeFile(file, content, 'utf-8');
+      await fs.writeFile(file, selected.content, 'utf-8');
       console.log(`Wrote ${file}`);
     } catch (err) {
       console.error(`Error writing ${file}: ${(err as Error).message}`);
