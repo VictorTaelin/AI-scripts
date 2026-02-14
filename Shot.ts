@@ -155,7 +155,7 @@ complete file contents
 
 Creates a new file or completely overwrites an existing file.
 
-Output ONLY tool calls. No commentary, no explanations, no code blocks.`;
+When the user asks an open ended question, answer without invoking any tool. `;
 
 async function main(): Promise<void> {
   const inputFile = process.argv[2];
