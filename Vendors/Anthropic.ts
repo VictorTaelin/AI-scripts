@@ -6,24 +6,29 @@ type Role = "user" | "assistant";
 const DEFAULT_MAX_TOKENS = 32000;
 const MIN_THINKING_BUDGET = 1024;
 const MIN_ANSWER_RESERVE = 2048;
+const PROMPT_CACHING_BETA = "prompt-caching-2024-07-31";
+const FAST_MODE_BETA = "fast-mode-2026-02-01";
 
 export class AnthropicChat implements ChatInstance {
   private readonly client: Anthropic;
   private readonly model: string;
   private readonly vendorConfig?: VendorConfig;
+  private readonly fast: boolean;
+  private readonly betas: string[];
   private readonly messages: { role: Role; content: string }[] = [];
   private systemPrompt?: string;
   private systemCacheable = false;
 
-  constructor(apiKey: string, model: string, vendorConfig?: VendorConfig) {
-    this.client = new Anthropic({
-      apiKey,
-      defaultHeaders: {
-        "anthropic-beta": "prompt-caching-2024-07-31",
-      },
-    });
+  constructor(apiKey: string, model: string, vendorConfig?: VendorConfig, fast: boolean = false) {
+    const betas = [PROMPT_CACHING_BETA];
+    if (fast) {
+      betas.push(FAST_MODE_BETA);
+    }
+    this.client = new Anthropic({ apiKey });
     this.model = model;
     this.vendorConfig = vendorConfig;
+    this.fast = fast;
+    this.betas = betas;
   }
 
   async ask(
@@ -52,7 +57,12 @@ export class AnthropicChat implements ChatInstance {
       stream: wantStream,
       max_tokens: maxTokens,
       messages: this.messages,
+      betas: this.betas,
     };
+
+    if (this.fast) {
+      params.speed = "fast";
+    }
 
     if (this.systemPrompt) {
       params.system = this.systemCacheable
@@ -77,7 +87,7 @@ export class AnthropicChat implements ChatInstance {
     let plain = "";
 
     if (wantStream) {
-      const streamResp: AsyncIterable<any> = (await this.client.messages.create(params)) as any;
+      const streamResp: AsyncIterable<any> = (await this.client.beta.messages.create(params)) as any;
       let printedReasoning = false;
       for await (const event of streamResp) {
         if (event.type === "content_block_delta") {
@@ -97,7 +107,7 @@ export class AnthropicChat implements ChatInstance {
       }
       process.stdout.write("\n");
     } else {
-      const message: any = await this.client.messages.create({ ...params, stream: false });
+      const message: any = await this.client.beta.messages.create({ ...params, stream: false });
       const blocks: any[] = message.content;
       let printedReasoning = false;
       for (const block of blocks) {

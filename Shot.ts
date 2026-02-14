@@ -68,7 +68,7 @@ import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { GenAI, resolveModelSpec } from './GenAI';
-import { minimatch } from 'minimatch';
+import minimatch from 'minimatch';
 
 const execFileAsync = promisify(execFile);
 
@@ -168,7 +168,7 @@ async function main(): Promise<void> {
   const { model, patterns, prompt } = parseInputFile(raw);
 
   const resolved = resolveModelSpec(model);
-  console.log(`model: ${resolved.vendor}:${resolved.model}:${resolved.thinking}`);
+  console.log(`model: ${resolved.vendor}:${resolved.model}:${resolved.thinking}${resolved.fast ? ':fast' : ''}`);
 
   // Resolve glob patterns respecting .gitignore
   const paths = await resolvePatterns(patterns);

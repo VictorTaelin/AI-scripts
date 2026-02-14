@@ -39,7 +39,7 @@
     "url": "https://github.com/victortaelin/ai-scripts/issues"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
+    "@anthropic-ai/sdk": "^0.74.0",
     "@google/genai": "^1.29.1",
     "@openrouter/ai-sdk-provider": "^0.4.5",
     "@portkey-ai/gateway": "^1.9.15",
@@ -58,6 +58,7 @@
   },
   "homepage": "https://github.com/victortaelin/ai-scripts#readme",
   "devDependencies": {
+    "@types/minimatch": "^5.1.2",
     "@types/minimist": "^1.2.5"
   }
 }

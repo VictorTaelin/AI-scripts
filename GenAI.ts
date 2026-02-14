@@ -44,6 +44,7 @@ export interface ResolvedModelSpec {
   vendor: Vendor;
   model: string;
   thinking: ThinkingLevel;
+  fast: boolean;
 }
 
 export interface VendorConfig {
@@ -150,28 +151,44 @@ async function getToken(vendor: string): Promise<string> {
 }
 
 export function resolveModelSpec(spec: string): ResolvedModelSpec {
-  const trimmed = spec.trim();
+  let trimmed = spec.trim();
   if (!trimmed) {
     throw new Error('Model spec must be provided');
   }
 
+  // '.' prefix enables fast mode (e.g. '.o+' -> 'o+' with fast=true)
+  let fast = false;
+  if (trimmed.startsWith('.')) {
+    fast = true;
+    trimmed = trimmed.slice(1);
+  }
+
   const parts = trimmed.split(':');
+
+  // Check if last part is 'fast'
+  if (parts.length > 1 && parts[parts.length - 1].trim().toLowerCase() === 'fast') {
+    fast = true;
+    parts.pop();
+  }
+
   if (parts.length === 1) {
     const alias = MODELS[trimmed];
     if (alias) {
       if (alias.includes(':')) {
-        return resolveModelSpec(alias);
+        const resolved = resolveModelSpec(alias);
+        resolved.fast = resolved.fast || fast;
+        return resolved;
       }
       const vendor = inferVendor(alias);
-      return { model: alias, vendor, thinking: 'auto' };
+      return { model: alias, vendor, thinking: 'auto', fast };
     }
     const vendor = inferVendor(trimmed);
-    return { model: trimmed, vendor, thinking: 'auto' };
+    return { model: trimmed, vendor, thinking: 'auto', fast };
   }
 
   if (parts.length < 2 || parts.length > 3) {
     throw new Error(
-      `Expected "vendor:model" or "vendor:model:thinking_budget", got "${spec}"`,
+      `Expected "vendor:model" or "vendor:model:thinking", got "${spec}"`,
     );
   }
 
@@ -212,7 +229,7 @@ export function resolveModelSpec(spec: string): ResolvedModelSpec {
     thinking = aliasThinking;
   }
 
-  return { vendor, model, thinking };
+  return { vendor, model, thinking, fast };
 }
 
 function mapThinkingToOpenAI(
@@ -333,7 +350,7 @@ export async function GenAI(modelSpec: string): Promise<ChatInstance> {
 
   if (resolved.vendor === 'anthropic') {
     const apiKey = await getToken(resolved.vendor);
-    return new AnthropicChat(apiKey, resolved.model, vendorConfig);
+    return new AnthropicChat(apiKey, resolved.model, vendorConfig, resolved.fast);
   }
 
   if (resolved.vendor === 'google') {

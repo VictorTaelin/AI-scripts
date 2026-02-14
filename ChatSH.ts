@@ -123,7 +123,7 @@ async function main() {
 
   const [model] = program.args;
   const resolvedSpec = resolveModelSpec(model);
-  const resolvedModelName = `${resolvedSpec.vendor}:${resolvedSpec.model}:${resolvedSpec.thinking}`;
+  const resolvedModelName = `${resolvedSpec.vendor}:${resolvedSpec.model}:${resolvedSpec.thinking}${resolvedSpec.fast ? ':fast' : ''}`;
   const ai = await GenAI(model);
 
   let aiCommandOutputs: string[] = [];
