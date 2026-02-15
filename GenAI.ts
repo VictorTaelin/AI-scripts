@@ -14,6 +14,12 @@ export const MODELS: Record<string, string> = {
   'g+' : 'openai:gpt-5.2:high',
   'G'  : 'openai:gpt-5.2:high',
 
+  // Bytedance Doubao (via AIHubMix)
+  'd-' : 'aihubmix:doubao-seed-2-0-code-preview-260215:low',
+  'd'  : 'aihubmix:doubao-seed-2-0-code-preview-260215:medium',
+  'd+' : 'aihubmix:doubao-seed-2-0-code-preview-260215:high',
+  'D'  : 'aihubmix:doubao-seed-2-0-code-preview-260215:high',
+
   // Anthropic Claude
   's-' : 'anthropic:claude-sonnet-4-5-20250929:low',
   's'  : 'anthropic:claude-sonnet-4-5-20250929:medium',
@@ -37,7 +43,7 @@ export const MODELS: Record<string, string> = {
   'X'  : 'xai:grok-4-0709:high',
 };
 
-export type Vendor = 'openai' | 'anthropic' | 'google' | 'openrouter' | 'xai';
+export type Vendor = 'openai' | 'anthropic' | 'google' | 'openrouter' | 'xai' | 'aihubmix';
 export type ThinkingLevel = 'none' | 'low' | 'medium' | 'high' | 'auto';
 
 export interface ResolvedModelSpec {
@@ -85,7 +91,7 @@ export interface ChatInstance {
   ask(userMessage: string | null, options: AskOptions): Promise<string | { messages: any[] }>;
 }
 
-const SUPPORTED_VENDORS = new Set<Vendor>(['openai', 'anthropic', 'google', 'openrouter', 'xai']);
+const SUPPORTED_VENDORS = new Set<Vendor>(['openai', 'anthropic', 'google', 'openrouter', 'xai', 'aihubmix']);
 
 const CEREBRAS_MODELS = new Set<string>([
   'gpt-oss-120b',
@@ -104,6 +110,7 @@ const API_KEY_ENV_VARS: Record<string, string[]> = {
   openrouter: ['OPENROUTER_API_KEY'],
   xai: ['XAI_API_KEY'],
   cerebras: ['CEREBRAS_API_KEY'],
+  aihubmix: ['AIHUBMIX_API_KEY'],
 };
 
 function inferVendor(model: string): Vendor {
@@ -119,6 +126,9 @@ function inferVendor(model: string): Vendor {
   }
   if (normalized.startsWith('grok')) {
     return 'xai';
+  }
+  if (normalized.startsWith('doubao')) {
+    return 'aihubmix';
   }
   if (normalized.includes('/')) {
     return 'openrouter';
@@ -337,14 +347,17 @@ export async function GenAI(modelSpec: string): Promise<ChatInstance> {
   const resolved = resolveModelSpec(modelSpec);
   const vendorConfig = buildVendorConfig(resolved.vendor, resolved.model, resolved.thinking);
 
-  if (resolved.vendor === 'openai' || resolved.vendor === 'openrouter') {
+  if (resolved.vendor === 'openai' || resolved.vendor === 'openrouter' || resolved.vendor === 'aihubmix') {
     const useCerebras = resolved.vendor === 'openai' && CEREBRAS_MODELS.has(resolved.model);
-    const apiKey = await getToken(useCerebras ? 'cerebras' : resolved.vendor);
+    const tokenVendor = useCerebras ? 'cerebras' : resolved.vendor;
+    const apiKey = await getToken(tokenVendor);
     const baseURL = useCerebras
       ? process.env.CEREBRAS_BASE_URL ?? 'https://api.cerebras.ai/v1'
       : resolved.vendor === 'openai'
-        ? 'https://api.openai.com/v1'
-        : 'https://openrouter.ai/api/v1';
+        ? process.env.OPENAI_BASE_URL?.trim() || 'https://api.openai.com/v1'
+        : resolved.vendor === 'openrouter'
+          ? 'https://openrouter.ai/api/v1'
+          : process.env.AIHUBMIX_BASE_URL?.trim() || 'https://aihubmix.com/v1';
     return new OpenAIChat(apiKey, baseURL, resolved.model, resolved.vendor, vendorConfig);
   }
 
