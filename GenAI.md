@@ -44,7 +44,6 @@ format, for example:
 - `google:gemini-2.5-pro:medium`
 - `openrouter:meta-llama/llama-3.3-70b-instruct:auto`
 - `xai:grok-4-0709:auto`
-- `aihubmix:doubao-seed-2-0-code-preview-260215:auto`
 
 The optional third segment controls the thinking budget (`none | low | medium | high | auto`).
 Legacy shortcodes remain available via the `MODELS` export for convenience. Each shortcut
@@ -108,7 +107,7 @@ Estimates token count using GPT-4o's tokenizer.
 Setup
 -----
 Ensure API keys are set in `~/.config/<vendor>.token` (e.g., `~/.config/openai.token`).
-Supported vendors are `openai`, `anthropic`, `google`, `openrouter`, `xai`, and `aihubmix`.
+Supported vendors are `openai`, `anthropic`, `google`, `openrouter`, and `xai`.
 
 For OpenRouter, the library sets the `HTTP-Referer` header to `"https://github.com/OpenRouterTeam/openrouter-examples"`.
 
