@@ -34,7 +34,7 @@ async function main(): Promise<void> {
   const mini  = process.argv[3];
   const model = process.argv[4] || 'c';
   const resolvedModel = resolveModelSpec(model);
-  const modelDescriptor = `${resolvedModel.vendor}:${resolvedModel.model}:${resolvedModel.thinking}`;
+  const modelDescriptor = `${resolvedModel.vendor}:${resolvedModel.model}:${resolvedModel.thinking}${resolvedModel.fast ? ':fast' : ''}`;
 
   if (!file) {
     console.log('Usage: holefill <file> [<shortened_file>] [<model_name>]');
