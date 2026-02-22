@@ -15,6 +15,8 @@ const DEFAULT_MAX_TOKENS = 128000;
 const FAST_MODE_BETA = "fast-mode-2026-02-01";
 const TEXT_EDITOR_TOOL_NAME = "str_replace_based_edit_tool";
 const TEXT_EDITOR_TOOL_TYPE = "text_editor_20250728";
+const DIM = "\x1b[2m";
+const RESET = "\x1b[0m";
 
 function canUseNativeEditor(tools: ToolDef[]): boolean {
   if (tools.length === 0) {
@@ -30,42 +32,61 @@ function canUseNativeEditor(tools: ToolDef[]): boolean {
   return names.size === 2;
 }
 
-function normalizeTextEditorCall(block: any): ToolCall | null {
+function hasStringField(obj: Record<string, any>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(obj, key) && typeof obj[key] === "string";
+}
+
+function normalizeTextEditorCall(block: any): ToolCall {
   const input = block?.input ?? {};
   const command = typeof input.command === "string" ? input.command : "";
   const path = typeof input.path === "string" ? input.path : "";
   if (!path) {
-    return null;
+    throw new Error("missing text_editor path");
   }
   switch (command) {
     case "str_replace": {
-      const oldStr = typeof input.old_str === "string" ? input.old_str : "";
-      const newStr = typeof input.new_str === "string" ? input.new_str : "";
+      if (!hasStringField(input, "old_str")) {
+        throw new Error("missing text_editor old_str");
+      }
+      if (!hasStringField(input, "new_str")) {
+        throw new Error("missing text_editor new_str");
+      }
       return {
         id: block?.id,
         name: "str_replace",
         input: {
           path,
-          old_str: oldStr,
-          new_str: newStr,
+          old_str: input.old_str,
+          new_str: input.new_str,
         },
       };
     }
     case "create": {
-      const fileText = typeof input.file_text === "string" ? input.file_text : "";
+      if (!hasStringField(input, "file_text")) {
+        throw new Error("missing text_editor file_text");
+      }
       return {
         id: block?.id,
         name: "create_file",
         input: {
           path,
-          file_text: fileText,
+          file_text: input.file_text,
         },
       };
     }
     default: {
-      return null;
+      throw new Error(`unsupported text_editor command "${command || "(empty)"}"`);
     }
   }
+}
+
+function textEditorError(toolUseId: string, message: string): any {
+  return {
+    type: "tool_result",
+    tool_use_id: toolUseId,
+    content: message,
+    is_error: true,
+  };
 }
 
 export class AnthropicChat implements ChatInstance {
@@ -106,14 +127,14 @@ export class AnthropicChat implements ChatInstance {
     };
   }
 
-  private buildParams(options: AskOptions, wantStream: boolean): any {
+  private buildParams(options: AskOptions, wantStream: boolean, messages?: any[]): any {
     const mergedAnthropicConfig = this.mergeAnthropicConfig(options);
     const maxTokens = options.max_tokens ?? DEFAULT_MAX_TOKENS;
     const params: any = {
       model: this.model,
       stream: wantStream,
       max_tokens: maxTokens,
-      messages: this.messages,
+      messages: messages ?? this.messages,
     };
     if (this.betas.length > 0) {
       params.betas = this.betas;
@@ -132,12 +153,25 @@ export class AnthropicChat implements ChatInstance {
     const thinking = mergedAnthropicConfig?.thinking;
     const useThinking = thinking && typeof thinking === "object";
     if (useThinking) {
-      params.thinking = thinking;
-      const effort = mergedAnthropicConfig?.effort;
-      if (effort) {
-        params.output_config = { effort };
+      if (thinking.type === "enabled") {
+        if (maxTokens > 1024) {
+          const budgetMax = maxTokens - 1;
+          const budgetRaw = typeof thinking.budget_tokens === "number" ? thinking.budget_tokens : 1024;
+          const budget = Math.max(1024, Math.min(budgetRaw, budgetMax));
+          params.thinking = {
+            type: "enabled",
+            budget_tokens: budget,
+          };
+        } else {
+          params.thinking = { type: "disabled" };
+        }
+      } else {
+        params.thinking = thinking;
       }
-    } else if (typeof options.temperature === "number") {
+    }
+
+    const noThinking = !params.thinking || params.thinking.type === "disabled";
+    if (noThinking && typeof options.temperature === "number") {
       params.temperature = options.temperature;
     }
 
@@ -222,55 +256,138 @@ export class AnthropicChat implements ChatInstance {
       };
     }
 
+    const wantStream = options.stream !== false;
     this.updateSystemOptions(options);
-    this.messages.push({ role: "user", content: userMessage });
+    const conversation: any[] = this.messages.map((msg) => ({ role: msg.role, content: msg.content }));
+    conversation.push({ role: "user", content: userMessage });
 
     const localOptions: AskOptions = { ...options };
     if (typeof localOptions.max_tokens !== "number") {
       localOptions.max_tokens = 8192;
     }
-    const params = this.buildParams(localOptions, false);
     const useNativeEditor = canUseNativeEditor(tools);
-    if (useNativeEditor) {
-      params.tools = [{ type: TEXT_EDITOR_TOOL_TYPE, name: TEXT_EDITOR_TOOL_NAME }];
-    } else {
-      params.tools = tools.map((tool) => ({
-        name: tool.name,
-        description: tool.description,
-        input_schema: tool.inputSchema ?? { type: "object", properties: {} },
-      }));
-    }
-
-    const message: any = await this.client.beta.messages.create({ ...params, stream: false });
-    const stopReason = message?.stop_reason ?? "";
-    const blocks: any[] = Array.isArray(message?.content) ? message.content : [];
-
     let plain = "";
     let printedReasoning = false;
     const toolCalls: ToolCall[] = [];
+    const maxRounds = 4;
 
-    for (const block of blocks) {
-      if (block?.type === "thinking") {
-        process.stdout.write(`\x1b[2m${block.thinking}\x1b[0m`);
-        printedReasoning = true;
-        continue;
+    for (let round = 0; round < maxRounds; round++) {
+      const params = this.buildParams(localOptions, false, conversation);
+      if (useNativeEditor) {
+        params.tools = [{ type: TEXT_EDITOR_TOOL_TYPE, name: TEXT_EDITOR_TOOL_NAME }];
+      } else {
+        params.tools = tools.map((tool) => ({
+          name: tool.name,
+          description: tool.description,
+          input_schema: tool.inputSchema ?? { type: "object", properties: {} },
+        }));
       }
-      if (block?.type === "text") {
-        if (printedReasoning) {
-          process.stdout.write("\n");
-          printedReasoning = false;
-        }
-        process.stdout.write(block.text);
-        plain += block.text;
-        continue;
-      }
-      if (block?.type === "tool_use") {
-        if (useNativeEditor && block.name === TEXT_EDITOR_TOOL_NAME) {
-          const nativeCall = normalizeTextEditorCall(block);
-          if (nativeCall) {
-            toolCalls.push(nativeCall);
+
+      let message: any;
+      if (wantStream) {
+        const stream = this.client.beta.messages.stream({ ...params, stream: true });
+        let roundPrintedAny = false;
+        let lastKind: "thinking" | "text" | "tool" | null = null;
+        let lastChar = "\n";
+        const ensureBoundary = (next: "thinking" | "text" | "tool") => {
+          if (lastKind && lastKind !== next && lastChar !== "\n") {
+            process.stdout.write("\n");
+            lastChar = "\n";
           }
-        } else if (typeof block.name === "string") {
+          lastKind = next;
+        };
+        const writeChunk = (chunk: string, kind: "thinking" | "text" | "tool", dim: boolean) => {
+          if (!chunk) {
+            return;
+          }
+          ensureBoundary(kind);
+          if (dim) {
+            process.stdout.write(DIM + chunk + RESET);
+          } else {
+            process.stdout.write(chunk);
+          }
+          roundPrintedAny = true;
+          const end = chunk[chunk.length - 1];
+          if (end) {
+            lastChar = end;
+          }
+        };
+        stream.on("thinking", (delta: string) => {
+          writeChunk(delta, "thinking", true);
+        });
+        stream.on("text", (delta: string) => {
+          writeChunk(delta, "text", false);
+        });
+        stream.on("inputJson", (delta: string) => {
+          writeChunk(delta, "tool", false);
+        });
+        message = await stream.finalMessage();
+        if (roundPrintedAny && lastChar !== "\n") {
+          process.stdout.write("\n");
+        }
+      } else {
+        message = await this.client.beta.messages.create({ ...params, stream: false });
+      }
+
+      const stopReason = message?.stop_reason ?? "";
+      const blocks: any[] = Array.isArray(message?.content) ? message.content : [];
+
+      const nativeToolUses: any[] = [];
+      const toolResults: any[] = [];
+
+      for (const block of blocks) {
+        if (block?.type === "thinking") {
+          if (!wantStream) {
+            process.stdout.write(`\x1b[2m${block.thinking}\x1b[0m`);
+            printedReasoning = true;
+          }
+          continue;
+        }
+        if (block?.type === "text") {
+          if (!wantStream) {
+            if (printedReasoning) {
+              process.stdout.write("\n");
+              printedReasoning = false;
+            }
+            process.stdout.write(block.text);
+          }
+          plain += block.text;
+          continue;
+        }
+        if (block?.type !== "tool_use") {
+          continue;
+        }
+        if (useNativeEditor && block.name === TEXT_EDITOR_TOOL_NAME) {
+          nativeToolUses.push(block);
+          const toolUseId = typeof block.id === "string" ? block.id : "";
+          if (!toolUseId) {
+            continue;
+          }
+          const input = block.input ?? {};
+          const command = typeof input.command === "string" ? input.command : "";
+          if (command === "view") {
+            toolResults.push(
+              textEditorError(
+                toolUseId,
+                "view is disabled for this task. All files are already in the prompt context; use str_replace or create.",
+              ),
+            );
+            continue;
+          }
+          try {
+            const nativeCall = normalizeTextEditorCall(block);
+            toolCalls.push(nativeCall);
+          } catch (err) {
+            toolResults.push(
+              textEditorError(
+                toolUseId,
+                `unsupported editor command: ${(err as Error).message}`,
+              ),
+            );
+          }
+          continue;
+        }
+        if (typeof block.name === "string") {
           toolCalls.push({
             id: typeof block.id === "string" ? block.id : undefined,
             name: block.name,
@@ -278,16 +395,33 @@ export class AnthropicChat implements ChatInstance {
           });
         }
       }
+
+      if (stopReason === "max_tokens") {
+        process.stderr.write("\x1b[33m[warning: response truncated by max_tokens limit]\x1b[0m\n");
+      }
+
+      if (toolCalls.length > 0) {
+        break;
+      }
+
+      const canContinueToolRoundtrip = (
+        useNativeEditor &&
+        nativeToolUses.length > 0 &&
+        toolResults.length === nativeToolUses.length
+      );
+      if (!canContinueToolRoundtrip) {
+        break;
+      }
+
+      conversation.push({ role: "assistant", content: blocks });
+      conversation.push({ role: "user", content: toolResults });
     }
 
-    if (printedReasoning || plain.length > 0) {
+    if (!wantStream && (printedReasoning || plain.length > 0)) {
       process.stdout.write("\n");
     }
 
-    if (stopReason === "max_tokens") {
-      process.stderr.write("\x1b[33m[warning: response truncated by max_tokens limit]\x1b[0m\n");
-    }
-
+    this.messages.push({ role: "user", content: userMessage });
     this.messages.push({ role: "assistant", content: plain });
     return { text: plain, toolCalls };
   }

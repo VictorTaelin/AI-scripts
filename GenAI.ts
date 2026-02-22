@@ -58,8 +58,12 @@ export interface VendorConfig {
   anthropic?: {
     thinking?: {
       type: 'adaptive';
+    } | {
+      type: 'disabled';
+    } | {
+      type: 'enabled';
+      budget_tokens: number;
     } | null;
-    effort?: 'low' | 'medium' | 'high' | 'max';
   };
   google?: {
     config?: {
@@ -276,21 +280,27 @@ function mapThinkingToOpenAI(
   return { reasoning: { effort } };
 }
 
-// Maps thinking level to Anthropic adaptive thinking config
+// Maps thinking level to Anthropic thinking config
 function mapThinkingToAnthropic(
   thinking: ThinkingLevel,
 ): VendorConfig['anthropic'] | undefined {
   if (thinking === 'none') {
-    return { thinking: null };
+    return { thinking: { type: 'disabled' as const } };
   }
+  const budget = thinking === 'low'
+    ? 2048
+    : thinking === 'medium'
+      ? 4096
+      : thinking === 'high'
+        ? 6144
+        : 7168;
   if (thinking === 'auto') {
     return {
-      thinking: { type: 'adaptive' as const },
+      thinking: { type: 'enabled' as const, budget_tokens: 4096 },
     };
   }
   return {
-    thinking: { type: 'adaptive' as const },
-    effort: thinking,
+    thinking: { type: 'enabled' as const, budget_tokens: budget },
   };
 }
 
