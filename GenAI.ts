@@ -15,15 +15,17 @@ export const MODELS: Record<string, string> = {
   'G'  : 'openai:gpt-5.2:high',
 
   // Anthropic Claude
-  's-' : 'anthropic:claude-sonnet-4-5-20250929:low',
-  's'  : 'anthropic:claude-sonnet-4-5-20250929:medium',
-  's+' : 'anthropic:claude-sonnet-4-5-20250929:high',
-  'S'  : 'anthropic:claude-sonnet-4-5-20250929:high',
+  's-'  : 'anthropic:claude-sonnet-4-6:low',
+  's'   : 'anthropic:claude-sonnet-4-6:medium',
+  's+'  : 'anthropic:claude-sonnet-4-6:high',
+  's++' : 'anthropic:claude-sonnet-4-6:max',
+  'S'   : 'anthropic:claude-sonnet-4-6:high',
 
-  'o-' : 'anthropic:claude-opus-4-6:low',
-  'o'  : 'anthropic:claude-opus-4-6:medium',
-  'o+' : 'anthropic:claude-opus-4-6:high',
-  'O'  : 'anthropic:claude-opus-4-6:high',
+  'o-'  : 'anthropic:claude-opus-4-6:low',
+  'o'   : 'anthropic:claude-opus-4-6:medium',
+  'o+'  : 'anthropic:claude-opus-4-6:high',
+  'o++' : 'anthropic:claude-opus-4-6:max',
+  'O'   : 'anthropic:claude-opus-4-6:high',
 
   // Google Gemini
   'i-' : 'google:gemini-3-pro-preview:low',
@@ -38,7 +40,7 @@ export const MODELS: Record<string, string> = {
 };
 
 export type Vendor = 'openai' | 'anthropic' | 'google' | 'openrouter' | 'xai';
-export type ThinkingLevel = 'none' | 'low' | 'medium' | 'high' | 'auto';
+export type ThinkingLevel = 'none' | 'low' | 'medium' | 'high' | 'max' | 'auto';
 
 export interface ResolvedModelSpec {
   vendor: Vendor;
@@ -55,9 +57,9 @@ export interface VendorConfig {
   };
   anthropic?: {
     thinking?: {
-      type: 'enabled';
-      budget_tokens: number;
+      type: 'adaptive';
     } | null;
+    effort?: 'low' | 'medium' | 'high' | 'max';
   };
   google?: {
     config?: {
@@ -219,9 +221,9 @@ export function resolveModelSpec(spec: string): ResolvedModelSpec {
   let thinking: ThinkingLevel = 'auto';
   if (thinkingRaw) {
     const normalized = thinkingRaw.trim().toLowerCase();
-    if (!['none', 'low', 'medium', 'high', 'auto'].includes(normalized)) {
+    if (!['none', 'low', 'medium', 'high', 'max', 'auto'].includes(normalized)) {
       throw new Error(
-        `Unsupported thinking budget "${thinkingRaw}", expected one of none|low|medium|high|auto`,
+        `Unsupported thinking budget "${thinkingRaw}", expected one of none|low|medium|high|max|auto`,
       );
     }
     thinking = normalized as ThinkingLevel;
@@ -250,6 +252,7 @@ function mapThinkingToOpenAI(
   return { reasoning: { effort } };
 }
 
+// Maps thinking level to Anthropic adaptive thinking config
 function mapThinkingToAnthropic(
   thinking: ThinkingLevel,
 ): VendorConfig['anthropic'] | undefined {
@@ -257,14 +260,13 @@ function mapThinkingToAnthropic(
     return { thinking: null };
   }
   if (thinking === 'auto') {
-    return undefined;
+    return {
+      thinking: { type: 'adaptive' as const },
+    };
   }
-  const budget = thinking === 'low' ? 2048 : thinking === 'medium' ? 4096 : 8192;
   return {
-    thinking: {
-      type: 'enabled' as const,
-      budget_tokens: budget,
-    },
+    thinking: { type: 'adaptive' as const },
+    effort: thinking,
   };
 }
 
