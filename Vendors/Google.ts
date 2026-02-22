@@ -1,5 +1,13 @@
 import { GoogleGenAI } from "@google/genai";
-import type { AskOptions, ChatInstance, VendorConfig } from "../GenAI";
+import type {
+  AskOptions,
+  AskResult,
+  AskToolsOptions,
+  ChatInstance,
+  ToolCall,
+  ToolDef,
+  VendorConfig,
+} from "../GenAI";
 
 type Role = "user" | "assistant";
 interface Turn {
@@ -9,6 +17,45 @@ interface Turn {
 
 const DIM = "\x1b[2m";
 const RESET = "\x1b[0m";
+
+function normalizeGoogleSchema(schema: any): any {
+  if (!schema || typeof schema !== "object") {
+    return schema;
+  }
+  if (Array.isArray(schema)) {
+    return schema.map(normalizeGoogleSchema);
+  }
+
+  const type = typeof schema.type === "string" ? schema.type.toUpperCase() : schema.type;
+  const normalized: Record<string, any> = { ...schema };
+  if (type) {
+    normalized.type = type;
+  }
+
+  if (schema.properties && typeof schema.properties === "object") {
+    const properties: Record<string, any> = {};
+    for (const [key, value] of Object.entries(schema.properties)) {
+      properties[key] = normalizeGoogleSchema(value);
+    }
+    normalized.properties = properties;
+  }
+  if (schema.items) {
+    normalized.items = normalizeGoogleSchema(schema.items);
+  }
+  return normalized;
+}
+
+function normalizeGoogleToolCall(call: any): ToolCall | null {
+  const name = typeof call?.name === "string" ? call.name : "";
+  if (!name) {
+    return null;
+  }
+  let input: Record<string, any> = {};
+  if (call?.args && typeof call.args === "object" && !Array.isArray(call.args)) {
+    input = call.args as Record<string, any>;
+  }
+  return { name, input };
+}
 
 export class GoogleChat implements ChatInstance {
   private readonly client: GoogleGenAI;
@@ -63,6 +110,59 @@ export class GoogleChat implements ChatInstance {
     return visible;
   }
 
+  async askTools(userMessage: string, options: AskToolsOptions): Promise<AskResult> {
+    const tools = options.tools ?? [];
+    if (tools.length === 0) {
+      const reply = await this.ask(userMessage, options);
+      return {
+        text: typeof reply === "string" ? reply : "",
+        toolCalls: [],
+      };
+    }
+
+    if (typeof options.system === "string") {
+      this.systemInstruction = options.system;
+    }
+
+    const contents = this.buildContents(userMessage);
+    this.history.push({ role: "user", content: userMessage });
+
+    const config = this.buildConfig(options);
+    config.tools = [{
+      functionDeclarations: tools.map((tool: ToolDef) => ({
+        name: tool.name,
+        description: tool.description,
+        parameters: normalizeGoogleSchema(tool.inputSchema ?? { type: "object", properties: {} }),
+      })),
+    }];
+    config.toolConfig = {
+      functionCallingConfig: {
+        mode: "AUTO",
+      },
+    };
+
+    const request: any = {
+      model: this.modelName,
+      contents,
+      config,
+    };
+
+    const response: any = await this.client.models.generateContent(request);
+    const visible = this.printCandidate(response?.candidates?.[0]);
+
+    const toolCalls: ToolCall[] = [];
+    const functionCalls = this.collectFunctionCalls(response);
+    for (const call of functionCalls) {
+      const toolCall = normalizeGoogleToolCall(call);
+      if (toolCall) {
+        toolCalls.push(toolCall);
+      }
+    }
+
+    this.history.push({ role: "assistant", content: visible });
+    return { text: visible, toolCalls };
+  }
+
   private buildContents(userMessage: string) {
     const contents = this.history.map((turn) => ({
       role: turn.role === "assistant" ? "model" : "user",
@@ -97,6 +197,20 @@ export class GoogleChat implements ChatInstance {
     }
 
     return config;
+  }
+
+  private collectFunctionCalls(response: any) {
+    if (Array.isArray(response?.functionCalls) && response.functionCalls.length > 0) {
+      return response.functionCalls;
+    }
+    const parts = response?.candidates?.[0]?.content?.parts ?? [];
+    const calls: any[] = [];
+    for (const part of parts) {
+      if (part?.functionCall) {
+        calls.push(part.functionCall);
+      }
+    }
+    return calls;
   }
 
   private async handleStream(stream: AsyncGenerator<any>) {

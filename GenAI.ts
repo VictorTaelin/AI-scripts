@@ -73,6 +73,25 @@ export interface VendorConfig {
   };
 }
 
+export type JsonSchema = Record<string, any>;
+
+export interface ToolDef {
+  name: string;
+  description?: string;
+  inputSchema?: JsonSchema;
+}
+
+export interface ToolCall {
+  id?: string;
+  name: string;
+  input: Record<string, any>;
+}
+
+export interface AskResult {
+  text: string;
+  toolCalls: ToolCall[];
+}
+
 export interface AskOptions {
   system?: string;
   temperature?: number;
@@ -83,8 +102,13 @@ export interface AskOptions {
   vendorConfig?: VendorConfig;
 }
 
+export interface AskToolsOptions extends AskOptions {
+  tools: ToolDef[];
+}
+
 export interface ChatInstance {
   ask(userMessage: string | null, options: AskOptions): Promise<string | { messages: any[] }>;
+  askTools(userMessage: string, options: AskToolsOptions): Promise<AskResult>;
 }
 
 const SUPPORTED_VENDORS = new Set<Vendor>(['openai', 'anthropic', 'google', 'openrouter', 'xai']);

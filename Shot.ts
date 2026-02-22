@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
 
-// Shot: a one-shot AI code editing tool.
+// Shot.ts
+// =======
+// A one-shot AI code editing tool using search/replace patching.
 //
 // Usage:
 //   shot my_file
@@ -26,70 +28,65 @@
 // How it works:
 //
 // 1. All context files are loaded and each line is prefixed with a zero-padded
-//    line number. For example, a file with 5 lines becomes:
+//    line number for reference. For example:
 //
 //      0|hello this is
 //      1|some example file
-//      2|function (x) {
-//      3|  return x
-//      4|}
 //
-//    Line numbers are always padded to the same width. A 73-line file uses two
-//    digits: 00|, 01|, ..., 72|.
+// 2. The numbered files are concatenated into a unified context block.
 //
-// 2. The numbered files are concatenated into a unified context block:
+// 3. The AI is first asked to emit structured tool calls:
+//    - str_replace(path, old_str, new_str)
+//    - create_file(path, file_text)
+//    When tool-calling is unavailable, Shot falls back to free-text XML commands.
 //
-//      ./path/to/file0.txt
-//      00|contents of
-//      01|file 0 go here
+// 4. Patches are matched against file content using a layered strategy:
+//    exact match, then trailing-whitespace-tolerant, then line-prefix-stripped.
 //
-//      ./path/to/file1.txt
-//      00|contents of
-//      01|file 1 go here
+// 5. A <write> command creates or completely overwrites a file.
 //
-// 3. The user's prompt is appended after the context.
-//
-// 4. A system prompt is appended describing the available tools:
-//
-//    - <patch file="..." from=N to=M>: replaces a slice of a file (lines N to
-//      M, inclusive, 0-indexed) with new content.
-//    - <write file="...">: writes a new file or overwrites an existing file.
-//
-//    These are the only two tools available to the AI.
-//
-// 5. The AI response is parsed and all tool calls are executed.
-//
-// 6. A log file is saved to ./.shot/YYYYyMMmDDdHHhMMmSSs.txt containing the
-//    complete prompt sent to the AI plus its complete answer (including tool
-//    calls).
+// 6. A log file is saved to ./.shot/ with the full prompt and response.
+
+// Imports
+// -------
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { GenAI, resolveModelSpec, tokenCount } from './GenAI';
+import type { AskResult, ToolCall, ToolDef } from './GenAI';
 import minimatch from 'minimatch';
 
 const execFileAsync = promisify(execFile);
 
+// Helpers
+// -------
+
+// Formats a date as a compact timestamp string
 function formatTimestamp(date: Date): string {
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  return `${date.getFullYear()}y${pad(date.getMonth() + 1)}m${pad(date.getDate())}d${pad(date.getHours())}h${pad(date.getMinutes())}m${pad(date.getSeconds())}s`;
+  var pad = (n: number) => n.toString().padStart(2, '0');
+  var d   = date;
+  return `${d.getFullYear()}y${pad(d.getMonth() + 1)}m${pad(d.getDate())}d${pad(d.getHours())}h${pad(d.getMinutes())}m${pad(d.getSeconds())}s`;
 }
 
+// Prefixes each line with a zero-padded line number
 function numberLines(content: string): string {
-  const lines = content.split('\n');
-  const width = Math.max(1, (lines.length - 1).toString().length);
-  return lines.map((line, i) => `${i.toString().padStart(width, '0')}|${line}`).join('\n');
+  var lines = content.split('\n');
+  var width = Math.max(1, (lines.length - 1).toString().length);
+  return lines.map((line, i) =>
+    `${i.toString().padStart(width, '0')}|${line}`
+  ).join('\n');
 }
 
+// Parses the input file into model, file patterns, and prompt
 function parseInputFile(content: string): { model: string; patterns: string[]; prompt: string } {
-  const lines = content.split('\n');
-  const model = lines[0].trim();
-  const patterns: string[] = [];
-  let i = 1;
+  var lines    = content.split('\n');
+  var model    = lines[0].trim();
+  var patterns = [] as string[];
+  var i = 1;
   for (; i < lines.length; i++) {
-    const line = lines[i].trim();
+    var line = lines[i].trim();
     if (line.startsWith('./')) {
       patterns.push(line);
     } else {
@@ -99,26 +96,24 @@ function parseInputFile(content: string): { model: string; patterns: string[]; p
   while (i < lines.length && lines[i].trim() === '') {
     i++;
   }
-  const prompt = lines.slice(i).join('\n').trim();
+  var prompt = lines.slice(i).join('\n').trim();
   return { model, patterns, prompt };
 }
 
+// Expands glob patterns against git-tracked files
 async function resolvePatterns(patterns: string[]): Promise<string[]> {
-  // Get all tracked + untracked (but not ignored) files via git
-  let allFiles: string[];
+  var allFiles: string[];
   try {
-    const { stdout } = await execFileAsync('git', ['ls-files', '--cached', '--others', '--exclude-standard']);
+    var { stdout } = await execFileAsync('git', ['ls-files', '--cached', '--others', '--exclude-standard']);
     allFiles = stdout.split('\n').filter(f => f.length > 0).map(f => `./${f}`);
   } catch {
-    // Fallback: no git, just return patterns as-is (no glob expansion)
     return patterns;
   }
-
-  const result: string[] = [];
-  const seen = new Set<string>();
-  for (const pattern of patterns) {
+  var result = [] as string[];
+  var seen   = new Set<string>();
+  for (var pattern of patterns) {
     if (pattern.includes('*')) {
-      for (const file of allFiles) {
+      for (var file of allFiles) {
         if (!seen.has(file) && minimatch(file, pattern, { matchBase: false })) {
           seen.add(file);
           result.push(file);
@@ -134,57 +129,145 @@ async function resolvePatterns(patterns: string[]): Promise<string[]> {
   return result;
 }
 
+// Trims a single leading/trailing newline from tag content
 function trimTagContent(raw: string): string {
-  let s = raw;
+  var s = raw;
   if (s.startsWith('\n')) s = s.slice(1);
-  if (s.endsWith('\n')) s = s.slice(0, -1);
+  if (s.endsWith('\n'))  s = s.slice(0, -1);
   return s;
 }
 
+// Normalizes tool-emitted file paths to workspace-relative form
+function normalizeToolPath(file: string): string {
+  var file = file.trim();
+  if (file.startsWith('/')) {
+    file = `.${file}`;
+  }
+  if (file.startsWith('./') || file.startsWith('../')) {
+    return file;
+  }
+  return `./${file}`;
+}
+
+// Types
+// -----
+
 type PatchCommand = {
-  file: string;
-  from: number;
-  to: number;
-  replacementLines: string[];
+  file:    string;
+  old_str: string;
+  new_str: string;
   ordinal: number;
 };
 
 type WriteCommand = {
-  file: string;
+  file:    string;
   content: string;
   ordinal: number;
 };
 
+type DeleteCommand = {
+  file: string;
+  ordinal: number;
+};
+
+// Parsing
+// -------
+
+// Extracts <patch> commands (search/replace) from the AI reply
 function parsePatchCommands(reply: string): PatchCommand[] {
-  const patchRegex = /<patch\s+file="([^"]+)"\s+from=(\d+)\s+to=(\d+)>([\s\S]*?)<\/patch>/g;
-  const commands: PatchCommand[] = [];
-  let match: RegExpExecArray | null;
-  while ((match = patchRegex.exec(reply)) !== null) {
-    const [, file, fromStr, toStr, rawContent] = match;
-    const from = parseInt(fromStr, 10);
-    const to = parseInt(toStr, 10);
-    const trimmed = trimTagContent(rawContent);
-    const replacementLines = trimmed === '' ? [] : trimmed.split('\n');
-    commands.push({ file, from, to, replacementLines, ordinal: commands.length });
+  var regex    = /<patch\s+file="([^"]+)">\s*<old>([\s\S]*?)<\/old>\s*<new>([\s\S]*?)<\/new>\s*<\/patch>/g;
+  var commands = [] as PatchCommand[];
+  var match: RegExpExecArray | null;
+  while ((match = regex.exec(reply)) !== null) {
+    var [, file, old_raw, new_raw] = match;
+    commands.push({
+      file,
+      old_str: trimTagContent(old_raw),
+      new_str: trimTagContent(new_raw),
+      ordinal: commands.length,
+    });
   }
   return commands;
 }
 
+// Extracts <write> commands from the AI reply
 function parseWriteCommands(reply: string): WriteCommand[] {
-  const writeRegex = /<write\s+file="([^"]+)">([\s\S]*?)<\/write>/g;
-  const commands: WriteCommand[] = [];
-  let match: RegExpExecArray | null;
-  while ((match = writeRegex.exec(reply)) !== null) {
-    const [, file, rawContent] = match;
+  var regex    = /<write\s+file="([^"]+)">([\s\S]*?)<\/write>/g;
+  var commands = [] as WriteCommand[];
+  var match: RegExpExecArray | null;
+  while ((match = regex.exec(reply)) !== null) {
+    var [, file, rawContent] = match;
     commands.push({ file, content: trimTagContent(rawContent), ordinal: commands.length });
   }
   return commands;
 }
 
+// Extracts structured patch/write commands from tool calls
+function parseToolCalls(toolCalls: ToolCall[]): {
+  patches: PatchCommand[];
+  writes: WriteCommand[];
+  deletes: DeleteCommand[];
+} {
+  var patches = [] as PatchCommand[];
+  var writes  = [] as WriteCommand[];
+  var deletes = [] as DeleteCommand[];
+
+  for (var call of toolCalls) {
+    var input = call.input ?? {};
+    switch (call.name) {
+      case 'str_replace': {
+        var path_val = typeof input.path === 'string' ? normalizeToolPath(input.path) : '';
+        var old_val  = typeof input.old_str === 'string' ? input.old_str : '';
+        var new_val  = typeof input.new_str === 'string' ? input.new_str : '';
+        if (!path_val) {
+          continue;
+        }
+        patches.push({
+          file: path_val,
+          old_str: old_val,
+          new_str: new_val,
+          ordinal: patches.length,
+        });
+        break;
+      }
+      case 'create_file': {
+        var path_val = typeof input.path === 'string' ? normalizeToolPath(input.path) : '';
+        var text_val = typeof input.file_text === 'string' ? input.file_text : '';
+        if (!path_val) {
+          continue;
+        }
+        writes.push({
+          file: path_val,
+          content: text_val,
+          ordinal: writes.length,
+        });
+        break;
+      }
+      case 'delete_file': {
+        var path_val = typeof input.path === 'string' ? normalizeToolPath(input.path) : '';
+        if (!path_val) {
+          continue;
+        }
+        deletes.push({
+          file: path_val,
+          ordinal: deletes.length,
+        });
+        break;
+      }
+      default: {
+        console.error(`Warning: unknown tool call "${call.name}" ignored.`);
+      }
+    }
+  }
+
+  return { patches, writes, deletes };
+}
+
+// Groups commands by their file path
 function groupByFile<T extends { file: string }>(commands: T[]): Map<string, T[]> {
-  const grouped = new Map<string, T[]>();
-  for (const command of commands) {
-    const arr = grouped.get(command.file);
+  var grouped = new Map<string, T[]>();
+  for (var command of commands) {
+    var arr = grouped.get(command.file);
     if (arr === undefined) {
       grouped.set(command.file, [command]);
     } else {
@@ -194,59 +277,133 @@ function groupByFile<T extends { file: string }>(commands: T[]): Map<string, T[]
   return grouped;
 }
 
-function validatePatchCommands(lines: string[], patches: PatchCommand[]): string | null {
-  for (const patch of patches) {
-    if (patch.from < 0) {
-      return `invalid patch range ${patch.from}-${patch.to}: "from" must be >= 0`;
+// Matching
+// --------
+
+type MatchRange = { start: number; end: number };
+
+// Finds a unique match via line-by-line comparison with trimmed trailing whitespace
+function matchTrimmed(content: string, needle: string): MatchRange | "ambiguous" | null {
+  var file_lines = content.split('\n');
+  var old_lines  = needle.split('\n');
+  var trim_old   = old_lines.map(l => l.trimEnd());
+  var found      = -1;
+  for (var i = 0; i <= file_lines.length - old_lines.length; i++) {
+    var ok = true;
+    for (var j = 0; j < old_lines.length; j++) {
+      if (file_lines[i + j].trimEnd() !== trim_old[j]) {
+        ok = false;
+        break;
+      }
     }
-    if (patch.to < patch.from) {
-      return `invalid patch range ${patch.from}-${patch.to}: "to" must be >= "from"`;
-    }
-    if (patch.to >= lines.length) {
-      return `invalid patch range ${patch.from}-${patch.to}: file has ${lines.length} lines`;
+    if (ok) {
+      if (found !== -1) return "ambiguous";
+      found = i;
     }
   }
-  const sorted = patches.slice().sort((a, b) => {
-    if (a.from !== b.from) return a.from - b.from;
-    if (a.to !== b.to) return a.to - b.to;
-    return a.ordinal - b.ordinal;
-  });
-  for (let i = 1; i < sorted.length; i++) {
-    if (sorted[i].from <= sorted[i - 1].to) {
-      return `overlapping patch ranges ${sorted[i - 1].from}-${sorted[i - 1].to} and ${sorted[i].from}-${sorted[i].to}`;
-    }
-  }
-  return null;
+  if (found === -1) return null;
+  var before = found > 0 ? file_lines.slice(0, found).join('\n').length + 1 : 0;
+  var len    = file_lines.slice(found, found + old_lines.length).join('\n').length;
+  return { start: before, end: before + len };
 }
 
-function applyPatchCommands(lines: string[], patches: PatchCommand[]): string[] {
-  const out = lines.slice();
-  // Apply from bottom to top so ranges refer to the original snapshot.
-  const sorted = patches.slice().sort((a, b) => {
-    if (a.from !== b.from) return b.from - a.from;
-    if (a.to !== b.to) return b.to - a.to;
-    return b.ordinal - a.ordinal;
-  });
-  for (const patch of sorted) {
-    out.splice(patch.from, patch.to - patch.from + 1, ...patch.replacementLines);
+// Tries exact match, then trimmed match, then line-prefix-stripped match
+function findMatch(content: string, old_str: string): MatchRange | string {
+  // Strategy 1: exact substring match
+  var idx = content.indexOf(old_str);
+  if (idx !== -1) {
+    if (content.indexOf(old_str, idx + 1) !== -1) {
+      return "matches multiple locations; include more context";
+    }
+    return { start: idx, end: idx + old_str.length };
   }
-  return out;
+
+  // Strategy 2: line-by-line with trailing whitespace trimmed
+  var res = matchTrimmed(content, old_str);
+  if (res === "ambiguous") return "matches multiple locations; include more context";
+  if (res !== null) return res;
+
+  // Strategy 3: strip line-number prefixes (AI included them by mistake)
+  var bare = old_str.replace(/^\d+\|/gm, '');
+  if (bare !== old_str) {
+    var idx = content.indexOf(bare);
+    if (idx !== -1) {
+      if (content.indexOf(bare, idx + 1) !== -1) {
+        return "matches multiple locations; include more context";
+      }
+      return { start: idx, end: idx + bare.length };
+    }
+    var res = matchTrimmed(content, bare);
+    if (res === "ambiguous") return "matches multiple locations; include more context";
+    if (res !== null) return res;
+  }
+
+  return "not found in file";
 }
 
-const TOOL_PROMPT = `To complete the task, use the following tools:
+// Prompt
+// ------
 
-PATCH: Replaces lines START through END (inclusive, 0-indexed) with the replacement content. The replacement can have any number of lines.
+const EDIT_TOOLS: ToolDef[] = [
+  {
+    name: 'str_replace',
+    description: 'Replace one exact old_str occurrence in a file with new_str.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Relative file path to edit.' },
+        old_str: { type: 'string', description: 'Exact text to find. Must match one location.' },
+        new_str: { type: 'string', description: 'Replacement text. May be empty for deletions.' },
+      },
+      required: ['path', 'old_str', 'new_str'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'create_file',
+    description: 'Create or overwrite a file with complete contents.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Relative file path to create or overwrite.' },
+        file_text: { type: 'string', description: 'Complete contents to write.' },
+      },
+      required: ['path', 'file_text'],
+      additionalProperties: false,
+    },
+  },
+];
 
-<patch file="./path/to/file" from=START to=END>
-replacement lines
+const TOOL_CALL_PROMPT = `Use tool calls for every edit:
+- Use str_replace for in-file edits.
+- Use create_file when creating/replacing a whole file.
+- Include enough context in old_str so it matches exactly one location.
+- Do not include numbered prefixes like "00|" in tool arguments.
+- For code editing tasks, do not emit XML tags like <patch> or <write>; call tools instead.
+
+If the user asks an open ended question, answer normally without tool calls.`;
+
+const XML_TOOL_PROMPT = `To complete the task, use the following tools:
+
+PATCH: Replaces an exact occurrence of text in a file with new text.
+
+<patch file="./path/to/file">
+<old>
+exact text to find
+</old>
+<new>
+replacement text
+</new>
 </patch>
 
 Notes:
-- Set 'from' to the FIRST line that changes, and 'to' to the LAST one.
-- The script will REMOVE from..to (INCLUSIVE) and replace by your lines.
-- Edits are stable on line ranges and, thus, order-invariant.
+- The <old> block must match EXACTLY ONE location in the file.
+- Include enough surrounding lines to ensure a unique match.
+- Do NOT include line-number prefixes (like "00|") in <old> or <new>.
+- To delete code, leave the <new> block empty.
+- Multiple patches on the same file are applied in order.
 
-WRITE: creates a new file or completely overwrites an existing file.
+WRITE: Creates a new file or completely overwrites an existing file.
 
 <write file="./path/to/file">
 complete file contents
@@ -254,90 +411,146 @@ complete file contents
 
 When the user asks an open ended question, answer without invoking any tool. `;
 
+// Main
+// ----
+
 async function main(): Promise<void> {
-  const inputFile = process.argv[2];
+  var inputFile = process.argv[2];
   if (!inputFile) {
     console.log('Usage: shot <file>');
     process.exit(1);
   }
 
-  const raw = await fs.readFile(inputFile, 'utf-8');
-  const { model, patterns, prompt } = parseInputFile(raw);
+  var raw = await fs.readFile(inputFile, 'utf-8');
+  var { model, patterns, prompt } = parseInputFile(raw);
 
-  const resolved = resolveModelSpec(model);
+  var resolved = resolveModelSpec(model);
   console.log('model_label:', `${resolved.vendor}:${resolved.model}:${resolved.thinking}${resolved.fast ? ':fast' : ''}`);
 
   // Resolve glob patterns respecting .gitignore
-  const paths = await resolvePatterns(patterns);
+  var paths = await resolvePatterns(patterns);
 
   // Load and format context files
-  const contextParts: string[] = [];
-  for (const p of paths) {
+  var contextParts = [] as string[];
+  for (var p of paths) {
     try {
-      const content = await fs.readFile(p, 'utf-8');
+      var content = await fs.readFile(p, 'utf-8');
       contextParts.push(`${p}\n${numberLines(content)}`);
     } catch (err) {
       console.error(`Warning: could not read ${p}: ${(err as Error).message}`);
     }
   }
 
-  const context = contextParts.join('\n\n');
-  const userMessage = `${context}\n\n${prompt}`;
-  const fullPrompt = `[SYSTEM]\n${TOOL_PROMPT}\n\n[USER]\n${userMessage}`;
+  var context     = contextParts.join('\n\n');
+  var userMessage = `${context}\n\n${prompt}`;
+  var systemPrompt = TOOL_CALL_PROMPT;
+  var fullPrompt   = `[SYSTEM]\n${systemPrompt}\n\n[USER]\n${userMessage}`;
   console.log('token_count:', tokenCount(fullPrompt));
 
   // Call AI
-  const ai = await GenAI(model);
-  const replyRaw = await ai.ask(userMessage, { system: TOOL_PROMPT });
-  const reply = typeof replyRaw === 'string'
-    ? replyRaw
-    : (replyRaw as any).messages?.map((m: any) => m.content).join('\n') ?? String(replyRaw);
+  var ai        = await GenAI(model);
+  var reply     = '';
+  var toolCalls = [] as ToolCall[];
+  var usedXmlFallback = false;
 
-  const patchCommands = parsePatchCommands(reply);
-  const writeCommands = parseWriteCommands(reply);
-  const patchesByFile = groupByFile(patchCommands);
-  const writesByFile = groupByFile(writeCommands);
-  const conflictedFiles = new Set<string>();
+  try {
+    var toolResult: AskResult = await ai.askTools(userMessage, {
+      system: TOOL_CALL_PROMPT,
+      tools: EDIT_TOOLS,
+    });
+    reply = toolResult.text;
+    toolCalls = toolResult.toolCalls;
+  } catch (err) {
+    usedXmlFallback = true;
+    console.error(`Warning: tool calling unavailable, falling back to XML (${(err as Error).message})`);
+  }
 
-  for (const file of patchesByFile.keys()) {
-    if (writesByFile.has(file)) {
-      conflictedFiles.add(file);
-      console.error(`Conflict for ${file}: both <patch> and <write> present; skipping file.`);
+  if (usedXmlFallback) {
+    systemPrompt = XML_TOOL_PROMPT;
+    fullPrompt   = `[SYSTEM]\n${systemPrompt}\n\n[USER]\n${userMessage}`;
+    var replyRaw = await ai.ask(userMessage, { system: XML_TOOL_PROMPT });
+    reply = typeof replyRaw === 'string'
+      ? replyRaw
+      : (replyRaw as any).messages?.map((m: any) => m.content).join('\n') ?? String(replyRaw);
+  }
+
+  var parsedTools = parseToolCalls(toolCalls);
+  var patchCommands = parsedTools.patches;
+  var writeCommands = parsedTools.writes;
+  var deleteCommands = parsedTools.deletes;
+
+  if (!usedXmlFallback && patchCommands.length === 0 && writeCommands.length === 0) {
+    var fallbackPatches = parsePatchCommands(reply);
+    var fallbackWrites  = parseWriteCommands(reply);
+    if (fallbackPatches.length > 0 || fallbackWrites.length > 0) {
+      patchCommands = fallbackPatches;
+      writeCommands = fallbackWrites;
     }
   }
 
-  // Parse and execute <patch> commands against per-file original snapshots.
-  for (const [file, patches] of patchesByFile) {
-    if (conflictedFiles.has(file)) {
-      continue;
+  if (usedXmlFallback) {
+    patchCommands = parsePatchCommands(reply);
+    writeCommands = parseWriteCommands(reply);
+  }
+
+  var patchesByFile = groupByFile(patchCommands);
+  var writesByFile  = groupByFile(writeCommands);
+  var deletesByFile = groupByFile(deleteCommands);
+  var conflicted    = new Set<string>();
+
+  var filesWithCommands = new Set<string>([
+    ...patchesByFile.keys(),
+    ...writesByFile.keys(),
+    ...deletesByFile.keys(),
+  ]);
+  for (var file of filesWithCommands) {
+    var kinds = 0;
+    if (patchesByFile.has(file)) kinds++;
+    if (writesByFile.has(file))  kinds++;
+    if (deletesByFile.has(file)) kinds++;
+    if (kinds > 1) {
+      conflicted.add(file);
+      console.error(`Conflict for ${file}: multiple command types present; skipping file.`);
     }
+  }
+
+  // Apply search/replace patches
+  for (var [file, patches] of patchesByFile) {
+    if (conflicted.has(file)) continue;
     try {
-      const fileContent = await fs.readFile(file, 'utf-8');
-      const originalLines = fileContent.split('\n');
-      const validationError = validatePatchCommands(originalLines, patches);
-      if (validationError !== null) {
-        console.error(`Error patching ${file}: ${validationError}`);
-        continue;
+      var content = await fs.readFile(file, 'utf-8');
+      var errors  = [] as string[];
+      for (var patch of patches) {
+        if (patch.old_str === '') {
+          errors.push(`patch #${patch.ordinal}: empty <old> block`);
+          continue;
+        }
+        var match = findMatch(content, patch.old_str);
+        if (typeof match === 'string') {
+          errors.push(`patch #${patch.ordinal}: ${match}`);
+          continue;
+        }
+        content = content.slice(0, match.start) + patch.new_str + content.slice(match.end);
       }
-      const patchedLines = applyPatchCommands(originalLines, patches);
-      await fs.writeFile(file, patchedLines.join('\n'), 'utf-8');
-      const ranges = patches
-        .slice()
-        .sort((a, b) => a.from - b.from || a.to - b.to || a.ordinal - b.ordinal)
-        .map(p => `${p.from}-${p.to}`)
-        .join(', ');
-      console.log(`Patched ${file} lines ${ranges}`);
+      for (var err of errors) {
+        console.error(`Error patching ${file}: ${err}`);
+      }
+      var applied = patches.length - errors.length;
+      if (applied > 0) {
+        await fs.writeFile(file, content, 'utf-8');
+        console.log(`Patched ${file} (${applied}/${patches.length} applied)`);
+      } else if (errors.length > 0) {
+        console.log(`No patches applied to ${file}`);
+      }
     } catch (err) {
       console.error(`Error patching ${file}: ${(err as Error).message}`);
     }
   }
 
-  // Parse and execute <write> commands.
-  for (const [file, writes] of writesByFile) {
-    if (conflictedFiles.has(file)) {
-      continue;
-    }
-    const selected = writes.reduce((best, cur) => (cur.ordinal > best.ordinal ? cur : best));
+  // Apply write commands
+  for (var [file, writes] of writesByFile) {
+    if (conflicted.has(file)) continue;
+    var selected = writes.reduce((best, cur) => cur.ordinal > best.ordinal ? cur : best);
     if (writes.length > 1) {
       console.error(`Warning: multiple <write> commands for ${file}; using last one.`);
     }
@@ -350,11 +563,33 @@ async function main(): Promise<void> {
     }
   }
 
+  // Apply delete commands
+  for (var [file, deletes] of deletesByFile) {
+    if (conflicted.has(file)) continue;
+    if (deletes.length > 1) {
+      console.error(`Warning: multiple delete commands for ${file}; deleting once.`);
+    }
+    try {
+      await fs.unlink(file);
+      console.log(`Deleted ${file}`);
+    } catch (err) {
+      var code = (err as { code?: string }).code;
+      if (code === 'ENOENT') {
+        console.log(`Delete skipped for ${file}: file does not exist`);
+      } else {
+        console.error(`Error deleting ${file}: ${(err as Error).message}`);
+      }
+    }
+  }
+
   // Save log
-  const logDir = './.shot';
+  var logDir  = './.shot';
   await fs.mkdir(logDir, { recursive: true });
-  const logPath = path.join(logDir, `${formatTimestamp(new Date())}.txt`);
-  await fs.writeFile(logPath, `${fullPrompt}\n\n---\n\n${reply}\n`, 'utf-8');
+  var logPath = path.join(logDir, `${formatTimestamp(new Date())}.txt`);
+  var toolLog = toolCalls.length > 0
+    ? `\n\n[TOOL_CALLS]\n${JSON.stringify(toolCalls, null, 2)}\n`
+    : '';
+  await fs.writeFile(logPath, `${fullPrompt}\n\n---\n\n${reply}${toolLog}`, 'utf-8');
   console.log(`Log: ${logPath}`);
 
   // Append cleaned response to the input file

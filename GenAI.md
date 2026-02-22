@@ -78,6 +78,13 @@ Interface for chat interactions.
 - If `userMessage` is `null`: Object containing conversation history.  
 **Note:** When `stream` is `true`, the response is streamed to `stdout`, and the full response is still returned as a string.
 
+#### askTools
+**Signature:** `askTools(userMessage: string, options: AskToolsOptions): Promise<AskResult>`  
+**Parameters:**  
+- `userMessage: string` - Message to send.  
+- `options: AskToolsOptions` - Same as `AskOptions`, plus a required `tools` list.  
+**Returns:** `AskResult` containing plain text and normalized structured tool calls.
+
 ### AskOptions
 Options for the `ask` method:
 
@@ -91,6 +98,31 @@ Options for the `ask` method:
   computed in `GenAI.ts` (e.g., reasoning effort, thinking budgets).
 
 **Note:** Not all options apply to every model; unsupported options are ignored.
+
+### AskToolsOptions
+Extends `AskOptions` with:
+
+- `tools: ToolDef[]` - Tool definitions to expose to the model.
+
+### ToolDef
+Tool definition shared across vendors:
+
+- `name: string` - Tool name.
+- `description?: string` - Natural language description.
+- `inputSchema?: Record<string, any>` - JSON schema for tool arguments.
+
+### ToolCall
+Normalized tool call returned by `askTools`:
+
+- `id?: string` - Provider call id when available.
+- `name: string` - Tool name.
+- `input: Record<string, any>` - Parsed tool arguments.
+
+### AskResult
+Structured `askTools` result:
+
+- `text: string` - Assistant plain text output.
+- `toolCalls: ToolCall[]` - Structured calls normalized across vendors.
 
 ### MODELS
 Record mapping shortcodes to model names. See [Models](#models) for details.
