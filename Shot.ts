@@ -67,7 +67,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { GenAI, resolveModelSpec } from './GenAI';
+import { GenAI, resolveModelSpec, tokenCount } from './GenAI';
 import minimatch from 'minimatch';
 
 const execFileAsync = promisify(execFile);
@@ -265,7 +265,7 @@ async function main(): Promise<void> {
   const { model, patterns, prompt } = parseInputFile(raw);
 
   const resolved = resolveModelSpec(model);
-  console.log(`model: ${resolved.vendor}:${resolved.model}:${resolved.thinking}${resolved.fast ? ':fast' : ''}`);
+  console.log('model_label:', `${resolved.vendor}:${resolved.model}:${resolved.thinking}${resolved.fast ? ':fast' : ''}`);
 
   // Resolve glob patterns respecting .gitignore
   const paths = await resolvePatterns(patterns);
@@ -284,6 +284,7 @@ async function main(): Promise<void> {
   const context = contextParts.join('\n\n');
   const userMessage = `${context}\n\n${prompt}`;
   const fullPrompt = `[SYSTEM]\n${TOOL_PROMPT}\n\n[USER]\n${userMessage}`;
+  console.log('token_count:', tokenCount(fullPrompt));
 
   // Call AI
   const ai = await GenAI(model);
