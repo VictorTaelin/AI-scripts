@@ -356,6 +356,12 @@ async function main(): Promise<void> {
   const logPath = path.join(logDir, `${formatTimestamp(new Date())}.txt`);
   await fs.writeFile(logPath, `${fullPrompt}\n\n---\n\n${reply}\n`, 'utf-8');
   console.log(`Log: ${logPath}`);
+
+  // Append cleaned response to the input file
+  var clean = reply
+    .replace(/<\w[^>]*>[\s\S]*?<\/\w[^>]*>/g, '(...)')
+    .replace(/\n{2,}/g, '\n');
+  await fs.appendFile(inputFile, `\nAgent:\n${clean}\n`);
 }
 
 main().catch(err => {

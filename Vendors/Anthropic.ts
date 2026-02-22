@@ -3,10 +3,7 @@ import type { AskOptions, ChatInstance, VendorConfig } from "../GenAI";
 
 type Role = "user" | "assistant";
 
-const DEFAULT_MAX_TOKENS = 32000;
-const MIN_THINKING_BUDGET = 1024;
-const MIN_ANSWER_RESERVE = 2048;
-const PROMPT_CACHING_BETA = "prompt-caching-2024-07-31";
+const DEFAULT_MAX_TOKENS = 128000;
 const FAST_MODE_BETA = "fast-mode-2026-02-01";
 
 export class AnthropicChat implements ChatInstance {
@@ -20,7 +17,7 @@ export class AnthropicChat implements ChatInstance {
   private systemCacheable = false;
 
   constructor(apiKey: string, model: string, vendorConfig?: VendorConfig, fast: boolean = false) {
-    const betas = [PROMPT_CACHING_BETA];
+    const betas: string[] = [];
     if (fast) {
       betas.push(FAST_MODE_BETA);
     }
@@ -71,20 +68,21 @@ export class AnthropicChat implements ChatInstance {
     }
 
     const thinking = mergedAnthropicConfig?.thinking;
-    if (thinking && typeof thinking === "object") {
-      const requested = Math.max(MIN_THINKING_BUDGET, thinking.budget_tokens);
-      const maxAllowed = Math.max(MIN_THINKING_BUDGET, maxTokens - MIN_ANSWER_RESERVE);
-      params.thinking = {
-        ...thinking,
-        budget_tokens: Math.min(requested, maxAllowed),
-      };
+    const useThinking = thinking && typeof thinking === "object";
+    if (useThinking) {
+      params.thinking = thinking;
+      var effort = mergedAnthropicConfig?.effort;
+      if (effort) {
+        params.output_config = { effort };
+      }
     } else if (typeof options.temperature === "number") {
       params.temperature = options.temperature;
     }
 
     this.messages.push({ role: "user", content: userMessage });
 
-    let plain = "";
+    let plain      = "";
+    let stopReason = "";
 
     if (wantStream) {
       const streamResp: AsyncIterable<any> = (await this.client.beta.messages.create(params)) as any;
@@ -103,11 +101,14 @@ export class AnthropicChat implements ChatInstance {
             process.stdout.write(delta.text);
             plain += delta.text;
           }
+        } else if (event.type === "message_delta") {
+          stopReason = event.delta?.stop_reason ?? "";
         }
       }
       process.stdout.write("\n");
     } else {
       const message: any = await this.client.beta.messages.create({ ...params, stream: false });
+      stopReason = message.stop_reason ?? "";
       const blocks: any[] = message.content;
       let printedReasoning = false;
       for (const block of blocks) {
@@ -124,6 +125,10 @@ export class AnthropicChat implements ChatInstance {
         }
       }
       process.stdout.write("\n");
+    }
+
+    if (stopReason === "max_tokens") {
+      process.stderr.write("\x1b[33m[warning: response truncated by max_tokens limit]\x1b[0m\n");
     }
 
     this.messages.push({ role: "assistant", content: plain });
