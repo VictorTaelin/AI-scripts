@@ -212,8 +212,8 @@ const DEFAULT_CODEX_MODEL             = 'gpt-5.3-codex';
 const DEFAULT_CODEX_REASONING_EFFORT = 'xhigh';
 
 const RETRIEVAL_SYSTEM = [
-  'You extract relevant source code from repositories.',
-  'Output only code files in the specified format.',
+  'You select relevant source code ranges from repositories.',
+  'Output only <range/> elements in the specified XML format.',
   'Never include task descriptions, solutions, plans, or commentary in your output.',
 ].join(' ');
 
@@ -994,7 +994,7 @@ function retrieval_prompt_initial(
   repo_tokens: number,
 ): string {
   return [
-    'TASK (read-only reference — do NOT include this in your output):',
+    'GOAL:',
     task,
     '',
     'TOKEN BUDGET:',
@@ -1003,9 +1003,10 @@ function retrieval_prompt_initial(
     token_directive(repo_tokens, RETRIEVE_TGT_TOKENS),
     '',
     'INSTRUCTIONS:',
-    'Select line ranges from the codebase that are relevant to solving the TASK.',
+    'Select line ranges from the codebase that are relevant to completing the GOAL.',
     'Prioritize by relevance: directly related code first, then helpful context.',
-    'Include enough surrounding context to fully understand each selected region.',
+    'Your output will be used by an AI to fully complete the goal. It will not',
+    'see anything else, so, make sure to include EVERYTHING it needs.',
     '',
     'RESPONSE FORMAT (strictly — nothing else):',
     '<range file="./relative/path" from="LINE" to="LINE"/>',
@@ -1028,15 +1029,22 @@ function retrieval_prompt_grow(
 ): string {
   var need = RETRIEVE_TGT_TOKENS - cur_tokens;
   return [
-    'Your previous selection is too small.',
-    'Include more line ranges. Prioritize by relevance to the task.',
+    'INSTRUCTIONS:',
+    'Select line ranges from the codebase that are relevant to completing the GOAL.',
+    'Prioritize by relevance: directly related code first, then helpful context.',
+    'Your output will be used by an AI to fully complete the goal. It will not',
+    'see anything else, so, make sure to include EVERYTHING it needs.',
+    '',
+    'PROBLEM:',
+    'This is a new attempt. Your previous selection is too small.',
+    'Include MORE line ranges. Prioritize by relevance to the task.',
     '',
     `Current selection: ${cur_tokens} tokens.`,
     `Target: ${RETRIEVE_MIN_TOKENS}–${RETRIEVE_MAX_TOKENS} tokens (ideal ${RETRIEVE_TGT_TOKENS}).`,
     `Add roughly ${need} tokens worth of lines.`,
     token_directive(cur_tokens, RETRIEVE_TGT_TOKENS),
     '',
-    'TASK (reference only):',
+    'GOAL (reference only):',
     task,
     '',
     'YOUR PREVIOUS SELECTION:',
@@ -1058,7 +1066,14 @@ function retrieval_prompt_shrink(
 ): string {
   var drop = cur_tokens - RETRIEVE_TGT_TOKENS;
   return [
-    'Your previous selection is too large.',
+    'INSTRUCTIONS:',
+    'Select line ranges from the codebase that are relevant to completing the GOAL.',
+    'Prioritize by relevance: directly related code first, then helpful context.',
+    'Your output will be used by an AI to fully complete the goal. It will not',
+    'see anything else, so, make sure to include EVERYTHING it needs.',
+    '',
+    'PROBLEM:',
+    'This is a new attempt. Your previous selection is too large.',
     'Remove or narrow ranges, dropping the least relevant content.',
     '',
     `Current selection: ${cur_tokens} tokens.`,
@@ -1066,7 +1081,7 @@ function retrieval_prompt_shrink(
     `Remove roughly ${drop} tokens worth of lines.`,
     token_directive(cur_tokens, RETRIEVE_TGT_TOKENS),
     '',
-    'TASK (reference only):',
+    'GOAL (reference only):',
     task,
     '',
     'YOUR PREVIOUS SELECTION:',
@@ -1156,18 +1171,21 @@ function advisor_prompt(
     'MEMORY (coding agent self-reports from prior rounds — may contain errors):',
     memory_text,
     '',
-    'TASK:',
+    'GOAL:',
     task,
     '',
     'You are one of several expert advisors guiding a coding agent that will edit this repository.',
     '',
-    'Your role:',
-    '- Provide detailed, actionable implementation guidance. No code patches or file contents.',
-    '- Name specific files, functions, and line ranges to modify.',
-    '- Identify likely pitfalls, misunderstandings, and edge cases.',
-    '- If MEMORY entries seem misguided, say so explicitly and correct them.',
-    '- Lay out a clear step-by-step action plan the coding agent can follow.',
-    '- Maximize actionable insight density.',
+    'Your goal is to provide INSIGHT to help the coding agent complete the GOAL. Use your advanced',
+    'knowledge to help it in every way you can, providing concepts, explanations, plans, actionable',
+    'guidance of all sorts. Identify valuable directions to pursue, as well as likely pitfalls and',
+    'misunderstandings to avoid. If MEMORY entries seem misguided, say so explicitly and correct',
+    'them. If the coding agent is stuck in a loop or low-value direction, push it out of the box.',
+    'If the agent is introducing bugs, duct-taping, breaking foundations, instruct it to recover.',
+    'Note that the agent has full control over the codebase and git repo in a sandboxed machine.',
+    'YOU are in charge of setting direction and strategy. The agent merely executes your ideas.',
+    'Do your absolute best to move the project towards a clean, robust completion of the GOAL.',
+    'Maximize insight density in your response.',
   ].join('\n');
 }
 
@@ -1193,26 +1211,50 @@ async function ask_advisor(
 // Builds synthesis prompt for combined advisor output
 function insight_summarize_prompt(
   task: string,
+  context_text: string,
+  memory_text: string,
   combined_text: string,
   combined_tokens: number,
 ): string {
   return [
-    'Summarize and merge this board-of-advisors document for a coding agent.',
-    'Keep concrete implementation guidance, file references, risk notes, and open questions.',
-    'Do not add new facts.',
+    'CONTEXT:',
+    context_text,
+    '',
+    'MEMORY (coding agent self-reports from prior rounds — may contain errors):',
+    memory_text,
+    '',
+    'GOAL:',
+    task,
+    '',
+    'PROMPT PASSED TO BOARD OF ADVISORS:',
+    'You are one of several expert advisors guiding a coding agent that will edit this repository.',
+    '',
+    'Your goal is to provide INSIGHT to help the coding agent complete the GOAL. Use your advanced',
+    'knowledge to help it in every way you can, providing concepts, explanations, plans, actionable',
+    'guidance of all sorts. Identify valuable directions to pursue, as well as likely pitfalls and',
+    'misunderstandings to avoid. If MEMORY entries seem misguided, say so explicitly and correct',
+    'them. If the coding agent is stuck in a loop or low-value direction, push it out of the box.',
+    'If the agent is introducing bugs, duct-taping, breaking foundations, instruct it to recover.',
+    'Note that the agent has full control over the codebase and git repo in a sandboxed machine.',
+    'YOU are in charge of setting direction and strategy. The agent merely executes your ideas.',
+    'Do your absolute best to move the project towards a clean, robust completion of the GOAL.',
+    'Maximize insight density in your response.',
     '',
     `Current combined advice tokens: ${combined_tokens}.`,
     `Target range: ${INSIGHT_MIN_TOKENS}-${INSIGHT_MAX_TOKENS}.`,
     `Ideal target: ${INSIGHT_TGT_TOKENS}.`,
     token_directive(combined_tokens, INSIGHT_TGT_TOKENS),
     '',
-    'Output only the synthesized advice.',
-    '',
-    'TASK:',
-    task,
-    '',
     'COMBINED ADVICE:',
     combined_text,
+    '',
+    'YOUR GOAL:',
+    'Synthesize the combined advice above into a single coherent document.',
+    'Merge redundant points, resolve contradictions, and preserve actionable details.',
+    'Prioritize concrete guidance that directly helps complete the GOAL.',
+    'DO NOT REMOVE ANY INFORMATION. FOCUS MOSTLY ON PRUNING REDUNDANCIES.',
+    `Output must be ${INSIGHT_MIN_TOKENS}-${INSIGHT_MAX_TOKENS} tokens (ideal ${INSIGHT_TGT_TOKENS}).`,
+    'Output only the synthesized advice text — no commentary or framing.',
   ].join('\n');
 }
 
@@ -1235,7 +1277,7 @@ function insight_resize_prompt(
     '',
     'Output only the revised advice.',
     '',
-    'TASK:',
+    'GOAL:',
     task,
     '',
     'CURRENT ADVICE:',
@@ -1281,7 +1323,7 @@ async function run_board_of_advisors(
   }
 
   log_step(`Summarizing advisor doc with ${summary_model}.`);
-  var first_prompt = insight_summarize_prompt(task, combined, combined_tokens);
+  var first_prompt = insight_summarize_prompt(task, context_text, memory_text, combined, combined_tokens);
   var first_summary = await ask_text(summary_model, first_prompt, SUMMARY_SYSTEM, 'insight_synth');
 
   var balanced = await rebalance_text({
@@ -1341,20 +1383,24 @@ function codex_goal_prompt(
     blocks.push(memory_text.trim() || '(empty)');
   }
 
-  blocks.push('TASK (user goal):');
+  blocks.push('GOAL:');
   blocks.push(task);
+
+  var guidance = board_enabled
+    ? '1. The insights above were produced by a board of expert advisors to guide your work.\n'
+    + '2. Your goal: complete the GOAL in the current repository. Use the insights.'
+    : '1. The memory above contains self-reports from prior rounds to guide your work.\n'
+    + '2. Your goal: complete the GOAL in the current repository. Use the memory.';
 
   blocks.push([
     'INSTRUCTIONS:',
-    '1. The insights above were produced by a board of expert advisors to guide your work.',
-    '2. Your goal: complete the TASK in the current repository. Use the insights.',
+    guidance,
     '3. When finished, write a file named ".REPORT.txt" containing a concise report.',
     '   The report must be at most 256 tokens (~3 short paragraphs). It must cover:',
-    '   - What you changed and why.',
+    '   - What you changed and how.',
     '   - Key findings or results.',
     '   - What you plan to do next.',
     '   - Any questions for the expert board in the next round.',
-    '   Use a tokenizer to verify the report stays under 256 tokens.',
     '4. After writing ".REPORT.txt", commit all changes and push to the remote.',
   ].join('\n'));
 
@@ -1377,7 +1423,7 @@ async function run_codex_exec(
     '-C', root,
     '-m', opts.codex_model,
     '-c', effort_cfg,
-    '-o', out_path,
+    '--output-last-message', out_path,
   ];
 
   if (opts.codex_json) {
