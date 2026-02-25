@@ -675,12 +675,17 @@ function strip_ansi_chunk(state: AnsiStripState, chunk: string): string {
   return out;
 }
 
-// Sanitizes one intercepted chunk into a single-line printable message
+// Sanitizes one intercepted chunk into printable text without ANSI/control codes
 function sanitize_tagged_chunk(state: AnsiStripState, raw: string): string {
   var text = strip_ansi_chunk(state, raw);
   var text = text.replace(/[\r\n]+/g, ' ');
   var text = text.replace(/\t/g, ' ');
   var text = text.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
+  return text;
+}
+
+// Normalizes a final tagged line before emission
+function normalize_tagged_line(text: string): string {
   var text = text.replace(/ {2,}/g, ' ');
   return text.trim();
 }
@@ -713,12 +718,13 @@ function tag_wrap_point(text: string, width: number): number {
 
 // Runs tasks in parallel with real-time tagged output.
 // Each task's stdout/stderr is intercepted, accumulated per-task,
-// sanitized, and flushed as "[tag] ..." lines per chunk.
+// sanitized, and flushed as wrapped "[tag] ..." lines.
 async function run_parallel_tagged<T>(
   tasks: (() => Promise<T>)[],
   tags: string[],
 ): Promise<T[]> {
   var ansi_states: AnsiStripState[] = tasks.map(() => make_ansi_state());
+  var msg_bufs: string[] = tasks.map(() => '');
 
   var orig_out = process.stdout.write.bind(process.stdout);
   var orig_err = process.stderr.write.bind(process.stderr);
@@ -728,34 +734,60 @@ async function run_parallel_tagged<T>(
     orig_err(Buffer.from(`[${tag}] ${line}\n`));
   }
 
-  // Emits one sanitized chunk, wrapping to keep prefixes aligned on-screen
-  function emit_chunk(tag: string, chunk: string): void {
-    var rest = chunk.trim();
-    if (!rest) {
+  // Appends a sanitized chunk to one task buffer
+  function append_chunk(idx: number, chunk: string): void {
+    if (!chunk) {
       return;
     }
+    if (msg_bufs[idx].length === 0) {
+      var chunk = chunk.replace(/^ +/g, '');
+    }
+    msg_bufs[idx] += chunk;
+  }
+
+  // Drains one task buffer into wrapped tagged lines
+  function drain_chunk(idx: number, flush: boolean): void {
+    var tag = tags[idx];
     var width = tag_wrap_width(tag);
-    while (rest.length > width) {
-      var point = tag_wrap_point(rest, width);
-      var line = rest.slice(0, point).trimEnd();
+
+    while (true) {
+      var buf = msg_bufs[idx];
+      if (!buf) {
+        break;
+      }
+
+      var should_wrap = buf.length > width;
+      if (!should_wrap && !flush) {
+        break;
+      }
+
+      var point = should_wrap ? tag_wrap_point(buf, width) : buf.length;
+      var line = buf.slice(0, point);
+      var rest = buf.slice(point);
+      var rest = rest.replace(/^ +/g, '');
+
+      msg_bufs[idx] = rest;
+
+      var line = normalize_tagged_line(line);
       if (line) {
         emit(tag, line);
       }
-      rest = rest.slice(point).trimStart();
-    }
-    if (rest) {
-      emit(tag, rest);
+
+      if (!should_wrap) {
+        break;
+      }
     }
   }
 
-  // Intercepts writes: if inside a tracked task, sanitize and emit
+  // Intercepts writes: if inside a tracked task, sanitize, buffer, and drain
   function intercept(orig: typeof process.stdout.write): typeof process.stdout.write {
     return function (chunk: any, ...args: any[]): boolean {
       var idx = parallel_ctx.getStore();
       if (idx !== undefined) {
         var raw = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
         var clean = sanitize_tagged_chunk(ansi_states[idx], raw);
-        emit_chunk(tags[idx], clean);
+        append_chunk(idx, clean);
+        drain_chunk(idx, false);
         return true;
       }
       return (orig as any)(chunk, ...args);
@@ -771,6 +803,11 @@ async function run_parallel_tagged<T>(
   } finally {
     process.stdout.write = orig_out;
     process.stderr.write = orig_err;
+  }
+
+  // Flush final buffered tails
+  for (var i = 0; i < msg_bufs.length; ++i) {
+    drain_chunk(i, true);
   }
 
   return results;
