@@ -31,10 +31,11 @@
 //
 // 2) Retrieval (optional bypass when repo is already small)
 //    - If full repo context is <= 64k tokens, retrieval is skipped.
-//    - Otherwise asks retrieval model for a new context copy focused on relevance.
-//    - Enforces range 32k-64k (ideal 48k) with iterative grow/shrink calls.
-//    - Every correction prompt includes explicit token math:
-//      current tokens, target window, ideal target, and delta/factor guidance.
+//    - Otherwise sends a line-numbered codebase dump to the retrieval model.
+//    - The model responds with <range file="..." from="..." to="..."/> elements.
+//    - Ranges are padded ±1, clamped, merged, and assembled with "..." gaps.
+//    - Enforces range 32k-64k (ideal 48k) with iterative grow/shrink rounds.
+//    - This is much faster than having the AI rewrite code verbatim.
 //
 // 3) Insight board
 //    - Sends task + retrieved context + `.long/MEMORY.md` to advisor models.
@@ -109,6 +110,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 import * as process from 'process';
+import { AsyncLocalStorage } from 'async_hooks';
 import { spawn, execFile } from 'child_process';
 import { promisify } from 'util';
 import { Command } from 'commander';
@@ -148,6 +150,9 @@ type RebalanceResult = {
   tokens: number;
   rounds: number;
 };
+
+type LineRange = { file: string; from: number; to: number };
+type RepoFiles = Map<string, string[]>;
 
 type RoundOptions = {
   max_rounds: number;
@@ -272,17 +277,18 @@ function log_timestamp(): string {
   return `${Y}y${M}m${D}d.${h}h${min}m${s}s`;
 }
 
-// Logs an AI call's prompt to terminal and file
-async function log_ai_call(
+// Logs an AI call's prompt to terminal and file (fire-and-forget)
+function log_ai_call(
   call_name: string,
   prompt: string,
   tokens: number,
-): Promise<void> {
+): void {
   log_step(`AI call "${call_name}": ${tokens} prompt tokens`);
-  await fs.mkdir(AI_LOG_DIR, { recursive: true });
   var ts   = log_timestamp();
   var file = path.join(AI_LOG_DIR, `${ts}.${call_name}.txt`);
-  await fs.writeFile(file, prompt, 'utf8');
+  fs.mkdir(AI_LOG_DIR, { recursive: true })
+    .then(() => fs.writeFile(file, prompt, 'utf8'))
+    .catch(() => {});
 }
 
 // Tokens
@@ -475,24 +481,43 @@ async function list_repo_files(root: string): Promise<string[]> {
   return files;
 }
 
-// Loads entire repository snapshot text
-async function load_repo_snapshot(root: string): Promise<string> {
-  var files = await list_repo_files(root);
-  var chunks = [] as string[];
-
-  for (var file of files) {
-    var abs = path.join(root, file);
+// Loads all repository files as line arrays
+async function load_repo_files(root: string): Promise<RepoFiles> {
+  var names = await list_repo_files(root);
+  var files: RepoFiles = new Map();
+  for (var name of names) {
+    var abs = path.join(root, name);
     var buf = await fs.readFile(abs);
     if (is_likely_binary(buf)) {
-      var marker = `<binary file omitted: ${buf.length} bytes>`;
-      chunks.push(serialize_file(file, marker));
-      continue;
+      files.set(name, [`<binary file omitted: ${buf.length} bytes>`]);
+    } else {
+      files.set(name, buf.toString('utf8').split('\n'));
     }
-
-    var content = buf.toString('utf8');
-    chunks.push(serialize_file(file, content));
   }
+  return files;
+}
 
+// Renders a full snapshot from loaded files
+function snapshot_from_files(files: RepoFiles): string {
+  var chunks: string[] = [];
+  for (var [name, lines] of files) {
+    chunks.push(serialize_file(name, lines.join('\n')));
+  }
+  return chunks.join('\n\n');
+}
+
+// Renders files with line numbers for retrieval AI
+function numbered_from_files(files: RepoFiles): string {
+  var chunks: string[] = [];
+  for (var [name, lines] of files) {
+    var w = String(lines.length - 1).length;
+    var numbered = lines.map((ln, i) => {
+      return `${String(i).padStart(w, '0')}|${ln}`;
+    });
+    chunks.push(
+      `=== FILE: ./${name} ===\n${numbered.join('\n')}\n=== END FILE ===`,
+    );
+  }
   return chunks.join('\n\n');
 }
 
@@ -534,6 +559,93 @@ async function append_memory_line(root: string, line: string): Promise<void> {
 // AI Calls
 // --------
 
+// Storage for tracking which parallel task owns a given write
+var parallel_ctx = new AsyncLocalStorage<number>();
+
+const TAG_LINE_WIDTH = 120;
+
+// Derives a 4-char tag from a model spec like "vendor:model:thinking"
+function model_tag(model: string): string {
+  var name = model.split(':')[1] || model;
+  if (name.includes('codex'))  return 'codx';
+  if (name.includes('gemini')) return 'gemi';
+  if (name.includes('opus'))   return 'opus';
+  if (name.includes('sonnet')) return 'sonn';
+  if (name.includes('haiku'))  return 'haik';
+  if (name.includes('grok'))   return 'grok';
+  if (name.includes('gpt'))    return ' gpt';
+  return name.replace(/[^a-z0-9]/gi, '').slice(0, 4).padStart(4);
+}
+
+// Runs tasks in parallel with real-time tagged output.
+// Each task's stdout/stderr is intercepted, accumulated per-task,
+// and flushed as "[tag] ..." lines at newlines or ~120 chars.
+async function run_parallel_tagged<T>(
+  tasks: (() => Promise<T>)[],
+  tags: string[],
+): Promise<T[]> {
+  var line_bufs: string[] = tasks.map(() => '');
+
+  var orig_out = process.stdout.write.bind(process.stdout);
+  var orig_err = process.stderr.write.bind(process.stderr);
+
+  // Emits one tagged line
+  function emit(tag: string, line: string): void {
+    orig_err(Buffer.from(`[${tag}] ${line}\n`));
+  }
+
+  // Drains complete lines and width overflows from a task's buffer
+  function drain(idx: number): void {
+    var tag = tags[idx];
+    while (true) {
+      var nl = line_bufs[idx].indexOf('\n');
+      if (nl !== -1 && nl <= TAG_LINE_WIDTH) {
+        emit(tag, line_bufs[idx].slice(0, nl));
+        line_bufs[idx] = line_bufs[idx].slice(nl + 1);
+      } else if (line_bufs[idx].length >= TAG_LINE_WIDTH) {
+        emit(tag, line_bufs[idx].slice(0, TAG_LINE_WIDTH));
+        line_bufs[idx] = line_bufs[idx].slice(TAG_LINE_WIDTH);
+      } else {
+        break;
+      }
+    }
+  }
+
+  // Intercepts writes: if inside a tracked task, accumulate and drain
+  function intercept(orig: typeof process.stdout.write): typeof process.stdout.write {
+    return function (chunk: any, ...args: any[]): boolean {
+      var idx = parallel_ctx.getStore();
+      if (idx !== undefined) {
+        line_bufs[idx] += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+        drain(idx);
+        return true;
+      }
+      return (orig as any)(chunk, ...args);
+    } as any;
+  }
+
+  process.stdout.write = intercept(orig_out);
+  process.stderr.write = intercept(orig_err);
+  try {
+    var results = await Promise.all(
+      tasks.map((fn, i) => parallel_ctx.run(i, fn)),
+    );
+  } finally {
+    process.stdout.write = orig_out;
+    process.stderr.write = orig_err;
+  }
+
+  // Flush any remaining partial lines
+  for (var i = 0; i < line_bufs.length; i++) {
+    var rest = line_bufs[i].trim();
+    if (rest) {
+      emit(tags[i], rest);
+    }
+  }
+
+  return results;
+}
+
 // Calls one model and returns plain text with retries
 async function ask_text(
   model: string,
@@ -543,7 +655,7 @@ async function ask_text(
   retries: number = AI_RETRIES,
 ): Promise<string> {
   var prompt_tokens = tokenCount(prompt);
-  await log_ai_call(call_name, prompt, prompt_tokens);
+  log_ai_call(call_name, prompt, prompt_tokens);
   var last_error: unknown = null;
 
   for (var attempt = 0; attempt <= retries; ++attempt) {
@@ -618,14 +730,96 @@ async function rebalance_text(cfg: RebalanceConfig): Promise<RebalanceResult> {
 // Retrieval
 // ---------
 
-// Builds the first retrieval prompt from full repository context
+// Parses <range file="..." from="..." to="..."/> elements from AI response
+function parse_ranges(response: string): LineRange[] {
+  var ranges: LineRange[] = [];
+  var re = /<range\s+file="([^"]+)"\s+from="(\d+)"\s+to="(\d+)"\s*\/>/g;
+  var m: RegExpExecArray | null;
+  while ((m = re.exec(response)) !== null) {
+    ranges.push({ file: m[1], from: Number(m[2]), to: Number(m[3]) });
+  }
+  return ranges;
+}
+
+// Formats ranges as XML for prompt inclusion
+function format_ranges_xml(ranges: LineRange[]): string {
+  return ranges
+    .map(r => `<range file="${r.file}" from="${r.from}" to="${r.to}"/>`)
+    .join('\n');
+}
+
+// Pads ±1, clamps to file bounds, merges overlapping ranges per file
+function pad_and_merge(
+  ranges: LineRange[],
+  files: RepoFiles,
+): Map<string, [number, number][]> {
+  var by_file = new Map<string, [number, number][]>();
+  for (var r of ranges) {
+    var name = r.file.replace(/^\.\//, '');
+    var lines = files.get(name);
+    if (!lines) {
+      continue;
+    }
+    var max_ln = lines.length - 1;
+    var from   = Math.max(0, r.from - 1);
+    var to     = Math.min(max_ln, r.to + 1);
+    if (!by_file.has(name)) {
+      by_file.set(name, []);
+    }
+    by_file.get(name)!.push([from, to]);
+  }
+  for (var [name, segs] of by_file) {
+    segs.sort((a, b) => a[0] - b[0]);
+    var merged: [number, number][] = [segs[0]];
+    for (var i = 1; i < segs.length; i++) {
+      var last = merged[merged.length - 1];
+      if (segs[i][0] <= last[1] + 1) {
+        last[1] = Math.max(last[1], segs[i][1]);
+      } else {
+        merged.push(segs[i]);
+      }
+    }
+    by_file.set(name, merged);
+  }
+  return by_file;
+}
+
+// Assembles context text from merged ranges, using "..." for gaps
+function assemble_ranges(
+  merged: Map<string, [number, number][]>,
+  files: RepoFiles,
+): string {
+  var chunks: string[] = [];
+  for (var [name, segs] of merged) {
+    var lines = files.get(name);
+    if (!lines) {
+      continue;
+    }
+    var parts: string[] = [];
+    var last_end = -1;
+    for (var [from, to] of segs) {
+      if (from > last_end + 1) {
+        parts.push('...');
+      }
+      parts.push(lines.slice(from, to + 1).join('\n'));
+      last_end = to;
+    }
+    if (last_end < lines.length - 1) {
+      parts.push('...');
+    }
+    chunks.push(serialize_file(name, parts.join('\n')));
+  }
+  return chunks.join('\n\n');
+}
+
+// Builds the initial retrieval prompt
 function retrieval_prompt_initial(
   task: string,
-  repo_text: string,
+  numbered: string,
   repo_tokens: number,
 ): string {
   return [
-    'TASK:',
+    'TASK (read-only reference — do NOT include this in your output):',
     task,
     '',
     'TOKEN BUDGET:',
@@ -634,113 +828,140 @@ function retrieval_prompt_initial(
     token_directive(repo_tokens, RETRIEVE_TGT_TOKENS),
     '',
     'INSTRUCTIONS:',
-    'Extract the code context from the CODEBASE below that is relevant to solving the TASK.',
-    'Output ONLY source code files. No commentary, no solutions, no task text.',
-    'Keep crucial files intact. For large files, include relevant sections and use "..." for omitted parts.',
-    'Include: source files, type definitions, helpers, tests, configs, and docs related to the task.',
+    'Select line ranges from the codebase that are relevant to solving the TASK.',
+    'Prioritize by relevance: directly related code first, then helpful context.',
+    'Include enough surrounding context to fully understand each selected region.',
     '',
-    'OUTPUT FORMAT (strictly — nothing else):',
-    '=== FILE: ./relative/path ===',
-    '<file content or relevant excerpts, with ... for omitted sections>',
-    '=== END FILE ===',
+    'RESPONSE FORMAT (strictly — nothing else):',
+    '<range file="./relative/path" from="LINE" to="LINE"/>',
     '',
-    'CODEBASE:',
-    repo_text,
+    'Each range selects lines FROM to TO (inclusive, 0-indexed).',
+    'You may output multiple ranges per file.',
+    'Do NOT output code, commentary, or explanations — only <range/> elements.',
+    '',
+    'CODEBASE (with line numbers):',
+    numbered,
   ].join('\n');
 }
 
-// Builds retrieval prompt for undersized outputs
+// Builds retrieval prompt for undersized selection
 function retrieval_prompt_grow(
   task: string,
-  original_text: string,
-  original_tokens: number,
-  state: RebalanceState,
+  numbered: string,
+  cur_ranges: LineRange[],
+  cur_tokens: number,
 ): string {
-  var need_min = state.min_tokens - state.cur_tokens;
-  var need_tgt = state.tgt_tokens - state.cur_tokens;
+  var need = RETRIEVE_TGT_TOKENS - cur_tokens;
   return [
-    'Your retrieved context is too small.',
-    'Enrich it while staying focused on task-relevant code.',
+    'Your previous selection is too small.',
+    'Include more line ranges. Prioritize by relevance to the task.',
     '',
-    `Original context tokens: ${original_tokens}.`,
-    `Current retrieved tokens: ${state.cur_tokens}.`,
-    `Target range: ${state.min_tokens}-${state.max_tokens}.`,
-    `Ideal target: ${state.tgt_tokens}.`,
-    `You must add at least ${need_min} tokens to reach the minimum.`,
-    `Prefer adding around ${need_tgt} tokens to hit the ideal.`,
-    token_directive(state.cur_tokens, state.tgt_tokens),
-    '',
-    'Output only the updated context using === FILE: ./path === / === END FILE === format.',
-    'No commentary, no task text — only source code files.',
+    `Current selection: ${cur_tokens} tokens.`,
+    `Target: ${RETRIEVE_MIN_TOKENS}–${RETRIEVE_MAX_TOKENS} tokens (ideal ${RETRIEVE_TGT_TOKENS}).`,
+    `Add roughly ${need} tokens worth of lines.`,
+    token_directive(cur_tokens, RETRIEVE_TGT_TOKENS),
     '',
     'TASK (reference only):',
     task,
     '',
-    'CURRENT RETRIEVED CONTEXT:',
-    state.cur_text,
+    'YOUR PREVIOUS SELECTION:',
+    format_ranges_xml(cur_ranges),
     '',
-    'ORIGINAL CODEBASE (source of extra material):',
-    original_text,
+    'Return a complete new set of <range/> elements (previous + new).',
+    '',
+    'CODEBASE (with line numbers):',
+    numbered,
   ].join('\n');
 }
 
-// Builds retrieval prompt for oversized outputs
-function retrieval_prompt_shrink(task: string, state: RebalanceState): string {
-  var need_drop_min = state.cur_tokens - state.max_tokens;
-  var need_drop_tgt = state.cur_tokens - state.tgt_tokens;
+// Builds retrieval prompt for oversized selection
+function retrieval_prompt_shrink(
+  task: string,
+  context: string,
+  cur_ranges: LineRange[],
+  cur_tokens: number,
+): string {
+  var drop = cur_tokens - RETRIEVE_TGT_TOKENS;
   return [
-    'Your retrieved context is too large.',
-    'Reduce it without losing critical task-solving context.',
+    'Your previous selection is too large.',
+    'Remove or narrow ranges, dropping the least relevant content.',
     '',
-    `Current retrieved tokens: ${state.cur_tokens}.`,
-    `Target range: ${state.min_tokens}-${state.max_tokens}.`,
-    `Ideal target: ${state.tgt_tokens}.`,
-    `You must remove at least ${need_drop_min} tokens to enter range.`,
-    `Prefer removing around ${need_drop_tgt} tokens to hit the ideal.`,
-    token_directive(state.cur_tokens, state.tgt_tokens),
-    '',
-    'Output only the reduced context using === FILE: ./path === / === END FILE === format.',
-    'No commentary, no task text — only source code files.',
+    `Current selection: ${cur_tokens} tokens.`,
+    `Target: ${RETRIEVE_MIN_TOKENS}–${RETRIEVE_MAX_TOKENS} tokens (ideal ${RETRIEVE_TGT_TOKENS}).`,
+    `Remove roughly ${drop} tokens worth of lines.`,
+    token_directive(cur_tokens, RETRIEVE_TGT_TOKENS),
     '',
     'TASK (reference only):',
     task,
     '',
-    'CONTEXT TO REDUCE:',
-    state.cur_text,
+    'YOUR PREVIOUS SELECTION:',
+    format_ranges_xml(cur_ranges),
+    '',
+    'SELECTED CONTENT:',
+    context,
+    '',
+    'Return a complete reduced set of <range/> elements.',
   ].join('\n');
 }
 
-// Runs retrieval stage with dynamic range corrections
+// Runs range-based retrieval with adjustment loop
 async function retrieve_context(
   task: string,
-  repo_text: string,
+  repo_files: RepoFiles,
+  repo_snap: string,
+  repo_tokens: number,
   retrieval_model: string,
 ): Promise<{ text: string; tokens: number }> {
-  var repo_tokens = tokenCount(repo_text);
   if (repo_tokens <= RETRIEVE_MAX_TOKENS) {
     log_step(`Retrieval skipped (full repo is ${repo_tokens} tokens, <= ${RETRIEVE_MAX_TOKENS}).`);
-    return { text: repo_text, tokens: repo_tokens };
+    return { text: repo_snap, tokens: repo_tokens };
   }
 
   log_step(`Running retrieval model (${retrieval_model}) on ${repo_tokens} tokens.`);
-  var first_prompt = retrieval_prompt_initial(task, repo_text, repo_tokens);
-  var retrieved = await ask_text(retrieval_model, first_prompt, RETRIEVAL_SYSTEM, 'retrieve');
+  var numbered = numbered_from_files(repo_files);
 
-  var balanced = await rebalance_text({
-    model: retrieval_model,
-    system: RETRIEVAL_SYSTEM,
-    call_name: 'retrieve_adj',
-    min_tokens: RETRIEVE_MIN_TOKENS,
-    max_tokens: RETRIEVE_MAX_TOKENS,
-    tgt_tokens: RETRIEVE_TGT_TOKENS,
-    max_rounds: MAX_REBALANCE_ROUNDS,
-    text: retrieved,
-    on_shrink: state => retrieval_prompt_shrink(task, state),
-    on_grow: state => retrieval_prompt_grow(task, repo_text, repo_tokens, state),
-  });
+  // Initial retrieval
+  var prompt = retrieval_prompt_initial(task, numbered, repo_tokens);
+  var response = await ask_text(retrieval_model, prompt, RETRIEVAL_SYSTEM, 'retrieve');
+  var ranges = parse_ranges(response);
 
-  log_step(`Retrieved context size: ${balanced.tokens} tokens.`);
-  return { text: balanced.text, tokens: balanced.tokens };
+  if (ranges.length === 0) {
+    log_step('Retrieval returned no ranges; using full snapshot.');
+    return { text: repo_snap, tokens: repo_tokens };
+  }
+
+  var merged  = pad_and_merge(ranges, repo_files);
+  var context = assemble_ranges(merged, repo_files);
+  var tokens  = tokenCount(context);
+  log_step(`Initial retrieval: ${tokens} tokens from ${ranges.length} ranges.`);
+
+  // Adjustment loop
+  var round = 0;
+  while (round < MAX_REBALANCE_ROUNDS) {
+    if (tokens >= RETRIEVE_MIN_TOKENS && tokens <= RETRIEVE_MAX_TOKENS) {
+      break;
+    }
+    if (tokens < RETRIEVE_MIN_TOKENS) {
+      var adj = retrieval_prompt_grow(task, numbered, ranges, tokens);
+      var adj_resp = await ask_text(retrieval_model, adj, RETRIEVAL_SYSTEM, 'retrieve_adj_grow');
+    } else {
+      var adj = retrieval_prompt_shrink(task, context, ranges, tokens);
+      var adj_resp = await ask_text(retrieval_model, adj, RETRIEVAL_SYSTEM, 'retrieve_adj_shrink');
+    }
+    var new_ranges = parse_ranges(adj_resp);
+    if (new_ranges.length === 0) {
+      break;
+    }
+    ranges  = new_ranges;
+    merged  = pad_and_merge(ranges, repo_files);
+    context = assemble_ranges(merged, repo_files);
+    tokens  = tokenCount(context);
+    round  += 1;
+    log_step(`Retrieval adjustment ${round}: ${tokens} tokens from ${ranges.length} ranges.`);
+  }
+
+  log_step(`Retrieved context size: ${tokens} tokens.`);
+  return { text: context, tokens };
 }
 
 // Advisors
@@ -858,9 +1079,11 @@ async function run_board_of_advisors(
   summary_model: string,
 ): Promise<string> {
   log_step(`Running advisor board with ${advisor_models.length} models.`);
-  var replies = await Promise.all(
-    advisor_models.map((model, i) => ask_advisor(model, task, context_text, memory_text, `advisor_${i}`)),
+  var tasks = advisor_models.map((model, i) =>
+    () => ask_advisor(model, task, context_text, memory_text, `advisor_${i}`),
   );
+  var tags    = advisor_models.map(m => model_tag(m));
+  var replies = await run_parallel_tagged(tasks, tags);
 
   var ok_count = replies.filter(reply => reply.ok).length;
   if (ok_count === 0) {
@@ -1149,11 +1372,12 @@ async function run_round(round: number, root: string, opts: RoundOptions): Promi
   var insights = '';
   if (opts.board) {
     log_step('Loading full repository snapshot.');
-    var repo_text = await load_repo_snapshot(root);
-    var repo_tokens = tokenCount(repo_text);
+    var repo_files  = await load_repo_files(root);
+    var repo_snap   = snapshot_from_files(repo_files);
+    var repo_tokens = tokenCount(repo_snap);
     log_step(`Repository snapshot size: ${repo_tokens} tokens.`);
 
-    var retrieved = await retrieve_context(task_text, repo_text, opts.retrieval_model);
+    var retrieved = await retrieve_context(task_text, repo_files, repo_snap, repo_tokens, opts.retrieval_model);
     insights = await run_board_of_advisors(
       task_text,
       retrieved.text,
