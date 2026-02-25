@@ -26,7 +26,7 @@ import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import minimatch from 'minimatch';
-import { GenAI } from './GenAI';
+import { GenAI, resolveModelSpec, tokenCount } from './GenAI';
 import type { AskResult, ToolCall, ToolDef } from './GenAI';
 
 const exec_file_async = promisify(execFile);
@@ -732,6 +732,12 @@ async function main(): Promise<void> {
   var paths = await resolve_patterns(parsed.patterns);
   var context = await build_context(paths);
   var user_message = build_user_message(context, parsed.prompt);
+  var resolved = resolveModelSpec(parsed.model);
+  var model_label = `${resolved.vendor}:${resolved.model}:${resolved.thinking}${resolved.fast ? ':fast' : ''}`;
+  var full_prompt = `[SYSTEM]\n${TOOL_CALL_PROMPT}\n\n[USER]\n${user_message}`;
+
+  console.log(`model_label: ${model_label}`);
+  console.log(`token_count: ${tokenCount(full_prompt)}`);
 
   var tool_req = await request_tools(parsed.model, user_message);
   var tool_result = tool_req.result;

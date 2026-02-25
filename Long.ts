@@ -1,0 +1,1273 @@
+#!/usr/bin/env bun
+
+// Long.ts
+// =======
+// Long-running task orchestrator for multi-model planning + Codex execution.
+//
+// Documentation
+// -------------
+//
+// What this file is:
+// - A production CLI entrypoint named `long`.
+// - A persistent optimization loop for hard tasks that may require many rounds.
+// - A coordinator that combines:
+//   - repository snapshot loading
+//   - context retrieval
+//   - board-of-advisors planning
+//   - one-shot Codex execution
+//   - append-only memory accumulation
+//
+// Core objective:
+// - Given `long task.txt`, repeatedly push the repository toward task completion.
+// - Keep context sizes under control with token-range targets.
+// - Keep per-round memory bounded to small fixed reports.
+//
+// High-level round pipeline:
+// 1) Task + repo load
+//    - Reads task from `<task_file>`.
+//    - Builds full repo snapshot from git-visible files:
+//      `git ls-files --cached --others --exclude-standard`.
+//    - Excludes `.long/` and `.REPORT.txt` from the context snapshot.
+//
+// 2) Retrieval (optional bypass when repo is already small)
+//    - If full repo context is <= 64k tokens, retrieval is skipped.
+//    - Otherwise asks retrieval model for a new context copy focused on relevance.
+//    - Enforces range 32k-64k (ideal 48k) with iterative grow/shrink calls.
+//    - Every correction prompt includes explicit token math:
+//      current tokens, target window, ideal target, and delta/factor guidance.
+//
+// 3) Insight board
+//    - Sends task + retrieved context + `.long/MEMORY.md` to advisor models.
+//    - Advisors return guidance only (no patches).
+//    - Merges advisor outputs into one document.
+//    - If merged advice > 16k tokens, summarizes to 12k-20k (ideal 16k).
+//    - Uses the same generic rebalancer logic used by retrieval.
+//
+// 4) Coding run (Codex CLI one-shot)
+//    - Invokes `codex exec` non-interactively with stdin prompt (`-`).
+//    - Sends:
+//      - insights (or memory-only mode when board is disabled)
+//      - user task
+//      - explicit goals, including `.REPORT.txt` requirements
+//      - instruction to commit and push when done
+//    - Captures final assistant message via `--output-last-message`.
+//
+// 5) Report ingestion + memory update
+//    - Reads `.REPORT.txt` and deletes it.
+//    - Falls back to Codex last message if `.REPORT.txt` is absent/empty.
+//    - Compresses report if needed, enforcing max token limit (default 256).
+//    - Flattens report into a single line and appends to `.long/MEMORY.md`.
+//    - Memory is append-only by design.
+//
+// 6) Loop
+//    - Repeats from the latest repository state.
+//    - Stops only when `--max-rounds` is reached (or never, when 0).
+//
+// Important repository side effects:
+// - Ensures `.long/` exists and `.long/MEMORY.md` exists.
+// - Ensures `.long/` is listed in `.gitignore`.
+// - Creates transient `.long/.codex-last-message.txt` for capture.
+// - Removes `.REPORT.txt` after ingestion.
+//
+// Modes:
+// - Board enabled (default):
+//   retrieval + advisors + codex.
+// - Board disabled (`--no-board`):
+//   skips retrieval/advisors, injects MEMORY directly into codex goal prompt.
+//
+// Reliability model:
+// - AI calls include retry logic.
+// - Context/report windows use bounded rebalance rounds.
+// - Hard token trim is used as a final guard for report token cap.
+// - Startup verifies `codex exec` supports required non-interactive flags.
+//
+// Non-goals of this file:
+// - It does not implement semantic diff review.
+// - It does not guarantee codex will always commit/push successfully.
+// - It does not auto-resolve git conflicts or remote auth/network failures.
+//
+// CLI examples:
+// - `long task.txt`
+// - `long task.txt --max-rounds 3`
+// - `long task.txt --no-board`
+// - `long task.txt --codex-model gpt-codex-5.3-high`
+//
+// Operational assumptions:
+// - Must run inside a git repository.
+// - API keys for advisor/retrieval models must be configured for GenAI.ts.
+// - `codex` CLI must be installed and available in `PATH`.
+// - Pushing requires git remote/auth to already be configured.
+
+// Imports
+// -------
+
+import * as fs from 'fs/promises';
+import * as path from 'path';
+import * as process from 'process';
+import { spawn, execFile } from 'child_process';
+import { promisify } from 'util';
+import { Command } from 'commander';
+import { GenAI, tokenCount } from './GenAI';
+
+const exec_file_async = promisify(execFile);
+
+// Types
+// -----
+
+type ResizeMode = 'grow' | 'shrink';
+
+type RebalanceState = {
+  mode: ResizeMode;
+  cur_text: string;
+  cur_tokens: number;
+  min_tokens: number;
+  max_tokens: number;
+  tgt_tokens: number;
+};
+
+type RebalanceConfig = {
+  model: string;
+  system: string;
+  min_tokens: number;
+  max_tokens: number;
+  tgt_tokens: number;
+  max_rounds: number;
+  text: string;
+  on_shrink: (state: RebalanceState) => string;
+  on_grow?: (state: RebalanceState) => string;
+};
+
+type RebalanceResult = {
+  text: string;
+  tokens: number;
+  rounds: number;
+};
+
+type RoundOptions = {
+  max_rounds: number;
+  board: boolean;
+  retrieval_model: string;
+  summary_model: string;
+  advisor_models: string[];
+  codex_model: string;
+  codex_sandbox: 'read-only' | 'workspace-write' | 'danger-full-access';
+  codex_dangerous: boolean;
+  codex_ephemeral: boolean;
+  codex_json: boolean;
+  report_limit: number;
+  delay_ms: number;
+  task_file: string;
+};
+
+type AdvisorReply = {
+  model: string;
+  text: string;
+  ok: boolean;
+};
+
+// Constants
+// ---------
+
+const RETRIEVE_MIN_TOKENS = 32_000;
+const RETRIEVE_MAX_TOKENS = 64_000;
+const RETRIEVE_TGT_TOKENS = 48_000;
+
+const INSIGHT_TRIGGER_TOKENS = 16_000;
+const INSIGHT_MIN_TOKENS     = 12_000;
+const INSIGHT_MAX_TOKENS     = 20_000;
+const INSIGHT_TGT_TOKENS     = 16_000;
+
+const REPORT_TGT_TOKENS = 192;
+const MAX_REBALANCE_ROUNDS = 6;
+const AI_RETRIES = 2;
+const EXEC_MAX_BUFFER = 128 * 1024 * 1024;
+
+const LONG_DIR = '.long';
+const MEMORY_PATH = '.long/MEMORY.md';
+const REPORT_PATH = '.REPORT.txt';
+const CODEX_LAST_PATH = '.long/.codex-last-message.txt';
+
+const DEFAULT_RETRIEVAL_MODEL = 'anthropic:claude-opus-4-6:max';
+const DEFAULT_SUMMARY_MODEL   = 'anthropic:claude-opus-4-6:max';
+const DEFAULT_ADVISOR_MODELS  = [
+  'google:gemini-3.1-pro-preview:max',
+  'anthropic:claude-opus-4-6:max',
+  'openai:gpt-5.2:max',
+  'openai:gpt-5.3-codex:max',
+];
+const DEFAULT_CODEX_MODEL             = 'gpt-5.3-codex';
+const DEFAULT_CODEX_REASONING_EFFORT = 'xhigh';
+
+const RETRIEVAL_SYSTEM = [
+  'You are a context-retrieval specialist.',
+  'Return context only. Do not solve the task.',
+  'Do not include explanations, plans, or markdown prose outside the context.',
+].join(' ');
+
+const ADVISOR_SYSTEM = [
+  'You are an expert software advisor.',
+  'Provide guidance only; do not output patches or file contents.',
+].join(' ');
+
+const SUMMARY_SYSTEM = [
+  'You are a compression and synthesis assistant.',
+  'Preserve concrete details while meeting the requested token window.',
+].join(' ');
+
+// Logging
+// -------
+
+// Prints a prefixed status message
+function log_step(message: string): void {
+  console.log(`[long] ${message}`);
+}
+
+// Errors
+// ------
+
+// Converts unknown errors to readable strings
+function error_message(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
+}
+
+// Throws a formatted fatal error
+function fail(message: string): never {
+  throw new Error(message);
+}
+
+// Time
+// ----
+
+// Sleeps for a short period
+async function sleep_ms(ms: number): Promise<void> {
+  if (ms <= 0) {
+    return;
+  }
+  await new Promise<void>(resolve => setTimeout(resolve, ms));
+}
+
+// Tokens
+// ------
+
+// Computes a best-effort reduction/enrichment factor to the target
+function target_factor(cur_tokens: number, tgt_tokens: number): number {
+  if (cur_tokens <= 0 || tgt_tokens <= 0) {
+    return 1;
+  }
+  if (cur_tokens > tgt_tokens) {
+    return cur_tokens / tgt_tokens;
+  }
+  return tgt_tokens / cur_tokens;
+}
+
+// Builds a short token directive sentence
+function token_directive(cur_tokens: number, tgt_tokens: number): string {
+  var delta = Math.abs(cur_tokens - tgt_tokens);
+  var factor = target_factor(cur_tokens, tgt_tokens).toFixed(2);
+  if (cur_tokens > tgt_tokens) {
+    return `Reduce by ${delta} tokens to reach ${tgt_tokens} (about ${factor}x reduction).`;
+  }
+  if (cur_tokens < tgt_tokens) {
+    return `Increase by ${delta} tokens to reach ${tgt_tokens} (about ${factor}x enrichment).`;
+  }
+  return `Already at target (${tgt_tokens} tokens).`;
+}
+
+// Removes a single outer markdown code-fence when present
+function strip_outer_fence(text: string): string {
+  var text = text.trim();
+  if (!text.startsWith('```')) {
+    return text;
+  }
+
+  var lines = text.split('\n');
+  if (lines.length < 2) {
+    return text;
+  }
+  if (lines[lines.length - 1].trim() !== '```') {
+    return text;
+  }
+  return lines.slice(1, -1).join('\n').trim();
+}
+
+// Hard-trims by words to ensure token cap compliance
+function hard_trim_tokens(text: string, max_tokens: number): string {
+  var words = text.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) {
+    return '';
+  }
+
+  var lo = 0;
+  var hi = words.length;
+  while (lo < hi) {
+    var mid = Math.ceil((lo + hi) / 2);
+    var cand = words.slice(0, mid).join(' ');
+    if (tokenCount(cand) <= max_tokens) {
+      lo = mid;
+    } else {
+      hi = mid - 1;
+    }
+  }
+
+  return words.slice(0, lo).join(' ').trim();
+}
+
+// Paths
+// -----
+
+// Tests whether a path exists
+async function path_exists(p: string): Promise<boolean> {
+  try {
+    await fs.stat(p);
+    return true;
+  } catch (error) {
+    if ((error as { code?: string }).code === 'ENOENT') {
+      return false;
+    }
+    throw error;
+  }
+}
+
+// Reads UTF-8 text or returns empty string on ENOENT
+async function read_text_or_empty(p: string): Promise<string> {
+  try {
+    return await fs.readFile(p, 'utf8');
+  } catch (error) {
+    if ((error as { code?: string }).code === 'ENOENT') {
+      return '';
+    }
+    throw error;
+  }
+}
+
+// Deletes a file if it exists
+async function delete_if_exists(p: string): Promise<void> {
+  try {
+    await fs.unlink(p);
+  } catch (error) {
+    if ((error as { code?: string }).code === 'ENOENT') {
+      return;
+    }
+    throw error;
+  }
+}
+
+// Git
+// ---
+
+// Runs git and returns stdout
+async function run_git(args: string[], cwd: string): Promise<string> {
+  var { stdout } = await exec_file_async('git', args, {
+    cwd,
+    maxBuffer: EXEC_MAX_BUFFER,
+  });
+  return stdout.trimEnd();
+}
+
+// Discovers repository root from the current working directory
+async function get_repo_root(cwd: string): Promise<string> {
+  try {
+    var root = await run_git(['rev-parse', '--show-toplevel'], cwd);
+    if (!root.trim()) {
+      fail('Unable to resolve git root.');
+    }
+    return root.trim();
+  } catch (error) {
+    fail(`Not inside a git repository: ${error_message(error)}`);
+  }
+}
+
+// Ensures .long/ is ignored
+async function ensure_long_gitignored(root: string): Promise<void> {
+  var gitignore_path = path.join(root, '.gitignore');
+  var old_text = await read_text_or_empty(gitignore_path);
+  var lines = old_text.split(/\r?\n/);
+  var has_long = lines.some(line => {
+    var line = line.trim();
+    return line === '.long/' || line === '.long';
+  });
+
+  if (has_long) {
+    return;
+  }
+
+  var next_text = old_text;
+  if (next_text.length > 0 && !next_text.endsWith('\n')) {
+    next_text += '\n';
+  }
+  next_text += '.long/\n';
+  await fs.writeFile(gitignore_path, next_text, 'utf8');
+  log_step('Added ".long/" to .gitignore.');
+}
+
+// Repo Snapshot
+// -------------
+
+// Detects likely binary files
+function is_likely_binary(buf: Buffer): boolean {
+  var sample = buf.subarray(0, Math.min(buf.length, 8192));
+  for (var i = 0; i < sample.length; ++i) {
+    if (sample[i] === 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Serializes one file into snapshot format
+function serialize_file(file: string, content: string): string {
+  return [
+    `=== FILE: ./${file} ===`,
+    content,
+    '=== END FILE ===',
+  ].join('\n');
+}
+
+// Lists all non-ignored repository files
+async function list_repo_files(root: string): Promise<string[]> {
+  var out = await run_git(
+    ['ls-files', '--cached', '--others', '--exclude-standard', '-z'],
+    root,
+  );
+  var files = out.split('\0').filter(Boolean);
+  var files = files.filter(file => !file.startsWith(`${LONG_DIR}/`));
+  var files = files.filter(file => file !== REPORT_PATH);
+  return files;
+}
+
+// Loads entire repository snapshot text
+async function load_repo_snapshot(root: string): Promise<string> {
+  var files = await list_repo_files(root);
+  var chunks = [] as string[];
+
+  for (var file of files) {
+    var abs = path.join(root, file);
+    var buf = await fs.readFile(abs);
+    if (is_likely_binary(buf)) {
+      var marker = `<binary file omitted: ${buf.length} bytes>`;
+      chunks.push(serialize_file(file, marker));
+      continue;
+    }
+
+    var content = buf.toString('utf8');
+    chunks.push(serialize_file(file, content));
+  }
+
+  return chunks.join('\n\n');
+}
+
+// Memory
+// ------
+
+// Creates .long directory and MEMORY.md if missing
+async function ensure_memory_store(root: string): Promise<void> {
+  var long_dir = path.join(root, LONG_DIR);
+  var memory_path = path.join(root, MEMORY_PATH);
+  await fs.mkdir(long_dir, { recursive: true });
+  if (!(await path_exists(memory_path))) {
+    await fs.writeFile(memory_path, '', 'utf8');
+  }
+}
+
+// Reads current memory text
+async function read_memory(root: string): Promise<string> {
+  var memory_path = path.join(root, MEMORY_PATH);
+  return await read_text_or_empty(memory_path);
+}
+
+// Appends one memory line, preserving append-only semantics
+async function append_memory_line(root: string, line: string): Promise<void> {
+  var line = line.trim();
+  if (!line) {
+    return;
+  }
+
+  var memory_path = path.join(root, MEMORY_PATH);
+  var old_text = await read_text_or_empty(memory_path);
+  var old_text = old_text.replace(/\s+$/g, '');
+  var next_text = old_text.length > 0
+    ? `${old_text}\n${line}\n`
+    : `${line}\n`;
+  await fs.writeFile(memory_path, next_text, 'utf8');
+}
+
+// AI Calls
+// --------
+
+// Calls one model and returns plain text with retries
+async function ask_text(
+  model: string,
+  prompt: string,
+  system: string,
+  retries: number = AI_RETRIES,
+): Promise<string> {
+  var last_error: unknown = null;
+
+  for (var attempt = 0; attempt <= retries; ++attempt) {
+    try {
+      var ai = await GenAI(model);
+      var reply_raw = await ai.ask(prompt, { system });
+      if (typeof reply_raw !== 'string') {
+        fail(`Model "${model}" returned non-text response.`);
+      }
+
+      var reply = strip_outer_fence(reply_raw).trim();
+      if (!reply) {
+        fail(`Model "${model}" returned empty response.`);
+      }
+      return reply;
+    } catch (error) {
+      last_error = error;
+      if (attempt >= retries) {
+        break;
+      }
+      await sleep_ms(1_000 * (attempt + 1));
+    }
+  }
+
+  fail(`Model call failed (${model}): ${error_message(last_error)}`);
+}
+
+// Rebalances text into a token range using a model loop
+async function rebalance_text(cfg: RebalanceConfig): Promise<RebalanceResult> {
+  var text = cfg.text.trim();
+  var tokens = tokenCount(text);
+  var rounds = 0;
+
+  while (rounds < cfg.max_rounds) {
+    if (tokens >= cfg.min_tokens && tokens <= cfg.max_tokens) {
+      break;
+    }
+
+    var mode: ResizeMode = tokens > cfg.max_tokens ? 'shrink' : 'grow';
+    if (mode === 'grow' && !cfg.on_grow) {
+      break;
+    }
+
+    var state: RebalanceState = {
+      mode,
+      cur_text: text,
+      cur_tokens: tokens,
+      min_tokens: cfg.min_tokens,
+      max_tokens: cfg.max_tokens,
+      tgt_tokens: cfg.tgt_tokens,
+    };
+
+    var prompt = mode === 'shrink'
+      ? cfg.on_shrink(state)
+      : cfg.on_grow!(state);
+
+    var next = await ask_text(cfg.model, prompt, cfg.system);
+    var next = next.trim();
+    if (!next || next === text) {
+      break;
+    }
+
+    text = next;
+    tokens = tokenCount(text);
+    rounds += 1;
+  }
+
+  return { text, tokens, rounds };
+}
+
+// Retrieval
+// ---------
+
+// Builds the first retrieval prompt from full repository context
+function retrieval_prompt_initial(
+  task: string,
+  repo_text: string,
+  repo_tokens: number,
+): string {
+  return [
+    'You are in CONTEXT RETRIEVAL mode.',
+    'Do NOT solve the task.',
+    '',
+    'Return a brand-new repository snapshot containing only context needed to solve the task.',
+    'Keep crucial files fully when possible. For huge files, include only needed sections.',
+    'Include dependencies, types, related helpers, tests, docs, and style references when relevant.',
+    '',
+    'Output format (and only this):',
+    '=== FILE: ./relative/path ===',
+    '<file content or excerpt>',
+    '=== END FILE ===',
+    '',
+    `Original context tokens: ${repo_tokens}.`,
+    `Target range: ${RETRIEVE_MIN_TOKENS}-${RETRIEVE_MAX_TOKENS}.`,
+    `Ideal target: ${RETRIEVE_TGT_TOKENS}.`,
+    token_directive(repo_tokens, RETRIEVE_TGT_TOKENS),
+    '',
+    'TASK:',
+    task,
+    '',
+    'FULL REPOSITORY SNAPSHOT:',
+    repo_text,
+  ].join('\n');
+}
+
+// Builds retrieval prompt for undersized outputs
+function retrieval_prompt_grow(
+  task: string,
+  original_text: string,
+  original_tokens: number,
+  state: RebalanceState,
+): string {
+  var need_min = state.min_tokens - state.cur_tokens;
+  var need_tgt = state.tgt_tokens - state.cur_tokens;
+  return [
+    'Your retrieved context is too small.',
+    'Enrich it while staying focused on task-relevant code.',
+    '',
+    `Original context tokens: ${original_tokens}.`,
+    `Current retrieved tokens: ${state.cur_tokens}.`,
+    `Target range: ${state.min_tokens}-${state.max_tokens}.`,
+    `Ideal target: ${state.tgt_tokens}.`,
+    `You must add at least ${need_min} tokens to reach the minimum.`,
+    `Prefer adding around ${need_tgt} tokens to hit the ideal.`,
+    token_directive(state.cur_tokens, state.tgt_tokens),
+    '',
+    'Output only the updated retrieved context in the same FILE format.',
+    '',
+    'TASK:',
+    task,
+    '',
+    'CURRENT RETRIEVED CONTEXT:',
+    state.cur_text,
+    '',
+    'ORIGINAL FULL CONTEXT (source of extra material):',
+    original_text,
+  ].join('\n');
+}
+
+// Builds retrieval prompt for oversized outputs
+function retrieval_prompt_shrink(task: string, state: RebalanceState): string {
+  var need_drop_min = state.cur_tokens - state.max_tokens;
+  var need_drop_tgt = state.cur_tokens - state.tgt_tokens;
+  return [
+    'Your retrieved context is too large.',
+    'Reduce it without losing critical task-solving context.',
+    '',
+    `Current retrieved tokens: ${state.cur_tokens}.`,
+    `Target range: ${state.min_tokens}-${state.max_tokens}.`,
+    `Ideal target: ${state.tgt_tokens}.`,
+    `You must remove at least ${need_drop_min} tokens to enter range.`,
+    `Prefer removing around ${need_drop_tgt} tokens to hit the ideal.`,
+    token_directive(state.cur_tokens, state.tgt_tokens),
+    '',
+    'Output only the reduced context in the same FILE format.',
+    '',
+    'TASK:',
+    task,
+    '',
+    'CONTEXT TO REDUCE:',
+    state.cur_text,
+  ].join('\n');
+}
+
+// Runs retrieval stage with dynamic range corrections
+async function retrieve_context(
+  task: string,
+  repo_text: string,
+  retrieval_model: string,
+): Promise<{ text: string; tokens: number }> {
+  var repo_tokens = tokenCount(repo_text);
+  if (repo_tokens <= RETRIEVE_MAX_TOKENS) {
+    log_step(`Retrieval skipped (full repo is ${repo_tokens} tokens, <= ${RETRIEVE_MAX_TOKENS}).`);
+    return { text: repo_text, tokens: repo_tokens };
+  }
+
+  log_step(`Running retrieval model (${retrieval_model}) on ${repo_tokens} tokens.`);
+  var first_prompt = retrieval_prompt_initial(task, repo_text, repo_tokens);
+  var retrieved = await ask_text(retrieval_model, first_prompt, RETRIEVAL_SYSTEM);
+
+  var balanced = await rebalance_text({
+    model: retrieval_model,
+    system: RETRIEVAL_SYSTEM,
+    min_tokens: RETRIEVE_MIN_TOKENS,
+    max_tokens: RETRIEVE_MAX_TOKENS,
+    tgt_tokens: RETRIEVE_TGT_TOKENS,
+    max_rounds: MAX_REBALANCE_ROUNDS,
+    text: retrieved,
+    on_shrink: state => retrieval_prompt_shrink(task, state),
+    on_grow: state => retrieval_prompt_grow(task, repo_text, repo_tokens, state),
+  });
+
+  log_step(`Retrieved context size: ${balanced.tokens} tokens.`);
+  return { text: balanced.text, tokens: balanced.tokens };
+}
+
+// Advisors
+// --------
+
+// Builds one advisor prompt
+function advisor_prompt(
+  task: string,
+  context_text: string,
+  memory_text: string,
+): string {
+  var memory_text = memory_text.trim() || '(empty)';
+  return [
+    'CONTEXT:',
+    context_text,
+    '',
+    'MEMORY:',
+    memory_text,
+    '',
+    'TASK:',
+    task,
+    '',
+    'You are in advisor mode.',
+    'Do not propose code patches and do not output file contents.',
+    'Give detailed implementation guidance for a coding agent that will edit this repository.',
+    'Point to specific files, likely pitfalls, and likely misunderstandings.',
+    'The MEMORY comes from prior coding-agent self reports and may be wrong.',
+    'Treat MEMORY as a clue source, not ground truth.',
+    'Maximize actionable insight density.',
+  ].join('\n');
+}
+
+// Calls one advisor model safely
+async function ask_advisor(
+  model: string,
+  task: string,
+  context_text: string,
+  memory_text: string,
+): Promise<AdvisorReply> {
+  try {
+    var prompt = advisor_prompt(task, context_text, memory_text);
+    var text = await ask_text(model, prompt, ADVISOR_SYSTEM);
+    return { model, text, ok: true };
+  } catch (error) {
+    var text = `Advisor failed: ${error_message(error)}`;
+    return { model, text, ok: false };
+  }
+}
+
+// Builds synthesis prompt for combined advisor output
+function insight_summarize_prompt(
+  task: string,
+  combined_text: string,
+  combined_tokens: number,
+): string {
+  return [
+    'Summarize and merge this board-of-advisors document for a coding agent.',
+    'Keep concrete implementation guidance, file references, risk notes, and open questions.',
+    'Do not add new facts.',
+    '',
+    `Current combined advice tokens: ${combined_tokens}.`,
+    `Target range: ${INSIGHT_MIN_TOKENS}-${INSIGHT_MAX_TOKENS}.`,
+    `Ideal target: ${INSIGHT_TGT_TOKENS}.`,
+    token_directive(combined_tokens, INSIGHT_TGT_TOKENS),
+    '',
+    'Output only the synthesized advice.',
+    '',
+    'TASK:',
+    task,
+    '',
+    'COMBINED ADVICE:',
+    combined_text,
+  ].join('\n');
+}
+
+// Builds grow/shrink prompts for insight balancing
+function insight_resize_prompt(
+  task: string,
+  source_text: string,
+  state: RebalanceState,
+): string {
+  var mode_phrase = state.mode === 'shrink'
+    ? 'The advice is too long; reduce while preserving key details.'
+    : 'The advice is too short; enrich from source while staying focused.';
+  return [
+    mode_phrase,
+    '',
+    `Current advice tokens: ${state.cur_tokens}.`,
+    `Target range: ${state.min_tokens}-${state.max_tokens}.`,
+    `Ideal target: ${state.tgt_tokens}.`,
+    token_directive(state.cur_tokens, state.tgt_tokens),
+    '',
+    'Output only the revised advice.',
+    '',
+    'TASK:',
+    task,
+    '',
+    'CURRENT ADVICE:',
+    state.cur_text,
+    '',
+    'SOURCE ADVICE:',
+    source_text,
+  ].join('\n');
+}
+
+// Runs board of advisors and optional synthesis
+async function run_board_of_advisors(
+  task: string,
+  context_text: string,
+  memory_text: string,
+  advisor_models: string[],
+  summary_model: string,
+): Promise<string> {
+  log_step(`Running advisor board with ${advisor_models.length} models.`);
+  var replies = await Promise.all(
+    advisor_models.map(model => ask_advisor(model, task, context_text, memory_text)),
+  );
+
+  var ok_count = replies.filter(reply => reply.ok).length;
+  if (ok_count === 0) {
+    fail('All advisor models failed.');
+  }
+
+  var combined = replies.map((reply, i) => {
+    var status = reply.ok ? 'ok' : 'failed';
+    return [
+      `## Advisor ${i + 1}: ${reply.model} (${status})`,
+      reply.text.trim(),
+    ].join('\n');
+  }).join('\n\n');
+
+  var combined_tokens = tokenCount(combined);
+  log_step(`Combined advisor doc size: ${combined_tokens} tokens.`);
+  if (combined_tokens <= INSIGHT_TRIGGER_TOKENS) {
+    return combined;
+  }
+
+  log_step(`Summarizing advisor doc with ${summary_model}.`);
+  var first_prompt = insight_summarize_prompt(task, combined, combined_tokens);
+  var first_summary = await ask_text(summary_model, first_prompt, SUMMARY_SYSTEM);
+
+  var balanced = await rebalance_text({
+    model: summary_model,
+    system: SUMMARY_SYSTEM,
+    min_tokens: INSIGHT_MIN_TOKENS,
+    max_tokens: INSIGHT_MAX_TOKENS,
+    tgt_tokens: INSIGHT_TGT_TOKENS,
+    max_rounds: MAX_REBALANCE_ROUNDS,
+    text: first_summary,
+    on_shrink: state => insight_resize_prompt(task, combined, { ...state, mode: 'shrink' }),
+    on_grow: state => insight_resize_prompt(task, combined, { ...state, mode: 'grow' }),
+  });
+
+  log_step(`Final advisor synthesis size: ${balanced.tokens} tokens.`);
+  return balanced.text;
+}
+
+// Codex
+// -----
+
+// Ensures local codex CLI supports required non-interactive flags
+async function ensure_codex_exec_support(): Promise<void> {
+  var help = '';
+  try {
+    var { stdout } = await exec_file_async('codex', ['exec', '--help'], {
+      maxBuffer: EXEC_MAX_BUFFER,
+    });
+    help = stdout;
+  } catch (error) {
+    fail(`Unable to run "codex exec --help": ${error_message(error)}`);
+  }
+
+  var need_output = help.includes('--output-last-message');
+  var need_config = help.includes('--config');
+  var need_stdin = help.includes('read from stdin');
+  if (!need_output || !need_config || !need_stdin) {
+    fail('Installed codex CLI does not expose required non-interactive features.');
+  }
+}
+
+// Builds the coding prompt sent to codex exec
+function codex_goal_prompt(
+  task: string,
+  insights: string,
+  memory_text: string,
+  board_enabled: boolean,
+): string {
+  var blocks = [] as string[];
+
+  if (board_enabled) {
+    blocks.push('INSIGHTS (from board of experts):');
+    blocks.push(insights.trim() || '(none)');
+  } else {
+    blocks.push('MEMORY (self-reports from prior rounds; may contain mistakes):');
+    blocks.push(memory_text.trim() || '(empty)');
+  }
+
+  blocks.push('TASK (user goal):');
+  blocks.push(task);
+
+  blocks.push([
+    'GOAL:',
+    '1) Use the insights above to complete the task in the current repository.',
+    '2) When done, write ".REPORT.txt" with a concise report (max 256 tokens).',
+    '3) The report must include:',
+    '- what you changed',
+    '- key findings/results',
+    '- what you want to do next',
+    '- questions for the expert board in the next round',
+    '4) Keep report to about 3 short paragraphs; verify token count with a tokenizer.',
+    '5) After writing ".REPORT.txt", commit and push your changes.',
+    '6) Then give your final response.',
+  ].join('\n'));
+
+  return blocks.join('\n\n');
+}
+
+// Runs codex exec in one-shot mode, streaming output to terminal
+async function run_codex_exec(
+  root: string,
+  prompt: string,
+  opts: RoundOptions,
+): Promise<string> {
+  var out_path = path.join(root, CODEX_LAST_PATH);
+  await fs.mkdir(path.dirname(out_path), { recursive: true });
+  await delete_if_exists(out_path);
+
+  var effort_cfg = `model_reasoning_effort="${DEFAULT_CODEX_REASONING_EFFORT}"`;
+  var args = [
+    'exec',
+    '-C', root,
+    '-m', opts.codex_model,
+    '-c', effort_cfg,
+    '-o', out_path,
+  ];
+
+  if (opts.codex_json) {
+    args.push('--json');
+  }
+  if (opts.codex_ephemeral) {
+    args.push('--ephemeral');
+  }
+
+  if (opts.codex_dangerous) {
+    args.push('--dangerously-bypass-approvals-and-sandbox');
+  } else {
+    args.push('--sandbox', opts.codex_sandbox);
+  }
+
+  args.push('-');
+  log_step([
+    `Running codex exec with model "${opts.codex_model}".`,
+    `Reasoning effort: ${DEFAULT_CODEX_REASONING_EFFORT}.`,
+  ].join(' '));
+
+  await new Promise<void>((resolve, reject) => {
+    var child = spawn('codex', args, {
+      cwd: root,
+      stdio: ['pipe', 'inherit', 'inherit'],
+    });
+
+    child.on('error', reject);
+    child.on('close', (code, signal) => {
+      if (code === 0) {
+        resolve();
+      } else if (signal) {
+        reject(new Error(`codex terminated by signal ${signal}`));
+      } else {
+        reject(new Error(`codex exited with code ${code}`));
+      }
+    });
+
+    child.stdin.end(prompt);
+  });
+
+  return await read_text_or_empty(out_path);
+}
+
+// Reports
+// -------
+
+// Builds initial report compression prompt
+function report_compress_prompt(
+  report_text: string,
+  report_tokens: number,
+  report_limit: number,
+): string {
+  return [
+    'Compress this coding report while preserving factual content.',
+    'The output must be concise and suitable for append-only memory.',
+    '',
+    `Current report tokens: ${report_tokens}.`,
+    `Hard token limit: ${report_limit}.`,
+    `Ideal target: ${REPORT_TGT_TOKENS}.`,
+    token_directive(report_tokens, REPORT_TGT_TOKENS),
+    '',
+    'Output only the compressed report text.',
+    '',
+    'REPORT:',
+    report_text,
+  ].join('\n');
+}
+
+// Builds rebalance prompt for report post-processing
+function report_resize_prompt(state: RebalanceState, source_text: string): string {
+  var mode = state.mode === 'shrink'
+    ? 'The report is still too long; reduce it.'
+    : 'The report is too short; enrich from source if needed.';
+  return [
+    mode,
+    '',
+    `Current report tokens: ${state.cur_tokens}.`,
+    `Allowed range: ${state.min_tokens}-${state.max_tokens}.`,
+    `Ideal target: ${state.tgt_tokens}.`,
+    token_directive(state.cur_tokens, state.tgt_tokens),
+    '',
+    'Output only the revised report.',
+    '',
+    'CURRENT REPORT:',
+    state.cur_text,
+    '',
+    'SOURCE REPORT:',
+    source_text,
+  ].join('\n');
+}
+
+// Normalizes, caps, and returns one-line report
+async function normalize_report(
+  raw_report: string,
+  summary_model: string,
+  report_limit: number,
+): Promise<string> {
+  var report = raw_report.trim();
+  if (!report) {
+    report = 'No report was generated by the coding agent this round.';
+  }
+
+  var report_tokens = tokenCount(report);
+  if (report_tokens > report_limit) {
+    var first_prompt = report_compress_prompt(report, report_tokens, report_limit);
+    report = await ask_text(summary_model, first_prompt, SUMMARY_SYSTEM);
+
+    var balanced = await rebalance_text({
+      model: summary_model,
+      system: SUMMARY_SYSTEM,
+      min_tokens: 1,
+      max_tokens: report_limit,
+      tgt_tokens: REPORT_TGT_TOKENS,
+      max_rounds: MAX_REBALANCE_ROUNDS,
+      text: report,
+      on_shrink: state => report_resize_prompt({ ...state, mode: 'shrink' }, raw_report),
+      on_grow: state => report_resize_prompt({ ...state, mode: 'grow' }, raw_report),
+    });
+    report = balanced.text;
+  }
+
+  report = report.replace(/\s+/g, ' ').trim();
+  if (tokenCount(report) > report_limit) {
+    report = hard_trim_tokens(report, report_limit);
+  }
+
+  return report.trim();
+}
+
+// Reads .REPORT.txt, deletes it, and appends normalized content to MEMORY.md
+async function ingest_round_report(
+  root: string,
+  codex_last_message: string,
+  summary_model: string,
+  report_limit: number,
+): Promise<string> {
+  var report_path = path.join(root, REPORT_PATH);
+  var report = await read_text_or_empty(report_path);
+  await delete_if_exists(report_path);
+
+  if (!report.trim()) {
+    report = codex_last_message.trim();
+  }
+
+  var report = await normalize_report(report, summary_model, report_limit);
+  await append_memory_line(root, report);
+  return report;
+}
+
+// Round Flow
+// ----------
+
+// Executes one full optimization round
+async function run_round(round: number, root: string, opts: RoundOptions): Promise<void> {
+  log_step(`========== ROUND ${round} ==========`);  
+
+  var task_text = (await fs.readFile(opts.task_file, 'utf8')).trim();
+  if (!task_text) {
+    fail(`Task file is empty: ${opts.task_file}`);
+  }
+
+  await ensure_long_gitignored(root);
+  await ensure_memory_store(root);
+  var memory_text = await read_memory(root);
+
+  var insights = '';
+  if (opts.board) {
+    log_step('Loading full repository snapshot.');
+    var repo_text = await load_repo_snapshot(root);
+    var repo_tokens = tokenCount(repo_text);
+    log_step(`Repository snapshot size: ${repo_tokens} tokens.`);
+
+    var retrieved = await retrieve_context(task_text, repo_text, opts.retrieval_model);
+    insights = await run_board_of_advisors(
+      task_text,
+      retrieved.text,
+      memory_text,
+      opts.advisor_models,
+      opts.summary_model,
+    );
+  } else {
+    log_step('Board disabled; skipping retrieval and advisor stages.');
+  }
+
+  var goal_prompt = codex_goal_prompt(task_text, insights, memory_text, opts.board);
+  var codex_last = await run_codex_exec(root, goal_prompt, opts);
+  var report = await ingest_round_report(
+    root,
+    codex_last,
+    opts.summary_model,
+    opts.report_limit,
+  );
+  var report_tokens = tokenCount(report);
+  log_step(`Appended report (${report_tokens} tokens) to ${MEMORY_PATH}.`);
+}
+
+// CLI
+// ---
+
+// Parses and validates CLI options
+function parse_cli(argv: string[]): RoundOptions {
+  var program = new Command();
+  program
+    .name('long')
+    .description('Long-running orchestrator loop for complex repository tasks.')
+    .argument('<task_file>', 'Task file (plain text)')
+    .option('-n, --max-rounds <num>', 'Max rounds, 0 = infinite loop', '0')
+    .option('--no-board', 'Disable advisor board and inject MEMORY into Codex prompt')
+    .option('--retrieval-model <spec>', 'Model for retrieval stage', DEFAULT_RETRIEVAL_MODEL)
+    .option('--summary-model <spec>', 'Model for synthesis/compression', DEFAULT_SUMMARY_MODEL)
+    .option(
+      '--advisor-models <list>',
+      'Comma-separated advisor models',
+      DEFAULT_ADVISOR_MODELS.join(','),
+    )
+    .option('--codex-model <name>', 'Model for codex exec', DEFAULT_CODEX_MODEL)
+    .option(
+      '--codex-sandbox <mode>',
+      'Sandbox mode for codex exec when not dangerous',
+      'danger-full-access',
+    )
+    .option('--codex-dangerous', 'Use --dangerously-bypass-approvals-and-sandbox')
+    .option('--codex-ephemeral', 'Run codex exec with --ephemeral')
+    .option('--codex-json', 'Run codex exec with --json output')
+    .option('--report-limit <num>', 'Max tokens for memory report line', '256')
+    .option('--delay-ms <num>', 'Delay between rounds in milliseconds', '0')
+    .addHelpText('after', [
+      '',
+      'Examples:',
+      '  long task.txt',
+      '  long task.txt --max-rounds 3',
+      '  long task.txt --no-board --codex-model gpt-5.3-codex',
+    ].join('\n'))
+  ;
+
+  if (argv.length <= 2) {
+    program.outputHelp();
+    process.exit(0);
+  }
+
+  program.parse(argv);
+
+  var args = program.args;
+  var task_arg = String(args[0] ?? '').trim();
+  if (!task_arg) {
+    fail('Missing task file path.');
+  }
+
+  var raw = program.opts() as Record<string, unknown>;
+  var max_rounds = Number(raw.maxRounds ?? 0);
+  var report_limit = Number(raw.reportLimit ?? 256);
+  var delay_ms = Number(raw.delayMs ?? 0);
+  if (!Number.isInteger(max_rounds) || max_rounds < 0) {
+    fail(`Invalid --max-rounds value: ${raw.maxRounds}`);
+  }
+  if (!Number.isInteger(report_limit) || report_limit <= 0) {
+    fail(`Invalid --report-limit value: ${raw.reportLimit}`);
+  }
+  if (!Number.isInteger(delay_ms) || delay_ms < 0) {
+    fail(`Invalid --delay-ms value: ${raw.delayMs}`);
+  }
+
+  var sandbox = String(raw.codexSandbox ?? 'danger-full-access');
+  if (
+    sandbox !== 'read-only'
+    && sandbox !== 'workspace-write'
+    && sandbox !== 'danger-full-access'
+  ) {
+    fail(`Invalid --codex-sandbox mode: ${sandbox}`);
+  }
+
+  var advisor_list = String(raw.advisorModels ?? '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+  if ((raw.board as boolean) !== false && advisor_list.length === 0) {
+    fail('Advisor board is enabled but --advisor-models is empty.');
+  }
+
+  var task_file = path.resolve(process.cwd(), task_arg);
+  return {
+    max_rounds,
+    board: (raw.board as boolean) !== false,
+    retrieval_model: String(raw.retrievalModel ?? DEFAULT_RETRIEVAL_MODEL),
+    summary_model: String(raw.summaryModel ?? DEFAULT_SUMMARY_MODEL),
+    advisor_models: advisor_list,
+    codex_model: String(raw.codexModel ?? DEFAULT_CODEX_MODEL),
+    codex_sandbox: sandbox,
+    codex_dangerous: Boolean(raw.codexDangerous),
+    codex_ephemeral: Boolean(raw.codexEphemeral),
+    codex_json: Boolean(raw.codexJson),
+    report_limit,
+    delay_ms,
+    task_file,
+  };
+}
+
+// Main
+// ----
+
+// Runs the orchestrator loop
+async function main(): Promise<void> {
+  var opts = parse_cli(process.argv);
+  if (!(await path_exists(opts.task_file))) {
+    fail(`Task file not found: ${opts.task_file}`);
+  }
+
+  var root = await get_repo_root(process.cwd());
+  await ensure_codex_exec_support();
+  await ensure_long_gitignored(root);
+  await ensure_memory_store(root);
+
+  log_step(`Repository root: ${root}`);
+  log_step(`Task file: ${opts.task_file}`);
+  log_step(`Board enabled: ${opts.board ? 'yes' : 'no'}`);
+  log_step(`Max rounds: ${opts.max_rounds === 0 ? 'infinite' : opts.max_rounds}`);
+
+  var round = 1;
+  while (opts.max_rounds === 0 || round <= opts.max_rounds) {
+    await run_round(round, root, opts);
+    round += 1;
+
+    if (opts.max_rounds !== 0 && round > opts.max_rounds) {
+      break;
+    }
+    if (opts.delay_ms > 0) {
+      log_step(`Sleeping for ${opts.delay_ms} ms before next round.`);
+      await sleep_ms(opts.delay_ms);
+    }
+  }
+
+  log_step('Loop finished.');
+}
+
+main().catch(error => {
+  console.error(`[long] Fatal: ${error_message(error)}`);
+  process.exit(1);
+});

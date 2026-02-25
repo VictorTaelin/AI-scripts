@@ -15,7 +15,8 @@
     "refactor": "./dist/Refactor.js",
     "holefill": "./dist/HoleFill.js",
     "csh": "./dist/ChatSH.js",
-    "shot": "./dist/Shot.js"
+    "shot": "./dist/Shot.js",
+    "long": "./dist/Long.js"
   },
   "files": [
     "dist"
