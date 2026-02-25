@@ -564,6 +564,13 @@ var parallel_ctx = new AsyncLocalStorage<number>();
 
 const TAG_LINE_WIDTH = 120;
 
+type AnsiMode = 'text' | 'esc' | 'csi' | 'osc' | 'st';
+
+type AnsiStripState = {
+  mode: AnsiMode;
+  esc_pending: boolean;
+};
+
 // Derives a 4-char tag from a model spec like "vendor:model:thinking"
 function model_tag(model: string): string {
   var name = model.split(':')[1] || model;
@@ -577,14 +584,141 @@ function model_tag(model: string): string {
   return name.replace(/[^a-z0-9]/gi, '').slice(0, 4).padStart(4);
 }
 
+// Builds an ANSI stripping parser state
+function make_ansi_state(): AnsiStripState {
+  return {
+    mode: 'text',
+    esc_pending: false,
+  };
+}
+
+// Removes ANSI escape sequences from a chunk, keeping state across writes
+function strip_ansi_chunk(state: AnsiStripState, chunk: string): string {
+  var out = '';
+  for (var i = 0; i < chunk.length; ++i) {
+    var chr = chunk[i];
+    var code = chunk.charCodeAt(i);
+    switch (state.mode) {
+      case 'text': {
+        if (chr === '\x1b') {
+          state.mode = 'esc';
+          break;
+        }
+        if (code === 0x9b) {
+          state.mode = 'csi';
+          break;
+        }
+        out += chr;
+        break;
+      }
+      case 'esc': {
+        if (chr === '[') {
+          state.mode = 'csi';
+          break;
+        }
+        if (chr === ']') {
+          state.mode = 'osc';
+          state.esc_pending = false;
+          break;
+        }
+        if (chr === 'P' || chr === '^' || chr === '_') {
+          state.mode = 'st';
+          state.esc_pending = false;
+          break;
+        }
+        state.mode = 'text';
+        break;
+      }
+      case 'csi': {
+        if (code >= 0x40 && code <= 0x7e) {
+          state.mode = 'text';
+        }
+        break;
+      }
+      case 'osc': {
+        if (chr === '\x07') {
+          state.mode = 'text';
+          state.esc_pending = false;
+          break;
+        }
+        if (state.esc_pending) {
+          if (chr === '\\') {
+            state.mode = 'text';
+            state.esc_pending = false;
+            break;
+          }
+          state.esc_pending = chr === '\x1b';
+          break;
+        }
+        if (chr === '\x1b') {
+          state.esc_pending = true;
+        }
+        break;
+      }
+      case 'st': {
+        if (state.esc_pending) {
+          if (chr === '\\') {
+            state.mode = 'text';
+            state.esc_pending = false;
+            break;
+          }
+          state.esc_pending = chr === '\x1b';
+          break;
+        }
+        if (chr === '\x1b') {
+          state.esc_pending = true;
+        }
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+// Sanitizes one intercepted chunk into a single-line printable message
+function sanitize_tagged_chunk(state: AnsiStripState, raw: string): string {
+  var text = strip_ansi_chunk(state, raw);
+  var text = text.replace(/[\r\n]+/g, ' ');
+  var text = text.replace(/\t/g, ' ');
+  var text = text.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
+  var text = text.replace(/ {2,}/g, ' ');
+  return text.trim();
+}
+
+// Computes a safe payload width for one tagged line in current terminal
+function tag_wrap_width(tag: string): number {
+  var prefix = `[${tag}] `;
+  var cols = process.stderr.columns ?? process.stdout.columns ?? 0;
+  if (cols <= 0) {
+    return TAG_LINE_WIDTH;
+  }
+  var width = cols - prefix.length - 1;
+  var width = Math.min(width, TAG_LINE_WIDTH);
+  var width = Math.max(width, 24);
+  return width;
+}
+
+// Finds a wrap split point, preferring whitespace near the width target
+function tag_wrap_point(text: string, width: number): number {
+  if (text.length <= width) {
+    return text.length;
+  }
+  var point = text.lastIndexOf(' ', width);
+  var min_point = Math.floor(width * 0.5);
+  if (point >= min_point) {
+    return point;
+  }
+  return width;
+}
+
 // Runs tasks in parallel with real-time tagged output.
 // Each task's stdout/stderr is intercepted, accumulated per-task,
-// and flushed as "[tag] ..." lines at newlines or ~120 chars.
+// sanitized, and flushed as "[tag] ..." lines per chunk.
 async function run_parallel_tagged<T>(
   tasks: (() => Promise<T>)[],
   tags: string[],
 ): Promise<T[]> {
-  var line_bufs: string[] = tasks.map(() => '');
+  var ansi_states: AnsiStripState[] = tasks.map(() => make_ansi_state());
 
   var orig_out = process.stdout.write.bind(process.stdout);
   var orig_err = process.stderr.write.bind(process.stderr);
@@ -594,33 +728,34 @@ async function run_parallel_tagged<T>(
     orig_err(Buffer.from(`[${tag}] ${line}\n`));
   }
 
-  // Drains complete lines and width overflows from a task's buffer
-  function drain(idx: number): void {
-    var tag = tags[idx];
-    while (true) {
-      var nl = line_bufs[idx].indexOf('\n');
-      if (nl !== -1 && nl <= TAG_LINE_WIDTH) {
-        emit(tag, line_bufs[idx].slice(0, nl));
-        line_bufs[idx] = line_bufs[idx].slice(nl + 1);
-      } else if (line_bufs[idx].length >= TAG_LINE_WIDTH) {
-        emit(tag, line_bufs[idx].slice(0, TAG_LINE_WIDTH));
-        line_bufs[idx] = line_bufs[idx].slice(TAG_LINE_WIDTH);
-      } else {
-        break;
+  // Emits one sanitized chunk, wrapping to keep prefixes aligned on-screen
+  function emit_chunk(tag: string, chunk: string): void {
+    var rest = chunk.trim();
+    if (!rest) {
+      return;
+    }
+    var width = tag_wrap_width(tag);
+    while (rest.length > width) {
+      var point = tag_wrap_point(rest, width);
+      var line = rest.slice(0, point).trimEnd();
+      if (line) {
+        emit(tag, line);
       }
+      rest = rest.slice(point).trimStart();
+    }
+    if (rest) {
+      emit(tag, rest);
     }
   }
 
-  // Intercepts writes: if inside a tracked task, accumulate and drain
+  // Intercepts writes: if inside a tracked task, sanitize and emit
   function intercept(orig: typeof process.stdout.write): typeof process.stdout.write {
     return function (chunk: any, ...args: any[]): boolean {
       var idx = parallel_ctx.getStore();
       if (idx !== undefined) {
         var raw = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
-        var raw = raw.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
-        var raw = raw.replace(/[\r\n]/g, ' ');
-        line_bufs[idx] += raw;
-        drain(idx);
+        var clean = sanitize_tagged_chunk(ansi_states[idx], raw);
+        emit_chunk(tags[idx], clean);
         return true;
       }
       return (orig as any)(chunk, ...args);
@@ -636,14 +771,6 @@ async function run_parallel_tagged<T>(
   } finally {
     process.stdout.write = orig_out;
     process.stderr.write = orig_err;
-  }
-
-  // Flush any remaining partial lines
-  for (var i = 0; i < line_bufs.length; i++) {
-    var rest = line_bufs[i].trim();
-    if (rest) {
-      emit(tags[i], rest);
-    }
   }
 
   return results;
