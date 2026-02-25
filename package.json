@@ -16,7 +16,8 @@
     "holefill": "./dist/HoleFill.js",
     "csh": "./dist/ChatSH.js",
     "shot": "./dist/Shot.js",
-    "long": "./dist/Long.js"
+    "long": "./dist/Long.js",
+    "board": "./dist/Board.js"
   },
   "files": [
     "dist"
