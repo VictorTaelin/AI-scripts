@@ -571,17 +571,18 @@ type AnsiStripState = {
   esc_pending: boolean;
 };
 
-// Derives a 4-char tag from a model spec like "vendor:model:thinking"
+// Derives a short display tag from a model spec
 function model_tag(model: string): string {
-  var name = model.split(':')[1] || model;
-  if (name.includes('codex'))  return 'codx';
+  var name = (model.split(':')[1] || model).toLowerCase();
+  if (name.includes('codex'))  return 'cdx5';
+  if (name.includes('gpt-5'))  return 'gpt5';
   if (name.includes('gemini')) return 'gemi';
   if (name.includes('opus'))   return 'opus';
   if (name.includes('sonnet')) return 'sonn';
   if (name.includes('haiku'))  return 'haik';
   if (name.includes('grok'))   return 'grok';
-  if (name.includes('gpt'))    return ' gpt';
-  return name.replace(/[^a-z0-9]/gi, '').slice(0, 4).padStart(4);
+  if (name.includes('gpt'))    return 'gpt';
+  return name.replace(/[^a-z0-9]/g, '').slice(0, 5).padStart(4);
 }
 
 // Builds an ANSI stripping parser state
@@ -725,6 +726,7 @@ async function run_parallel_tagged<T>(
 ): Promise<T[]> {
   var ansi_states: AnsiStripState[] = tasks.map(() => make_ansi_state());
   var msg_bufs: string[] = tasks.map(() => '');
+  var got_text: boolean[] = tasks.map(() => false);
 
   var orig_out = process.stdout.write.bind(process.stdout);
   var orig_err = process.stderr.write.bind(process.stderr);
@@ -738,6 +740,9 @@ async function run_parallel_tagged<T>(
   function append_chunk(idx: number, chunk: string): void {
     if (!chunk) {
       return;
+    }
+    if (/\S/.test(chunk)) {
+      got_text[idx] = true;
     }
     if (msg_bufs[idx].length === 0) {
       var chunk = chunk.replace(/^ +/g, '');
@@ -808,6 +813,9 @@ async function run_parallel_tagged<T>(
   // Flush final buffered tails
   for (var i = 0; i < msg_bufs.length; ++i) {
     drain_chunk(i, true);
+    if (!got_text[i]) {
+      emit(tags[i], '(no streamed output)');
+    }
   }
 
   return results;
@@ -1177,6 +1185,7 @@ async function ask_advisor(
     return { model, text, ok: true };
   } catch (error) {
     var text = `Advisor failed: ${error_message(error)}`;
+    process.stderr.write(text + '\n');
     return { model, text, ok: false };
   }
 }
