@@ -27,7 +27,7 @@
 //    - Reads task from `<task_file>`.
 //    - Builds full repo snapshot from git-visible files:
 //      `git ls-files --cached --others --exclude-standard`.
-//    - Excludes `.long/`, `.REPORT.txt`, and `GOAL.txt` from the snapshot.
+//    - Excludes `.long/`, `.REPORT.txt`, `GOAL.txt`, and `--exclude` patterns.
 //
 // 2) Retrieval (optional bypass when repo is already small)
 //    - If full repo context is <= 64k tokens, retrieval is skipped.
@@ -94,6 +94,7 @@
 // CLI examples:
 // - `long GOAL.txt`
 // - `long GOAL.txt --max-rounds 3`
+// - `long GOAL.txt --exclude test/`
 // - `long GOAL.txt --no-board`
 // - `long GOAL.txt --codex-model gpt-codex-5.3-high`
 //
@@ -114,6 +115,7 @@ import { AsyncLocalStorage } from 'async_hooks';
 import { spawn, execFile } from 'child_process';
 import { promisify } from 'util';
 import { Command } from 'commander';
+import ignore from 'ignore';
 import { GenAI, tokenCount } from './GenAI';
 
 const exec_file_async = promisify(execFile);
@@ -160,6 +162,7 @@ type RoundOptions = {
   retrieval_model: string;
   summary_model: string;
   advisor_models: string[];
+  exclude_patterns: string[];
   codex_model: string;
   codex_sandbox: 'read-only' | 'workspace-write' | 'danger-full-access';
   codex_dangerous: boolean;
@@ -469,7 +472,10 @@ function serialize_file(file: string, content: string): string {
 }
 
 // Lists all non-ignored repository files
-async function list_repo_files(root: string): Promise<string[]> {
+async function list_repo_files(
+  root: string,
+  exclude_patterns: string[],
+): Promise<string[]> {
   var out = await run_git(
     ['ls-files', '--cached', '--others', '--exclude-standard', '-z'],
     root,
@@ -478,12 +484,23 @@ async function list_repo_files(root: string): Promise<string[]> {
   var files = files.filter(file => !file.startsWith(`${LONG_DIR}/`));
   var files = files.filter(file => file !== REPORT_PATH);
   var files = files.filter(file => file !== GOAL_FILE);
+
+  if (exclude_patterns.length === 0) {
+    return files;
+  }
+
+  var matcher = ignore();
+  matcher.add(exclude_patterns);
+  var files = files.filter(file => !matcher.ignores(file));
   return files;
 }
 
 // Loads all repository files as line arrays
-async function load_repo_files(root: string): Promise<RepoFiles> {
-  var names = await list_repo_files(root);
+async function load_repo_files(
+  root: string,
+  exclude_patterns: string[],
+): Promise<RepoFiles> {
+  var names = await list_repo_files(root, exclude_patterns);
   var files: RepoFiles = new Map();
   for (var name of names) {
     var abs = path.join(root, name);
@@ -1594,7 +1611,7 @@ async function run_round(round: number, root: string, opts: RoundOptions): Promi
   var insights = '';
   if (opts.board) {
     log_step('Loading full repository snapshot.');
-    var repo_files  = await load_repo_files(root);
+    var repo_files  = await load_repo_files(root, opts.exclude_patterns);
     var repo_snap   = snapshot_from_files(repo_files);
     var repo_tokens = tokenCount(repo_snap);
     log_step(`Repository snapshot size: ${repo_tokens} tokens.`);
@@ -1626,6 +1643,69 @@ async function run_round(round: number, root: string, opts: RoundOptions): Promi
 // CLI
 // ---
 
+// Splits one comma-separated CLI list value into trimmed entries
+function split_cli_csv(value: string): string[] {
+  return value
+    .split(',')
+    .map(part => part.trim())
+    .filter(Boolean);
+}
+
+// Collects repeated/comma-separated CLI list values
+function collect_cli_csv(value: string, prev: string[]): string[] {
+  return [...prev, ...split_cli_csv(value)];
+}
+
+// Parses a CLI list option that may be string or string[]
+function parse_cli_csv(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    var out = [] as string[];
+    for (var item of raw) {
+      out.push(...split_cli_csv(String(item)));
+    }
+    return out;
+  }
+  if (typeof raw === 'string') {
+    return split_cli_csv(raw);
+  }
+  return [];
+}
+
+// Normalizes one gitignore-style exclude pattern
+function normalize_exclude_pattern(pattern: string): string {
+  var pattern = pattern.trim();
+  var pattern = pattern.replace(/\\/g, '/');
+  if (pattern.startsWith('./')) {
+    pattern = pattern.slice(2);
+  }
+  return pattern;
+}
+
+// Normalizes exclude pattern lists and drops empty entries
+function normalize_exclude_patterns(patterns: string[]): string[] {
+  var out = [] as string[];
+  for (var pattern of patterns) {
+    var pattern = normalize_exclude_pattern(pattern);
+    if (pattern) {
+      out.push(pattern);
+    }
+  }
+  return out;
+}
+
+// Validates exclude patterns with the gitignore parser
+function validate_exclude_patterns(patterns: string[]): void {
+  if (patterns.length === 0) {
+    return;
+  }
+  try {
+    var matcher = ignore();
+    matcher.add(patterns);
+  } catch (error) {
+    fail(`Invalid --exclude pattern: ${error_message(error)}`);
+  }
+}
+
 // Parses and validates CLI options
 function parse_cli(argv: string[]): RoundOptions {
   var program = new Command();
@@ -1641,6 +1721,12 @@ function parse_cli(argv: string[]): RoundOptions {
       '--advisor-models <list>',
       'Comma-separated advisor models',
       DEFAULT_ADVISOR_MODELS.join(','),
+    )
+    .option(
+      '--exclude <pattern>',
+      'Gitignore-style path exclude; repeat or comma-separate',
+      collect_cli_csv,
+      [] as string[],
     )
     .option('--codex-model <name>', 'Model for codex exec', DEFAULT_CODEX_MODEL)
     .option(
@@ -1658,7 +1744,13 @@ function parse_cli(argv: string[]): RoundOptions {
       'Examples:',
       '  long GOAL.txt',
       '  long GOAL.txt --max-rounds 3',
+      '  long GOAL.txt --exclude test/',
+      '  long GOAL.txt --exclude /test/,**/*.snap',
       '  long GOAL.txt --no-board --codex-model gpt-5.3-codex',
+      '',
+      'Exclude notation:',
+      '  Uses .gitignore-style patterns, relative to repo root.',
+      '  Repeat --exclude or pass comma-separated values.',
     ].join('\n'))
   ;
 
@@ -1698,13 +1790,14 @@ function parse_cli(argv: string[]): RoundOptions {
     fail(`Invalid --codex-sandbox mode: ${sandbox}`);
   }
 
-  var advisor_list = String(raw.advisorModels ?? '')
-    .split(',')
-    .map(s => s.trim())
-    .filter(Boolean);
+  var advisor_list = parse_cli_csv(raw.advisorModels);
   if ((raw.board as boolean) !== false && advisor_list.length === 0) {
     fail('Advisor board is enabled but --advisor-models is empty.');
   }
+
+  var exclude_patterns = parse_cli_csv(raw.exclude);
+  var exclude_patterns = normalize_exclude_patterns(exclude_patterns);
+  validate_exclude_patterns(exclude_patterns);
 
   var task_file = path.resolve(process.cwd(), task_arg);
   return {
@@ -1713,6 +1806,7 @@ function parse_cli(argv: string[]): RoundOptions {
     retrieval_model: String(raw.retrievalModel ?? DEFAULT_RETRIEVAL_MODEL),
     summary_model: String(raw.summaryModel ?? DEFAULT_SUMMARY_MODEL),
     advisor_models: advisor_list,
+    exclude_patterns,
     codex_model: String(raw.codexModel ?? DEFAULT_CODEX_MODEL),
     codex_sandbox: sandbox,
     codex_dangerous: Boolean(raw.codexDangerous),
@@ -1742,6 +1836,10 @@ async function main(): Promise<void> {
   log_step(`Repository root: ${root}`);
   log_step(`Task file: ${opts.task_file}`);
   log_step(`Board enabled: ${opts.board ? 'yes' : 'no'}`);
+  if (opts.exclude_patterns.length > 0) {
+    var excludes = opts.exclude_patterns.join(', ');
+    log_step(`Exclude patterns: ${excludes}`);
+  }
   log_step(`Max rounds: ${opts.max_rounds === 0 ? 'infinite' : opts.max_rounds}`);
 
   var round = 1;
