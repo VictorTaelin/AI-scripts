@@ -18,7 +18,7 @@
 //   - append-only memory accumulation
 //
 // Core objective:
-// - Given `long task.txt`, repeatedly push the repository toward task completion.
+// - Given `long GOAL.txt`, repeatedly push the repository toward task completion.
 // - Keep context sizes under control with token-range targets.
 // - Keep per-round memory bounded to small fixed reports.
 //
@@ -27,7 +27,7 @@
 //    - Reads task from `<task_file>`.
 //    - Builds full repo snapshot from git-visible files:
 //      `git ls-files --cached --others --exclude-standard`.
-//    - Excludes `.long/` and `.REPORT.txt` from the context snapshot.
+//    - Excludes `.long/`, `.REPORT.txt`, and `GOAL.txt` from the snapshot.
 //
 // 2) Retrieval (optional bypass when repo is already small)
 //    - If full repo context is <= 64k tokens, retrieval is skipped.
@@ -63,6 +63,10 @@
 //    - Repeats from the latest repository state.
 //    - Stops only when `--max-rounds` is reached (or never, when 0).
 //
+// Observability:
+// - Every AI prompt is logged to terminal with token count.
+// - Full prompt text is written to ~/.ai/long/<timestamp>.<call_name>.txt.
+//
 // Important repository side effects:
 // - Ensures `.long/` exists and `.long/MEMORY.md` exists.
 // - Ensures `.long/` is listed in `.gitignore`.
@@ -87,10 +91,10 @@
 // - It does not auto-resolve git conflicts or remote auth/network failures.
 //
 // CLI examples:
-// - `long task.txt`
-// - `long task.txt --max-rounds 3`
-// - `long task.txt --no-board`
-// - `long task.txt --codex-model gpt-codex-5.3-high`
+// - `long GOAL.txt`
+// - `long GOAL.txt --max-rounds 3`
+// - `long GOAL.txt --no-board`
+// - `long GOAL.txt --codex-model gpt-codex-5.3-high`
 //
 // Operational assumptions:
 // - Must run inside a git repository.
@@ -103,6 +107,7 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import * as os from 'os';
 import * as process from 'process';
 import { spawn, execFile } from 'child_process';
 import { promisify } from 'util';
@@ -128,6 +133,7 @@ type RebalanceState = {
 type RebalanceConfig = {
   model: string;
   system: string;
+  call_name: string;
   min_tokens: number;
   max_tokens: number;
   tgt_tokens: number;
@@ -181,10 +187,12 @@ const REPORT_TGT_TOKENS = 192;
 const MAX_REBALANCE_ROUNDS = 6;
 const AI_RETRIES = 2;
 const EXEC_MAX_BUFFER = 128 * 1024 * 1024;
+const AI_LOG_DIR      = path.join(os.homedir(), '.ai', 'long');
 
-const LONG_DIR = '.long';
-const MEMORY_PATH = '.long/MEMORY.md';
-const REPORT_PATH = '.REPORT.txt';
+const LONG_DIR        = '.long';
+const MEMORY_PATH     = '.long/MEMORY.md';
+const REPORT_PATH     = '.REPORT.txt';
+const GOAL_FILE       = 'GOAL.txt';
 const CODEX_LAST_PATH = '.long/.codex-last-message.txt';
 
 const DEFAULT_RETRIEVAL_MODEL = 'anthropic:claude-opus-4-6:max';
@@ -199,9 +207,9 @@ const DEFAULT_CODEX_MODEL             = 'gpt-5.3-codex';
 const DEFAULT_CODEX_REASONING_EFFORT = 'xhigh';
 
 const RETRIEVAL_SYSTEM = [
-  'You are a context-retrieval specialist.',
-  'Return context only. Do not solve the task.',
-  'Do not include explanations, plans, or markdown prose outside the context.',
+  'You extract relevant source code from repositories.',
+  'Output only code files in the specified format.',
+  'Never include task descriptions, solutions, plans, or commentary in your output.',
 ].join(' ');
 
 const ADVISOR_SYSTEM = [
@@ -247,6 +255,34 @@ async function sleep_ms(ms: number): Promise<void> {
     return;
   }
   await new Promise<void>(resolve => setTimeout(resolve, ms));
+}
+
+// AI Call Logging
+// ---------------
+
+// Generates a timestamp string like 2026y02m25d.14h30m05s
+function log_timestamp(): string {
+  var d   = new Date();
+  var Y   = String(d.getFullYear());
+  var M   = String(d.getMonth() + 1).padStart(2, '0');
+  var D   = String(d.getDate()).padStart(2, '0');
+  var h   = String(d.getHours()).padStart(2, '0');
+  var min = String(d.getMinutes()).padStart(2, '0');
+  var s   = String(d.getSeconds()).padStart(2, '0');
+  return `${Y}y${M}m${D}d.${h}h${min}m${s}s`;
+}
+
+// Logs an AI call's prompt to terminal and file
+async function log_ai_call(
+  call_name: string,
+  prompt: string,
+  tokens: number,
+): Promise<void> {
+  log_step(`AI call "${call_name}": ${tokens} prompt tokens`);
+  await fs.mkdir(AI_LOG_DIR, { recursive: true });
+  var ts   = log_timestamp();
+  var file = path.join(AI_LOG_DIR, `${ts}.${call_name}.txt`);
+  await fs.writeFile(file, prompt, 'utf8');
 }
 
 // Tokens
@@ -435,6 +471,7 @@ async function list_repo_files(root: string): Promise<string[]> {
   var files = out.split('\0').filter(Boolean);
   var files = files.filter(file => !file.startsWith(`${LONG_DIR}/`));
   var files = files.filter(file => file !== REPORT_PATH);
+  var files = files.filter(file => file !== GOAL_FILE);
   return files;
 }
 
@@ -502,8 +539,11 @@ async function ask_text(
   model: string,
   prompt: string,
   system: string,
+  call_name: string,
   retries: number = AI_RETRIES,
 ): Promise<string> {
+  var prompt_tokens = tokenCount(prompt);
+  await log_ai_call(call_name, prompt, prompt_tokens);
   var last_error: unknown = null;
 
   for (var attempt = 0; attempt <= retries; ++attempt) {
@@ -560,7 +600,8 @@ async function rebalance_text(cfg: RebalanceConfig): Promise<RebalanceResult> {
       ? cfg.on_shrink(state)
       : cfg.on_grow!(state);
 
-    var next = await ask_text(cfg.model, prompt, cfg.system);
+    var adj_name = `${cfg.call_name}_${mode}`;
+    var next = await ask_text(cfg.model, prompt, cfg.system, adj_name);
     var next = next.trim();
     if (!next || next === text) {
       break;
@@ -584,27 +625,26 @@ function retrieval_prompt_initial(
   repo_tokens: number,
 ): string {
   return [
-    'You are in CONTEXT RETRIEVAL mode.',
-    'Do NOT solve the task.',
-    '',
-    'Return a brand-new repository snapshot containing only context needed to solve the task.',
-    'Keep crucial files fully when possible. For huge files, include only needed sections.',
-    'Include dependencies, types, related helpers, tests, docs, and style references when relevant.',
-    '',
-    'Output format (and only this):',
-    '=== FILE: ./relative/path ===',
-    '<file content or excerpt>',
-    '=== END FILE ===',
-    '',
-    `Original context tokens: ${repo_tokens}.`,
-    `Target range: ${RETRIEVE_MIN_TOKENS}-${RETRIEVE_MAX_TOKENS}.`,
-    `Ideal target: ${RETRIEVE_TGT_TOKENS}.`,
-    token_directive(repo_tokens, RETRIEVE_TGT_TOKENS),
-    '',
     'TASK:',
     task,
     '',
-    'FULL REPOSITORY SNAPSHOT:',
+    'TOKEN BUDGET:',
+    `Full codebase: ${repo_tokens} tokens.`,
+    `Target output: ${RETRIEVE_MIN_TOKENS}–${RETRIEVE_MAX_TOKENS} tokens (ideal ${RETRIEVE_TGT_TOKENS}).`,
+    token_directive(repo_tokens, RETRIEVE_TGT_TOKENS),
+    '',
+    'INSTRUCTIONS:',
+    'Extract the code context from the CODEBASE below that is relevant to solving the TASK.',
+    'Output ONLY source code files. No commentary, no solutions, no task text.',
+    'Keep crucial files intact. For large files, include relevant sections and use "..." for omitted parts.',
+    'Include: source files, type definitions, helpers, tests, configs, and docs related to the task.',
+    '',
+    'OUTPUT FORMAT (strictly — nothing else):',
+    '=== FILE: ./relative/path ===',
+    '<file content or relevant excerpts, with ... for omitted sections>',
+    '=== END FILE ===',
+    '',
+    'CODEBASE:',
     repo_text,
   ].join('\n');
 }
@@ -630,15 +670,16 @@ function retrieval_prompt_grow(
     `Prefer adding around ${need_tgt} tokens to hit the ideal.`,
     token_directive(state.cur_tokens, state.tgt_tokens),
     '',
-    'Output only the updated retrieved context in the same FILE format.',
+    'Output only the updated context using === FILE: ./path === / === END FILE === format.',
+    'No commentary, no task text — only source code files.',
     '',
-    'TASK:',
+    'TASK (reference only):',
     task,
     '',
     'CURRENT RETRIEVED CONTEXT:',
     state.cur_text,
     '',
-    'ORIGINAL FULL CONTEXT (source of extra material):',
+    'ORIGINAL CODEBASE (source of extra material):',
     original_text,
   ].join('\n');
 }
@@ -658,9 +699,10 @@ function retrieval_prompt_shrink(task: string, state: RebalanceState): string {
     `Prefer removing around ${need_drop_tgt} tokens to hit the ideal.`,
     token_directive(state.cur_tokens, state.tgt_tokens),
     '',
-    'Output only the reduced context in the same FILE format.',
+    'Output only the reduced context using === FILE: ./path === / === END FILE === format.',
+    'No commentary, no task text — only source code files.',
     '',
-    'TASK:',
+    'TASK (reference only):',
     task,
     '',
     'CONTEXT TO REDUCE:',
@@ -682,11 +724,12 @@ async function retrieve_context(
 
   log_step(`Running retrieval model (${retrieval_model}) on ${repo_tokens} tokens.`);
   var first_prompt = retrieval_prompt_initial(task, repo_text, repo_tokens);
-  var retrieved = await ask_text(retrieval_model, first_prompt, RETRIEVAL_SYSTEM);
+  var retrieved = await ask_text(retrieval_model, first_prompt, RETRIEVAL_SYSTEM, 'retrieve');
 
   var balanced = await rebalance_text({
     model: retrieval_model,
     system: RETRIEVAL_SYSTEM,
+    call_name: 'retrieve_adj',
     min_tokens: RETRIEVE_MIN_TOKENS,
     max_tokens: RETRIEVE_MAX_TOKENS,
     tgt_tokens: RETRIEVE_TGT_TOKENS,
@@ -714,19 +757,21 @@ function advisor_prompt(
     'CONTEXT:',
     context_text,
     '',
-    'MEMORY:',
+    'MEMORY (coding agent self-reports from prior rounds — may contain errors):',
     memory_text,
     '',
     'TASK:',
     task,
     '',
-    'You are in advisor mode.',
-    'Do not propose code patches and do not output file contents.',
-    'Give detailed implementation guidance for a coding agent that will edit this repository.',
-    'Point to specific files, likely pitfalls, and likely misunderstandings.',
-    'The MEMORY comes from prior coding-agent self reports and may be wrong.',
-    'Treat MEMORY as a clue source, not ground truth.',
-    'Maximize actionable insight density.',
+    'You are one of several expert advisors guiding a coding agent that will edit this repository.',
+    '',
+    'Your role:',
+    '- Provide detailed, actionable implementation guidance. No code patches or file contents.',
+    '- Name specific files, functions, and line ranges to modify.',
+    '- Identify likely pitfalls, misunderstandings, and edge cases.',
+    '- If MEMORY entries seem misguided, say so explicitly and correct them.',
+    '- Lay out a clear step-by-step action plan the coding agent can follow.',
+    '- Maximize actionable insight density.',
   ].join('\n');
 }
 
@@ -736,10 +781,11 @@ async function ask_advisor(
   task: string,
   context_text: string,
   memory_text: string,
+  call_name: string,
 ): Promise<AdvisorReply> {
   try {
     var prompt = advisor_prompt(task, context_text, memory_text);
-    var text = await ask_text(model, prompt, ADVISOR_SYSTEM);
+    var text = await ask_text(model, prompt, ADVISOR_SYSTEM, call_name);
     return { model, text, ok: true };
   } catch (error) {
     var text = `Advisor failed: ${error_message(error)}`;
@@ -813,7 +859,7 @@ async function run_board_of_advisors(
 ): Promise<string> {
   log_step(`Running advisor board with ${advisor_models.length} models.`);
   var replies = await Promise.all(
-    advisor_models.map(model => ask_advisor(model, task, context_text, memory_text)),
+    advisor_models.map((model, i) => ask_advisor(model, task, context_text, memory_text, `advisor_${i}`)),
   );
 
   var ok_count = replies.filter(reply => reply.ok).length;
@@ -837,11 +883,12 @@ async function run_board_of_advisors(
 
   log_step(`Summarizing advisor doc with ${summary_model}.`);
   var first_prompt = insight_summarize_prompt(task, combined, combined_tokens);
-  var first_summary = await ask_text(summary_model, first_prompt, SUMMARY_SYSTEM);
+  var first_summary = await ask_text(summary_model, first_prompt, SUMMARY_SYSTEM, 'insight_synth');
 
   var balanced = await rebalance_text({
     model: summary_model,
     system: SUMMARY_SYSTEM,
+    call_name: 'insight_adj',
     min_tokens: INSIGHT_MIN_TOKENS,
     max_tokens: INSIGHT_MAX_TOKENS,
     tgt_tokens: INSIGHT_TGT_TOKENS,
@@ -899,17 +946,17 @@ function codex_goal_prompt(
   blocks.push(task);
 
   blocks.push([
-    'GOAL:',
-    '1) Use the insights above to complete the task in the current repository.',
-    '2) When done, write ".REPORT.txt" with a concise report (max 256 tokens).',
-    '3) The report must include:',
-    '- what you changed',
-    '- key findings/results',
-    '- what you want to do next',
-    '- questions for the expert board in the next round',
-    '4) Keep report to about 3 short paragraphs; verify token count with a tokenizer.',
-    '5) After writing ".REPORT.txt", commit and push your changes.',
-    '6) Then give your final response.',
+    'INSTRUCTIONS:',
+    '1. The insights above were produced by a board of expert advisors to guide your work.',
+    '2. Your goal: complete the TASK in the current repository. Use the insights.',
+    '3. When finished, write a file named ".REPORT.txt" containing a concise report.',
+    '   The report must be at most 256 tokens (~3 short paragraphs). It must cover:',
+    '   - What you changed and why.',
+    '   - Key findings or results.',
+    '   - What you plan to do next.',
+    '   - Any questions for the expert board in the next round.',
+    '   Use a tokenizer to verify the report stays under 256 tokens.',
+    '4. After writing ".REPORT.txt", commit all changes and push to the remote.',
   ].join('\n'));
 
   return blocks.join('\n\n');
@@ -1038,11 +1085,12 @@ async function normalize_report(
   var report_tokens = tokenCount(report);
   if (report_tokens > report_limit) {
     var first_prompt = report_compress_prompt(report, report_tokens, report_limit);
-    report = await ask_text(summary_model, first_prompt, SUMMARY_SYSTEM);
+    report = await ask_text(summary_model, first_prompt, SUMMARY_SYSTEM, 'report_comp');
 
     var balanced = await rebalance_text({
       model: summary_model,
       system: SUMMARY_SYSTEM,
+      call_name: 'report_adj',
       min_tokens: 1,
       max_tokens: report_limit,
       tgt_tokens: REPORT_TGT_TOKENS,
@@ -1138,7 +1186,7 @@ function parse_cli(argv: string[]): RoundOptions {
   program
     .name('long')
     .description('Long-running orchestrator loop for complex repository tasks.')
-    .argument('<task_file>', 'Task file (plain text)')
+    .argument('<task_file>', 'Goal file (plain text, conventionally GOAL.txt)')
     .option('-n, --max-rounds <num>', 'Max rounds, 0 = infinite loop', '0')
     .option('--no-board', 'Disable advisor board and inject MEMORY into Codex prompt')
     .option('--retrieval-model <spec>', 'Model for retrieval stage', DEFAULT_RETRIEVAL_MODEL)
@@ -1162,9 +1210,9 @@ function parse_cli(argv: string[]): RoundOptions {
     .addHelpText('after', [
       '',
       'Examples:',
-      '  long task.txt',
-      '  long task.txt --max-rounds 3',
-      '  long task.txt --no-board --codex-model gpt-5.3-codex',
+      '  long GOAL.txt',
+      '  long GOAL.txt --max-rounds 3',
+      '  long GOAL.txt --no-board --codex-model gpt-5.3-codex',
     ].join('\n'))
   ;
 
@@ -1254,11 +1302,7 @@ async function main(): Promise<void> {
   while (opts.max_rounds === 0 || round <= opts.max_rounds) {
     await run_round(round, root, opts);
     round += 1;
-
-    if (opts.max_rounds !== 0 && round > opts.max_rounds) {
-      break;
-    }
-    if (opts.delay_ms > 0) {
+    if (opts.delay_ms > 0 && (opts.max_rounds === 0 || round <= opts.max_rounds)) {
       log_step(`Sleeping for ${opts.delay_ms} ms before next round.`);
       await sleep_ms(opts.delay_ms);
     }
