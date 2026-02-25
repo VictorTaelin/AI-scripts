@@ -617,7 +617,9 @@ async function run_parallel_tagged<T>(
       var idx = parallel_ctx.getStore();
       if (idx !== undefined) {
         var raw = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
-        line_bufs[idx] += raw.replace(/\n/g, ' ');
+        var raw = raw.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+        var raw = raw.replace(/[\r\n]/g, ' ');
+        line_bufs[idx] += raw;
         drain(idx);
         return true;
       }
