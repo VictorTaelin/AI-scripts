@@ -2,73 +2,48 @@
 
 // Board.ts
 // ========
-// Minimal 3-model advisor board with tagged live streaming.
-//
-// Documentation
-// -------------
-// - Ask one question.
-// - Optionally attach focused context.
-// - Stream each advisor in chat-like tagged lines.
-// - Print final raw advisor outputs.
+// Sends a file to a panel of AI advisors and prints their responses.
+// Tagged live-streaming shows each advisor's progress in real time.
 
-import * as fs from 'fs/promises';
-import * as path from 'path';
+import * as fs      from 'fs/promises';
 import * as process from 'process';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import { AsyncLocalStorage } from 'async_hooks';
-import { Command } from 'commander';
-import { GenAI } from './GenAI';
+import { Command }           from 'commander';
+import { GenAI }             from './GenAI';
 
-const exec_file_async = promisify(execFile);
+// Constants
+// ---------
 
-type Opts = {
-  req: string;
-  goal: string;
-  files: string[];
-  use_diff: boolean;
-  use_stdin: boolean;
-  models: string[];
-  max_chars: number;
-};
-
-type Cli = {
-  mode: 'run' | 'install_skill' | 'uninstall_skill';
-  opts: Opts | null;
-};
-
-type Rep = {
-  model: string;
-  text: string;
-  ok: boolean;
-};
-
-type AnsiMode = 'text' | 'esc' | 'csi' | 'osc' | 'st';
-
-type AnsiState = {
-  mode: AnsiMode;
-  esc_pending: boolean;
-};
-
-const DEFAULT_MODELS = [
+var DEFAULT_MODELS = [
   'google:gemini-3.1-pro-preview:max',
   'anthropic:claude-opus-4-6:max',
   'openai:gpt-5.2:max',
 ];
 
-const SYSTEM = [
+var SYSTEM = [
   'You are an expert advisor.',
-  'Read the context and provide insights.',
+  'Read the context and provide concise, actionable insight.',
+  'Be brief and dense — maximize insight per token.',
 ].join(' ');
 
-const DEFAULT_GOAL = 'GOAL.txt';
-const DEFAULT_MAX_CHARS = 64_000;
-const FILE_MAX_CHARS = 12_000;
-const EXEC_MAX_BUFFER = 64 * 1024 * 1024;
-const TAG_LINE_WIDTH = 120;
-var BOARD_SKILL_NAME = 'board';
+var TAG_LINE_WIDTH = 120;
+
+// Types
+// -----
+
+type Rep = {
+  model: string;
+  text:  string;
+  ok:    boolean;
+};
+
+type AnsiMode  = 'text' | 'esc' | 'csi' | 'osc' | 'st';
+type AnsiState = { mode: AnsiMode; esc_pending: boolean };
 
 var parallel_ctx = new AsyncLocalStorage<number>();
+
+// Utilities
+// ---------
 
 // Converts unknown errors to readable text.
 function error_message(error: unknown): string {
@@ -83,262 +58,8 @@ function fail(message: string): never {
   throw new Error(message);
 }
 
-// Splits CSV entries.
-function split_csv(text: string): string[] {
-  return text.split(',').map(x => x.trim()).filter(Boolean);
-}
-
-// Keeps only a text tail within max chars.
-function tail_clip(text: string, max_chars: number): string {
-  if (text.length <= max_chars) {
-    return text;
-  }
-  var cut = text.length - max_chars;
-  var tail = text.slice(cut);
-  return [`...[${cut} chars omitted]...`, tail].join('\n');
-}
-
-// Reads UTF-8 text or empty if missing.
-async function read_text_or_empty(file: string): Promise<string> {
-  try {
-    return await fs.readFile(file, 'utf8');
-  } catch (error) {
-    if ((error as { code?: string }).code === 'ENOENT') {
-      return '';
-    }
-    throw error;
-  }
-}
-
-// Runs a command and returns stdout or empty on failure.
-async function cmd_text_or_empty(bin: string, args: string[], cwd: string): Promise<string> {
-  try {
-    var out = await exec_file_async(bin, args, {
-      cwd,
-      maxBuffer: EXEC_MAX_BUFFER,
-    });
-    return out.stdout.trim();
-  } catch (_error) {
-    return '';
-  }
-}
-
-// Reads piped stdin when enabled.
-async function read_stdin_if_enabled(enabled: boolean): Promise<string> {
-  if (!enabled || process.stdin.isTTY) {
-    return '';
-  }
-
-  var chunks: Buffer[] = [];
-  for await (var chunk of process.stdin) {
-    var buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
-    chunks.push(buf);
-  }
-  return Buffer.concat(chunks).toString('utf8').trim();
-}
-
-// Builds all context blocks.
-async function build_context(opts: Opts, cwd: string): Promise<string> {
-  var parts: string[] = [];
-
-  var goal_txt = (await read_text_or_empty(path.resolve(cwd, opts.goal))).trim();
-  if (goal_txt) {
-    parts.push([`=== GOAL: ${opts.goal} ===`, goal_txt, '=== END GOAL ==='].join('\n'));
-  }
-
-  for (var file of opts.files) {
-    var rel = file.trim().replace(/^\.\//, '');
-    if (!rel) {
-      continue;
-    }
-
-    var txt = await read_text_or_empty(path.resolve(cwd, rel));
-    var txt = txt.trim() ? tail_clip(txt, FILE_MAX_CHARS) : '<missing or empty>';
-    parts.push([`=== FILE: ./${rel} ===`, txt, '=== END FILE ==='].join('\n'));
-  }
-
-  if (opts.use_diff) {
-    var unstaged = await cmd_text_or_empty('git', ['diff', '--', '.'], cwd);
-    var staged = await cmd_text_or_empty('git', ['diff', '--cached', '--', '.'], cwd);
-    if (unstaged || staged) {
-      parts.push([
-        '=== GIT DIFF ===',
-        '--- UNSTAGED ---',
-        unstaged || '(empty)',
-        '',
-        '--- STAGED ---',
-        staged || '(empty)',
-        '=== END GIT DIFF ===',
-      ].join('\n'));
-    }
-  }
-
-  var stdin_txt = await read_stdin_if_enabled(opts.use_stdin);
-  if (stdin_txt) {
-    parts.push(['=== STDIN ===', stdin_txt, '=== END STDIN ==='].join('\n'));
-  }
-
-  var ctx = parts.join('\n\n').trim();
-  var ctx = tail_clip(ctx, opts.max_chars);
-  return ctx;
-}
-
-// Parses and validates CLI options.
-function parse_cli(argv: string[]): Cli {
-  var cmd = new Command();
-  cmd
-    .name('board')
-    .summary('advisor board + global board skill installer')
-    .description('Calls advisor models and can install/uninstall the global Codex board skill.')
-    .usage('[options] [request]')
-    .argument('[request]', 'Advisor request text')
-    .option('--request <text>', 'Advisor request text (same as positional)')
-    .option('--goal <path>', 'Optional goal file', DEFAULT_GOAL)
-    .option('--files <csv>', 'Comma-separated file list', '')
-    .option('--diff', 'Include staged + unstaged git diff')
-    .option('--stdin', 'Include piped stdin text')
-    .option('--models <csv>', 'Comma-separated advisor models', DEFAULT_MODELS.join(','))
-    .option('--max-context-chars <num>', 'Max context chars', String(DEFAULT_MAX_CHARS))
-    .option('--install-skill', 'Install global Codex skill at $CODEX_HOME/skills/board')
-    .option('--uninstall-skill', 'Remove global Codex skill at $CODEX_HOME/skills/board')
-    .addHelpText('after', [
-      '',
-      'Examples:',
-      '  board "what next?" --goal GOAL.txt --diff',
-      '  board "review this" --files "src/a.ts,src/b.ts"',
-      '  cat notes.txt | board "critique" --stdin',
-      '  board --install-skill',
-      '  board --uninstall-skill',
-    ].join('\n'))
-  ;
-
-  cmd.parse(argv);
-
-  var raw = cmd.opts() as Record<string, unknown>;
-  var install_skill = Boolean(raw.installSkill);
-  var uninstall_skill = Boolean(raw.uninstallSkill);
-
-  if (install_skill && uninstall_skill) {
-    fail('Use only one: --install-skill or --uninstall-skill.');
-  }
-  if (install_skill) {
-    return { mode: 'install_skill', opts: null };
-  }
-  if (uninstall_skill) {
-    return { mode: 'uninstall_skill', opts: null };
-  }
-
-  if (argv.length <= 2) {
-    cmd.outputHelp();
-    process.exit(0);
-  }
-
-  var req_arg = String(cmd.args[0] ?? '').trim();
-  var req_opt = String(raw.request ?? '').trim();
-  var req = req_opt || req_arg;
-  if (!req) {
-    cmd.outputHelp();
-    process.exit(1);
-  }
-
-  var models = split_csv(String(raw.models ?? DEFAULT_MODELS.join(',')));
-  if (models.length === 0) {
-    fail('Advisor model list is empty.');
-  }
-
-  var max_chars = Number(raw.maxContextChars ?? DEFAULT_MAX_CHARS);
-  if (!Number.isInteger(max_chars) || max_chars <= 0) {
-    fail(`Invalid --max-context-chars: ${raw.maxContextChars}`);
-  }
-
-  var opts = {
-    req,
-    goal: String(raw.goal ?? DEFAULT_GOAL),
-    files: split_csv(String(raw.files ?? '')),
-    use_diff: Boolean(raw.diff),
-    use_stdin: Boolean(raw.stdin),
-    models,
-    max_chars,
-  };
-
-  return { mode: 'run', opts };
-}
-
-// Resolves CODEX_HOME path.
-function codex_home(): string {
-  var home = String(process.env.CODEX_HOME ?? '').trim();
-  if (home) {
-    return home;
-  }
-
-  var user_home = String(process.env.HOME ?? process.env.USERPROFILE ?? '').trim();
-  if (!user_home) {
-    fail('Unable to resolve home directory for CODEX_HOME.');
-  }
-
-  return path.join(user_home, '.codex');
-}
-
-// Returns the global board skill directory.
-function board_skill_dir(): string {
-  return path.join(codex_home(), 'skills', BOARD_SKILL_NAME);
-}
-
-// Returns the global board skill markdown path.
-function board_skill_file(): string {
-  return path.join(board_skill_dir(), 'SKILL.md');
-}
-
-// Builds SKILL.md content for the global board skill.
-function board_skill_md(): string {
-  return [
-    '---',
-    'name: board',
-    'description: Consult a 3-model advisor board via `board` for guidance before starting work.',
-    '---',
-    '',
-    '# board',
-    '',
-    'Consult the board before starting work to get diverse expert insights.',
-    '',
-    '## Command',
-    '',
-    '- `board --request "your question"`',
-    '',
-    '## Context options',
-    '',
-    '- `--goal GOAL.txt`',
-    '- `--files "src/a.ts,src/b.ts"`',
-    '- `--diff`',
-    '- `--stdin` (for crafted snippets piped from shell)',
-    '',
-    '## Workflow',
-    '',
-    '1. Gather all relevant codebase context for your goal.',
-    '2. Pass it to the board along with your questions.',
-    '3. Read all advisor outputs and extract the best approach.',
-    '4. Apply, verify, and continue.',
-  ].join('\n');
-}
-
-// Installs the global board skill.
-async function install_skill(): Promise<void> {
-  var dir = board_skill_dir();
-  var file = board_skill_file();
-
-  await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(file, board_skill_md(), 'utf8');
-
-  console.log(`[board] Installed global skill at ${file}`);
-  console.log('[board] Restart Codex to pick up new skills.');
-}
-
-// Uninstalls the global board skill.
-async function uninstall_skill(): Promise<void> {
-  var dir = board_skill_dir();
-  await fs.rm(dir, { recursive: true, force: true });
-  console.log(`[board] Removed global skill at ${dir}`);
-}
+// Streaming
+// ---------
 
 // Builds a short stream tag for a model.
 function model_tag(model: string): string {
@@ -581,6 +302,9 @@ async function run_parallel_tagged<T>(tasks: (() => Promise<T>)[], tags: string[
   return reps;
 }
 
+// Advisors
+// --------
+
 // Calls one advisor model.
 async function ask_one(model: string, prompt: string): Promise<Rep> {
   try {
@@ -605,45 +329,51 @@ async function ask_one(model: string, prompt: string): Promise<Rep> {
   }
 }
 
+// CLI
+// ---
+
+// Parses command-line arguments.
+function parse_cli(argv: string[]): { input: string; models: string[] } {
+  var cmd = new Command();
+  cmd
+    .name('board')
+    .summary('send a file or prompt to a panel of AI advisors')
+    .argument('<file-or-prompt>', 'File path or prompt string (detected by spaces)')
+    .option('--models <csv>', 'Comma-separated advisor models', DEFAULT_MODELS.join(','));
+
+  if (argv.length <= 2) {
+    cmd.outputHelp();
+    process.exit(0);
+  }
+
+  cmd.parse(argv);
+
+  var raw    = cmd.opts() as Record<string, unknown>;
+  var models = String(raw.models ?? '').split(',').map(x => x.trim()).filter(Boolean);
+  if (models.length === 0) {
+    fail('Model list is empty.');
+  }
+
+  return { input: cmd.args[0], models };
+}
+
+// Main
+// ----
+
 // Runs the board command.
 async function main(): Promise<void> {
-  var cli = parse_cli(process.argv);
-  switch (cli.mode) {
-    case 'install_skill': {
-      await install_skill();
-      return;
-    }
-    case 'uninstall_skill': {
-      await uninstall_skill();
-      return;
-    }
-    default: {
-      break;
-    }
+  var cli     = parse_cli(process.argv);
+  var is_prompt = cli.input.includes(' ');
+  var content   = is_prompt
+    ? cli.input.trim()
+    : (await fs.readFile(cli.input, 'utf8')).trim();
+  if (!content) {
+    fail('Input is empty.');
   }
 
-  var opts = cli.opts;
-  if (!opts) {
-    fail('Internal error: missing run options.');
-  }
-  var cwd = process.cwd();
-
-  var ctx = await build_context(opts, cwd);
-  var ctx = ctx.trim() || '(no extra context provided)';
-
-  var prompt = [
-    'REQUEST:',
-    opts.req,
-    '',
-    'CONTEXT:',
-    ctx,
-    '',
-    'Answer the request, providing insights, guidance and help.',
-  ].join('\n');
-
-  var tasks = opts.models.map(model => () => ask_one(model, prompt));
-  var tags = opts.models.map(model_tag);
-  var reps = await run_parallel_tagged(tasks, tags);
+  var tasks = cli.models.map(model => () => ask_one(model, content));
+  var tags  = cli.models.map(model_tag);
+  var reps  = await run_parallel_tagged(tasks, tags);
 
   var blocks = reps.map((rep, i) => {
     var status = rep.ok ? 'ok' : 'failed';
@@ -656,8 +386,7 @@ async function main(): Promise<void> {
 
   process.stdout.write(blocks.join('\n\n') + '\n');
 
-  var ok_count = reps.filter(x => x.ok).length;
-  if (ok_count === 0) {
+  if (reps.filter(x => x.ok).length === 0) {
     process.exit(1);
   }
 }

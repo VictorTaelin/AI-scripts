@@ -2,15 +2,15 @@
 
 // Long.ts
 // =======
-// Codex loop: goal → board → work → commit → push → signal.
+// Codex loop: work → board review → repeat.
 //
-// Each round, Codex:
-// 1. Consults the `board` (AI advisor panel) for guidance.
-// 2. Works on the goal.
-// 3. Commits good changes (or stashes bad ones), pushes, and signals.
-// 4. Responds with <GOAL:TO-BE-CONTINUED/> or <GOAL:FULLY-COMPLETED/>.
+// Each round:
+// 1. Codex works on the goal.
+// 2. Board reviews the session (optional).
+// 3. Next round includes the board's review.
 
 import * as fs      from 'fs/promises';
+import * as sfs     from 'fs';
 import * as os      from 'os';
 import * as path    from 'path';
 import * as process from 'process';
@@ -34,10 +34,8 @@ var COMPLETED_TAG = '<GOAL:FULLY-COMPLETED/>';
 type Opts = {
   goal_file:  string;
   max_rounds: number;
-  delay_ms:   number;
   model:      string;
-  sandbox:    string;
-  dangerous:  boolean;
+  no_board:   boolean;
 };
 
 // Utilities
@@ -92,13 +90,6 @@ function clip_tail(text: string, max: number): string {
   return `...[${cut} chars omitted]...\n${text.slice(cut)}`;
 }
 
-// Sleeps for ms milliseconds.
-async function sleep(ms: number): Promise<void> {
-  if (ms > 0) {
-    await new Promise<void>(r => setTimeout(r, ms));
-  }
-}
-
 // Git
 // ---
 
@@ -145,37 +136,46 @@ async function ensure_codex(): Promise<void> {
 }
 
 // Builds the prompt for one round.
-function build_prompt(goal: string, history: string, round: number): string {
-  return [
+function build_prompt(goal: string, history: string, review: string, round: number): string {
+  var parts = [
     `ROUND ${round}`,
+    '',
+    'HISTORY:',
+    history,
+  ];
+
+  if (review) {
+    parts.push('', 'BOARD REVIEW (from previous round):', review);
+  }
+
+  parts.push(
+    '',
+    'WORKFLOW:',
+    '1. Work on the goal for as long as you can.',
+    '2. Once you are done working: if your changes are bad, `git stash`',
+    '   then `git commit --allow-empty`. If good, `git add -A && git commit`.',
+    '   Either way, the commit message must cover: what you did, what you',
+    '   learned, key metrics and results, and open questions. This is your',
+    '   persistent memory — the HISTORY above is built from these commits.',
+    '3. `git push`.',
+    '4. Your final response must be a single XML tag and absolutely nothing',
+    '   else — no words, no commentary, no explanation before or after it:',
+    '   `<GOAL:TO-BE-CONTINUED/>` or `<GOAL:FULLY-COMPLETED/>`',
     '',
     'GOAL:',
     goal,
-    '',
-    'RECENT COMMITS:',
-    history,
-    '',
-    'WORKFLOW:',
-    '1. Before doing ANY work, explore the codebase and gather ALL context',
-    '   relevant to the goal. Then invoke the `board` skill, passing that',
-    '   full context plus any questions you have. The board is a panel of',
-    '   expert AI advisors — give them everything they need to produce the',
-    '   most meaningful insights possible. Only start working AFTER you',
-    '   have received and read the board response.',
-    '2. Work on the goal for as long as you can.',
-    '3. Once you are done working: if your changes are bad, `git stash`',
-    '   then `git commit --allow-empty`. If good, `git add -A && git commit`.',
-    '   Either way, the commit message must cover: what you did, what you',
-    '   learned, key metrics and results, and open questions.',
-    '4. `git push`.',
-    '5. Your final response must be a single XML tag and absolutely nothing',
-    '   else — no words, no commentary, no explanation before or after it:',
-    '   `<GOAL:TO-BE-CONTINUED/>` or `<GOAL:FULLY-COMPLETED/>`',
-  ].join('\n');
+  );
+
+  return parts.join('\n');
 }
 
-// Runs one codex exec round. Returns the last assistant message.
-async function run_codex(root: string, prompt: string, opts: Opts): Promise<string> {
+// Runs one codex exec round. Returns { last, captured }.
+async function run_codex(
+  root: string,
+  prompt: string,
+  opts: Opts,
+  on_clear: () => void,
+): Promise<{ last: string; captured: string }> {
   var tmp = path.join(os.tmpdir(), `long-${process.pid}.txt`);
   try { await fs.unlink(tmp); } catch {}
 
@@ -183,19 +183,25 @@ async function run_codex(root: string, prompt: string, opts: Opts): Promise<stri
     'exec', '-C', root,
     '-m', opts.model,
     '--output-last-message', tmp,
+    '--dangerously-bypass-approvals-and-sandbox',
+    '-',
   ];
-  if (opts.dangerous) {
-    args.push('--dangerously-bypass-approvals-and-sandbox');
-  } else {
-    args.push('--sandbox', opts.sandbox);
-  }
-  args.push('-');
 
+  var captured = '';
   await new Promise<void>((resolve, reject) => {
     var child = spawn('codex', args, {
       cwd:   root,
-      stdio: ['pipe', 'inherit', 'inherit'],
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env:   { ...process.env, FORCE_COLOR: '1' },
     });
+    child.stdout.on('data', (chunk: Buffer) => {
+      process.stdout.write(chunk);
+      captured += chunk.toString('utf8');
+    });
+    child.stderr!.on('data', (chunk: Buffer) => {
+      process.stderr.write(chunk);
+    });
+    setTimeout(() => { console.clear(); on_clear(); }, 500);
     child.on('error', reject);
     child.on('close', code => {
       if (code === 0) {
@@ -209,7 +215,59 @@ async function run_codex(root: string, prompt: string, opts: Opts): Promise<stri
 
   var last = (await read_or(tmp)).trim();
   try { await fs.unlink(tmp); } catch {}
-  return last;
+  return { last, captured };
+}
+
+// Board
+// -----
+
+// Calls the board to review a codex session. Returns the review text.
+async function run_board(captured: string, goal: string): Promise<string> {
+  var tmp = path.join(os.tmpdir(), `long-board-${process.pid}.txt`);
+  var content = [
+    'A coding agent just completed a work session on the following goal:',
+    '',
+    goal,
+    '',
+    '--- FULL SESSION OUTPUT ---',
+    '',
+    captured,
+    '',
+    '--- END SESSION OUTPUT ---',
+    '',
+    'Based on the session output and the goal, provide concise, actionable',
+    'insight that will help the agent make progress in the next iteration.',
+    'Focus on: mistakes to avoid, blind spots, better strategies, and key',
+    'technical corrections. Be brief and dense — maximize insight per token.',
+  ].join('\n');
+
+  await fs.writeFile(tmp, content, 'utf8');
+
+  try {
+    var out = await new Promise<string>((resolve, reject) => {
+      var child  = spawn('board', [tmp], {
+        stdio: ['ignore', 'pipe', 'inherit'],
+      });
+      var stdout = '';
+      child.stdout.on('data', (chunk: Buffer) => {
+        stdout += chunk.toString('utf8');
+      });
+      child.on('error', reject);
+      child.on('close', code => {
+        if (code === 0) {
+          resolve(stdout);
+        } else {
+          reject(new Error(`board exited ${code}`));
+        }
+      });
+    });
+    return out.trim();
+  } catch (e) {
+    log(`Board failed: ${err_msg(e)}`);
+    return '';
+  } finally {
+    try { await fs.unlink(tmp); } catch {}
+  }
 }
 
 // CLI
@@ -220,29 +278,68 @@ function parse_cli(argv: string[]): Opts {
   var cmd = new Command();
   cmd
     .name('long')
-    .summary('codex loop: goal → board → work → commit → push')
+    .summary('codex loop: goal → work → board review → repeat')
     .argument('<goal>', 'Goal file path')
     .option('-n, --max-rounds <num>', 'Max rounds (0 = unlimited)', '0')
-    .option('--delay-ms <num>', 'Delay between rounds (ms)', '0')
     .option('--model <name>', 'Codex model', DEFAULT_MODEL)
-    .option('--sandbox <mode>', 'Sandbox mode', 'danger-full-access')
-    .option('--dangerous', 'Bypass approvals and sandbox');
+    .option('--no-board', 'Disable board review between rounds');
+
+  if (argv.length <= 2) {
+    cmd.outputHelp();
+    process.exit(0);
+  }
 
   cmd.parse(argv);
 
   var raw        = cmd.opts() as Record<string, unknown>;
   var max_rounds = Number(raw.maxRounds ?? 0);
-  var delay_ms   = Number(raw.delayMs ?? 0);
   var goal_file  = path.resolve(process.cwd(), cmd.args[0]);
 
   return {
     goal_file,
     max_rounds,
-    delay_ms,
-    model:     String(raw.model ?? DEFAULT_MODEL),
-    sandbox:   String(raw.sandbox ?? 'danger-full-access'),
-    dangerous: Boolean(raw.dangerous),
+    model:    String(raw.model ?? DEFAULT_MODEL),
+    no_board: Boolean(raw.noBoard),
   };
+}
+
+// Logging
+// -------
+
+// Formats a date as YYYYyMMmDDd.HHhMMmSSs.
+function fmt_time(d: Date): string {
+  var Y  = d.getFullYear();
+  var Mo = String(d.getMonth() + 1).padStart(2, '0');
+  var D  = String(d.getDate()).padStart(2, '0');
+  var H  = String(d.getHours()).padStart(2, '0');
+  var Mi = String(d.getMinutes()).padStart(2, '0');
+  var S  = String(d.getSeconds()).padStart(2, '0');
+  return `${Y}y${Mo}m${D}d.${H}h${Mi}m${S}s`;
+}
+
+// Tees all stdout/stderr to a log file. Returns the log path.
+function start_log(): string {
+  var dir  = path.join(os.homedir(), '.ai', 'long_history');
+  var file = path.join(dir, `${fmt_time(new Date())}.txt`);
+  sfs.mkdirSync(dir, { recursive: true });
+  var fd = sfs.openSync(file, 'a');
+
+  var orig_out = process.stdout.write.bind(process.stdout);
+  var orig_err = process.stderr.write.bind(process.stderr);
+
+  process.stdout.write = function (chunk: any, ...args: any[]): boolean {
+    var buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+    sfs.writeSync(fd, buf);
+    return (orig_out as any)(chunk, ...args);
+  } as any;
+
+  process.stderr.write = function (chunk: any, ...args: any[]): boolean {
+    var buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+    sfs.writeSync(fd, buf);
+    return (orig_err as any)(chunk, ...args);
+  } as any;
+
+  return file;
 }
 
 // Main
@@ -251,34 +348,47 @@ function parse_cli(argv: string[]): Opts {
 // Runs the long loop.
 async function main(): Promise<void> {
   var opts = parse_cli(process.argv);
+  var log_file = start_log();
+  log(`log: ${log_file}`);
 
   if (!(await exists(opts.goal_file))) {
     fail(`Goal file not found: ${opts.goal_file}`);
   }
 
-  var root = await repo_root(process.cwd());
-  await ensure_codex();
+  var root   = await repo_root(process.cwd());
+  var review = '';
 
-  log(`repo:  ${root}`);
-  log(`goal:  ${opts.goal_file}`);
-  log(`model: ${opts.model}`);
+  await ensure_codex();
 
   var round = 1;
   while (opts.max_rounds === 0 || round <= opts.max_rounds) {
-    log(`========== ROUND ${round} ==========`);
-
     var goal    = (await fs.readFile(opts.goal_file, 'utf8')).trim();
     var history = await get_history(root);
-    var prompt  = build_prompt(goal, history, round);
-    var last    = await run_codex(root, prompt, opts);
+    var prompt  = build_prompt(goal, history, review, round);
+    var header  = () => {
+      log(`repo:  ${root}`);
+      log(`goal:  ${opts.goal_file}`);
+      log(`model: ${opts.model}`);
+      log(`========== ROUND ${round} ==========`);
+    };
+    header();
+    var result = await run_codex(root, prompt, opts, header);
 
-    if (last.includes(COMPLETED_TAG)) {
+    if (result.last.includes(COMPLETED_TAG)) {
       log('Goal fully completed.');
       break;
     }
 
+    // Board review between rounds
+    if (!opts.no_board) {
+      log('Running board review...');
+      review = await run_board(result.captured, goal);
+      if (review) {
+        log('Board review received.');
+      }
+    }
+
     round += 1;
-    await sleep(opts.delay_ms);
   }
 
   log('Done.');
