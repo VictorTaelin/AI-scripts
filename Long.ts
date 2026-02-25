@@ -182,6 +182,7 @@ async function run_codex(
   var args = [
     'exec', '-C', root,
     '-m', opts.model,
+    '-c', 'model_reasoning_effort="xhigh"',
     '--output-last-message', tmp,
     '--dangerously-bypass-approvals-and-sandbox',
     '-',
