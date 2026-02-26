@@ -159,7 +159,7 @@ function build_prompt(goal: string, history: string, review: string, round: numb
     '   persistent memory — the HISTORY above is built from these commits.',
     '   It MUST be concise - MAX 400 tokens (use ttok to measure).',
     '3. `git push`.',
-    '4. Your final response must be a single XML tag and absolutely nothing',
+    '4. Your final response MUST be a single XML tag and absolutely nothing',
     '   else — no words, no commentary, no explanation before or after it:',
     '   `<GOAL:TO-BE-CONTINUED/>` or `<GOAL:FULLY-COMPLETED/>`',
     '',
@@ -183,7 +183,7 @@ async function run_codex(
   var args = [
     'exec', '-C', root,
     '-m', opts.model,
-    '-c', 'model_reasoning_effort="xhigh"',
+    '-c', 'model_reasoning_effort="high"',
     '--output-last-message', tmp,
     '--dangerously-bypass-approvals-and-sandbox',
     '-',
@@ -242,9 +242,12 @@ async function run_board(captured: string, goal: string): Promise<string> {
     '--- END SESSION OUTPUT ---',
     '',
     'Based on the session output and the goal, provide concise, actionable',
-    'insight that will help the agent make progress in the next iteration.',
+    'insights that will help the agent make progress in the next iteration.',
     'Focus on: mistakes to avoid, blind spots, better strategies, and key',
-    'technical corrections. Be brief and dense — maximize insight per token.',
+    'technical corrections. If the agent is stuck in a local minima, get',
+    'it out by proposing fundamental changes. Reason from first principles',
+    'to deeply understand the domain, and then pass your most important',
+    'insights to the agent. Be brief and dense. Maximize insight per token.',
   ].join('\n');
 
   await fs.writeFile(tmp, content, 'utf8');
