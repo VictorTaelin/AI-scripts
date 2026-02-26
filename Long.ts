@@ -24,7 +24,7 @@ var exec = promisify(execFile);
 // ---------
 
 var MAX_BUFFER      = 64 * 1024 * 1024;
-var HISTORY_TAIL    = 8_000;
+var HISTORY_TAIL    = 6_000;
 var DEFAULT_MODEL   = 'gpt-5.3-codex';
 var DEFAULT_GOAL    = '.long/GOAL';
 var HALT_TAG        = '<HALT/>';
@@ -69,10 +69,10 @@ Describe what you changed and why, the concrete results, and what to do next.
 Every session must include a commit, even when nothing changed.
 
 ABOUT .long/MEMORY:
-Write persistent notes for your future self. Include everything that could help
-you reach the goal, including, for example, insights, failed approaches, lessons
-learned, domain facts, paths to avoid, and so on. Keep it under the token limit.
-MAX: 4096 tokens.
+Persistent notes for your future self. Edit and include everything that could
+help you reach the goal, including, for example, insights, failed approaches,
+lessons learned, domain facts, paths to avoid, and so on. Keep it under the
+token limit. MAX: 4096 tokens.
 
 ABOUT .long/QUESTIONS:
 Questions to be answered by the human expert. Each question MUST include proper
@@ -80,10 +80,12 @@ context, via code examples (NOT jargon or English) to help the human understand
 what you're asking. This file is VERY important: it is the only way for you to
 acquire insights from the domain, or to break out of hard walls. Use it wisely.
 The expert will answer eventually inside a future GOAL block. Don't wait for it.
-Remove questions that are answered or stale. MAX: 2048 tokens.
+Remove questions that are answered or stale. Keep under limit. MAX: 2048 tokens.
 
 ABOUT .long/GOAL:
-It is the same as below. Do NOT edit it.
+Written out below. Do NOT edit it.
+
+Use 'ttok' to measure the token count of commits and files (MANDATORY).
 
 End your response with \`<CONTINUE/>\` or \`<HALT/>\` (if the goal is complete).
 
@@ -274,38 +276,41 @@ async function run_codex(
   ];
 
   var captured = '';
-  await new Promise<void>((resolve, reject) => {
-    var child = spawn('codex', args, {
-      cwd:   root,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env:   { ...process.env, FORCE_COLOR: '1' },
-    });
-    function mirror_and_capture(out: NodeJS.WriteStream, chunk: Buffer): void {
-      out.write(chunk);
-      var text = chunk.toString('utf8');
-      captured += text;
-    }
-    child.stdout.on('data', (chunk: Buffer) => {
-      mirror_and_capture(process.stdout, chunk);
-    });
-    child.stderr!.on('data', (chunk: Buffer) => {
-      mirror_and_capture(process.stderr, chunk);
-    });
-    setTimeout(() => { console.clear(); on_clear(); }, 500);
-    child.on('error', reject);
-    child.on('close', code => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`codex exited ${code}`));
+  try {
+    await new Promise<void>((resolve, reject) => {
+      var child = spawn('codex', args, {
+        cwd:   root,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env:   { ...process.env, FORCE_COLOR: '1' },
+      });
+      function mirror_and_capture(out: NodeJS.WriteStream, chunk: Buffer): void {
+        out.write(chunk);
+        var text = chunk.toString('utf8');
+        captured += text;
       }
+      child.stdout.on('data', (chunk: Buffer) => {
+        mirror_and_capture(process.stdout, chunk);
+      });
+      child.stderr!.on('data', (chunk: Buffer) => {
+        mirror_and_capture(process.stderr, chunk);
+      });
+      setTimeout(() => { console.clear(); on_clear(); }, 500);
+      child.on('error', reject);
+      child.on('close', code => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`codex exited ${code}`));
+        }
+      });
+      child.stdin.end(prompt);
     });
-    child.stdin.end(prompt);
-  });
 
-  var last = (await read_or(tmp)).trim();
-  try { await fs.unlink(tmp); } catch {}
-  return { last, captured };
+    var last = (await read_or(tmp)).trim();
+    return { last, captured };
+  } finally {
+    try { await fs.unlink(tmp); } catch {}
+  }
 }
 
 // Board
@@ -361,15 +366,20 @@ function parse_cli(argv: string[]): Opts {
 
   cmd.parse(argv);
 
-  var raw        = cmd.opts() as Record<string, unknown>;
-  var max_rounds = Number(raw.maxRounds ?? 0);
-  var goal_file  = String(cmd.args[0] ?? DEFAULT_GOAL);
+  var raw            = cmd.opts() as Record<string, unknown>;
+  var max_rounds_raw = Number(raw.maxRounds ?? 0);
+  var goal_file      = String(cmd.args[0] ?? DEFAULT_GOAL);
+  var no_board       = raw.board === false;
+
+  if (!Number.isFinite(max_rounds_raw) || max_rounds_raw < 0 || !Number.isInteger(max_rounds_raw)) {
+    fail('Invalid --max-rounds. Expected a non-negative integer.');
+  }
 
   return {
     goal_file,
-    max_rounds,
+    max_rounds: max_rounds_raw,
     model:    String(raw.model ?? DEFAULT_MODEL),
-    no_board: Boolean(raw.noBoard),
+    no_board,
   };
 }
 
