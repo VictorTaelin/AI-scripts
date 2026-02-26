@@ -44,7 +44,7 @@ type Opts = {
 // -------
 
 // Sent to the codex agent each round as the full input prompt.
-var CODEX_PROMPT = (round: number, history: string, memory: string, review: string, goal: string) => `\
+var CODEX_PROMPT = (round: number, history: string, memory: string, review: string, answers: string, goal: string) => `\
 ROUND ${round}
 
 HISTORY (oldest first):
@@ -56,6 +56,9 @@ ${memory || '(empty)'}
 BOARD REVIEW (from previous round):
 ${review || '(empty)'}
 
+ANSWERS (from human expert):
+${answers || '(pending)'}
+
 WORKFLOW (mandatory):
 1. Work toward the goal.
 2. Commit and push.
@@ -64,25 +67,28 @@ WORKFLOW (mandatory):
 3. Update \`.long/MEMORY\` and \`.long/QUESTIONS\`.
 4. Write your final answer.
 
-COMMIT MESSAGE (MUST be around 256 tokens):
+COMMIT MESSAGES:
 Describe what you changed and why, the concrete results, and what to do next.
-Every session must include a commit, even when nothing changed.
+Every session must include a commit, even when nothing changed. MUST be around
+256 tokens (mandatory).
 
 ABOUT .long/MEMORY:
 Persistent notes for your future self. Edit and include everything that could
 help you reach the goal, including, for example, insights, failed approaches,
 lessons learned, domain facts, paths to avoid, and so on. Keep it under the
-token limit. MAX: 4096 tokens.
+token limit. MAX: 2048 tokens.
 
 ABOUT .long/QUESTIONS:
 Questions to be answered by the human expert. Each question MUST include FULL
-context, to help the human understand what you're taking about. Do your best to
-communicate well. Remember the human can't read your mind. Contextualize your
-question. If it would be locked on Stack Overflow, it is bad. This file is VERY
-important: it is the only way for you to acquire insights from the domain, or to
-break out of hard walls. Use it wisely. The expert will answer eventually
-inside a future GOAL block. Don't wait for it.  Remove questions that are
-answered or stale. Keep under limit. MAX: 2048 tokens.
+context, to help the human understand what you're taking about. Focus on your
+communication skills. Remember the human can't read your mind. Contextualize
+your question. Rule of thumb: should be good enough for Stack Overflow. This
+file is VERY important: it is the only way for you to acquire insights from the
+domain, or to break out of hard walls. Use it wisely. The expert's answers will
+appear in the ANSWERS section above. Do not ask low-value questions. Prefer
+questions that improve your core understanding of the domain. Answers may take
+long to arrive. Don't wait; keep working. Remove questions that are answered or
+stale. Keep it under the token limit. MAX: 1024 tokens.
 
 ABOUT .long/GOAL:
 Written out below. Do NOT edit it.
@@ -286,8 +292,8 @@ async function ensure_codex(): Promise<void> {
 }
 
 // Builds the prompt for one round.
-function build_prompt(goal: string, history: string, review: string, memory: string, round: number): string {
-  return CODEX_PROMPT(round, history, memory, review, goal);
+function build_prompt(goal: string, history: string, review: string, memory: string, answers: string, round: number): string {
+  return CODEX_PROMPT(round, history, memory, review, answers, goal);
 }
 
 // Runs one codex exec round. Returns { last, captured }.
@@ -428,6 +434,18 @@ function parse_cli(argv: string[]): Opts {
   };
 }
 
+// Ensures .long/ dir and all required files exist, creating empties if missing.
+async function ensure_files(root: string, goal_file: string): Promise<void> {
+  var dir = path.join(root, '.long');
+  await fs.mkdir(dir, { recursive: true });
+  var files = [goal_file, path.join(dir, 'MEMORY'), path.join(dir, 'QUESTIONS'), path.join(dir, 'ANSWERS')];
+  for (var file of files) {
+    if (!(await exists(file))) {
+      await fs.writeFile(file, '', 'utf8');
+    }
+  }
+}
+
 // Resolves the goal file path from repo root.
 function resolve_goal(goal_file: string, root: string): string {
   if (path.isAbsolute(goal_file)) {
@@ -483,14 +501,12 @@ async function main(): Promise<void> {
   var opts = parse_cli(process.argv);
   var log_file = start_log();
   log(`log: ${log_file}`);
-  var root   = await repo_root(process.cwd());
+  var root      = await repo_root(process.cwd());
   var goal_file = resolve_goal(opts.goal_file, root);
-  var review = '';
+  var ans_file  = path.join(root, '.long', 'ANSWERS');
+  var review    = '';
 
-  if (!(await exists(goal_file))) {
-    fail(`Goal file not found: ${goal_file}`);
-  }
-
+  await ensure_files(root, goal_file);
   await ensure_codex();
 
   var round = 1;
@@ -498,8 +514,13 @@ async function main(): Promise<void> {
     var goal    = (await fs.readFile(goal_file, 'utf8')).trim();
     var memory  = (await read_or(path.join(root, '.long', 'MEMORY'))).trim();
     var quests  = (await read_or(path.join(root, '.long', 'QUESTIONS'))).trim();
+    var answers = (await read_or(ans_file)).trim();
     var history = await get_history(root);
-    var prompt  = build_prompt(goal, history, review, memory, round);
+    if (answers) {
+      await fs.writeFile(ans_file, '', 'utf8');
+      log('Injecting answers from .long/ANSWERS');
+    }
+    var prompt  = build_prompt(goal, history, review, memory, answers, round);
     await save_prompt('codex_prompt', prompt);
     var header  = () => {
       log(`repo:  ${root}`);
