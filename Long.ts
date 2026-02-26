@@ -331,7 +331,7 @@ async function run_codex(
         captured = '';
         console.clear();
         on_clear();
-      }, 250);
+      }, 600);
       child.on('error', reject);
       child.on('close', code => {
         if (code === 0) {
