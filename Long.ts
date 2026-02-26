@@ -156,7 +156,8 @@ function build_prompt(goal: string, history: string, review: string, round: numb
     '   then `git commit --allow-empty`. If good, `git add -A && git commit`.',
     '   Either way, the commit message must cover: what you did, what you',
     '   learned, key metrics and results, and open questions. This is your',
-    '   persistent memory — the HISTORY above is built from these commits.',
+    '   persistent memory — the HISTORY above is built from these commits.
+    '   It MUST be concise - MAX 400 tokens (use ttok to measure).',
     '3. `git push`.',
     '4. Your final response must be a single XML tag and absolutely nothing',
     '   else — no words, no commentary, no explanation before or after it:',
@@ -195,12 +196,16 @@ async function run_codex(
       stdio: ['pipe', 'pipe', 'pipe'],
       env:   { ...process.env, FORCE_COLOR: '1' },
     });
+    function mirror_and_capture(out: NodeJS.WriteStream, chunk: Buffer): void {
+      out.write(chunk);
+      var text = chunk.toString('utf8');
+      captured += text;
+    }
     child.stdout.on('data', (chunk: Buffer) => {
-      process.stdout.write(chunk);
-      captured += chunk.toString('utf8');
+      mirror_and_capture(process.stdout, chunk);
     });
     child.stderr!.on('data', (chunk: Buffer) => {
-      process.stderr.write(chunk);
+      mirror_and_capture(process.stderr, chunk);
     });
     setTimeout(() => { console.clear(); on_clear(); }, 500);
     child.on('error', reject);
