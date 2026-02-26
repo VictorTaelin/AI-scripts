@@ -76,7 +76,8 @@ ABOUT .long/MEMORY:
 Persistent notes for your future self. Edit and include everything that could
 help you reach the goal, including, for example, insights, failed approaches,
 lessons learned, domain facts, paths to avoid, and so on. Keep it under the
-token limit. MAX: 2048 tokens.
+token limit. This is NOT an append-only log. This is a notebook that you can
+edit, delete, alter in any way. Use as an information vault. MAX: 2048 tokens.
 
 ABOUT .long/QUESTIONS:
 Questions to be answered by the human expert. Each question MUST include FULL
