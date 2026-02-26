@@ -75,12 +75,14 @@ lessons learned, domain facts, paths to avoid, and so on. Keep it under the
 token limit. MAX: 4096 tokens.
 
 ABOUT .long/QUESTIONS:
-Questions to be answered by the human expert. Each question MUST include proper
-context, via code examples (NOT jargon or English) to help the human understand
-what you're asking. This file is VERY important: it is the only way for you to
-acquire insights from the domain, or to break out of hard walls. Use it wisely.
-The expert will answer eventually inside a future GOAL block. Don't wait for it.
-Remove questions that are answered or stale. Keep under limit. MAX: 2048 tokens.
+Questions to be answered by the human expert. Each question MUST include FULL
+context, to help the human understand what you're taking about. Do your best to
+communicate well. Remember the human can't read your mind. Contextualize your
+question. If it would be locked on Stack Overflow, it is bad. This file is VERY
+important: it is the only way for you to acquire insights from the domain, or to
+break out of hard walls. Use it wisely. The expert will answer eventually
+inside a future GOAL block. Don't wait for it.  Remove questions that are
+answered or stale. Keep under limit. MAX: 2048 tokens.
 
 ABOUT .long/GOAL:
 Written out below. Do NOT edit it.
@@ -111,14 +113,13 @@ ${history || '(empty)'}
 MEMORY:
 ${memory || '(empty)'}
 
-QUESTIONS:
-${questions || '(empty)'}
-
 --- FULL SESSION OUTPUT ---
 
 ${session}
 
 --- END SESSION OUTPUT ---
+
+# YOUR GOAL: PROVIDE INSIGHT TO THE CODING AGENT
 
 Based on the session output, provide concise, actionable insights that
 will help the agent make progress in the next iteration.
