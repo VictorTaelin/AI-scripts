@@ -23,10 +23,12 @@ var exec = promisify(execFile);
 // Constants
 // ---------
 
-var MAX_BUFFER    = 64 * 1024 * 1024;
-var HISTORY_TAIL  = 16_000;
-var DEFAULT_MODEL = 'gpt-5.3-codex';
-var COMPLETED_TAG = '<GOAL:FULLY-COMPLETED/>';
+var MAX_BUFFER      = 64 * 1024 * 1024;
+var HISTORY_TAIL    = 8_000;
+var DEFAULT_MODEL   = 'gpt-5.3-codex';
+var DEFAULT_GOAL    = '.long/GOAL';
+var HALT_TAG        = '<HALT/>';
+var LEGACY_HALT_TAG = '<GOAL:FULLY-COMPLETED/>';
 
 // Types
 // -----
@@ -37,6 +39,76 @@ type Opts = {
   model:      string;
   no_board:   boolean;
 };
+
+// Prompts
+// -------
+
+// Sent to the codex agent each round as the full input prompt.
+var CODEX_PROMPT = (round: number, history: string, memory: string, review: string, goal: string) => `\
+ROUND ${round}
+
+HISTORY (oldest first):
+${history}
+
+MEMORY (your persistent notes):
+${memory || '(empty)'}
+
+BOARD REVIEW (from previous round):
+${review || '(empty)'}
+
+WORKFLOW (mandatory):
+1. Work toward the goal.
+2. Commit and push.
+   If good → \`git add -A && git commit\`.
+   If bad  → \`git stash && git commit --allow-empty\`.
+3. Update \`.long/MEMORY\` and \`.long/QUESTIONS\`.
+4. Write your final answer.
+
+COMMIT MESSAGE (MUST be around 256 tokens):
+Describe what you changed and why, the concrete results, and what to do next.
+Every session must include a commit, even when nothing changed.
+
+ABOUT .long/MEMORY:
+Write persistent notes for your future self. Include everything that could help
+you reach the goal, including, for example, insights, failed approaches, lessons
+learned, domain facts, paths to avoid, and so on. Keep it under the token limit.
+MAX: 4096 tokens.
+
+ABOUT .long/QUESTIONS:
+Questions to be answered by the human expert. Each question MUST include proper
+context, via code examples (NOT jargon or English) to help the human understand
+what you're asking. This file is VERY important: it is the only way for you to
+acquire insights from the domain, or to break out of hard walls. Use it wisely.
+The expert will answer eventually inside a future GOAL block. Don't wait for it.
+Remove questions that are answered or stale. MAX: 2048 tokens.
+
+ABOUT .long/GOAL:
+It is the same as below. Do NOT edit it.
+
+End your response with \`<CONTINUE/>\` or \`<HALT/>\` (if the goal is complete).
+
+GOAL:
+${goal}`;
+
+// Sent to the board reviewer after each codex session.
+var BOARD_PROMPT = (goal: string, session: string) => `\
+A coding agent just completed a work session on the following goal:
+
+${goal}
+
+--- FULL SESSION OUTPUT ---
+
+${session}
+
+--- END SESSION OUTPUT ---
+
+Based on the session output and the goal, provide concise, actionable
+insights that will help the agent make progress in the next iteration.
+Focus on: mistakes to avoid, blind spots, better strategies, and key
+technical corrections. If the agent is stuck in a local minima, get
+it out by proposing fundamental changes. Reason from first principles
+to deeply understand the domain, and then pass your most important
+insights to the agent. Be brief and dense. Maximize insight per token.`;
 
 // Utilities
 // ---------
@@ -81,13 +153,37 @@ async function read_or(p: string, fb = ''): Promise<string> {
   }
 }
 
-// Clips text to its last `max` characters.
-function clip_tail(text: string, max: number): string {
-  if (text.length <= max) {
-    return text;
+// Compacts whitespace to one-line form.
+function compact_line(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+// Clips history lines to the last `max` characters.
+function clip_hist(lines: string[], max: number): string {
+  var head = '- ...';
+  var keep: string[] = [];
+  var size = head.length;
+
+  for (var i = lines.length - 1; i >= 0; --i) {
+    var line = lines[i];
+    var add  = 1 + line.length;
+
+    if (keep.length > 0 && size + add > max) {
+      break;
+    }
+
+    if (size + add > max) {
+      var room = Math.max(0, max - size - 4);
+      var cut  = line.slice(0, room);
+      line     = `${cut}...`;
+      add      = 1 + line.length;
+    }
+
+    keep.unshift(line);
+    size += add;
   }
-  var cut = text.length - max;
-  return `...[${cut} chars omitted]...\n${text.slice(cut)}`;
+
+  return [head, ...keep].join('\n');
 }
 
 // Git
@@ -109,13 +205,31 @@ async function repo_root(cwd: string): Promise<string> {
   }
 }
 
-// Gets recent commit history, clipped to HISTORY_TAIL chars.
+// Gets recent commit history in chronological compact-line format.
 async function get_history(root: string): Promise<string> {
   try {
-    var text = await git(['log', '--format=commit %h (%ai)%n%n%B'], root);
-    return clip_tail(text, HISTORY_TAIL);
+    var raw   = await git(['log', '--reverse', '--format=%h%x1f%B%x1e'], root);
+    var recs  = raw.split('\x1e');
+    var lines = recs
+      .map(rec => rec.trim())
+      .filter(rec => rec.length > 0)
+      .map(rec => {
+        var sep = rec.indexOf('\x1f');
+        if (sep < 0) {
+          return '';
+        }
+        var hash = rec.slice(0, sep).trim();
+        var body = compact_line(rec.slice(sep + 1));
+        if (!hash || !body) {
+          return '';
+        }
+        return `- ${hash} ${body}`;
+      })
+      .filter(line => line.length > 0);
+
+    return clip_hist(lines, HISTORY_TAIL);
   } catch {
-    return '(no commits yet)';
+    return '- ...';
   }
 }
 
@@ -136,38 +250,8 @@ async function ensure_codex(): Promise<void> {
 }
 
 // Builds the prompt for one round.
-function build_prompt(goal: string, history: string, review: string, round: number): string {
-  var parts = [
-    `ROUND ${round}`,
-    '',
-    'HISTORY:',
-    history,
-  ];
-
-  if (review) {
-    parts.push('', 'BOARD REVIEW (from previous round):', review);
-  }
-
-  parts.push(
-    '',
-    'WORKFLOW:',
-    '1. Work on the goal for as long as you can.',
-    '2. Once you are done working: if your changes are bad, `git stash`',
-    '   then `git commit --allow-empty`. If good, `git add -A && git commit`.',
-    '   Either way, the commit message must cover: what you did, what you',
-    '   learned, key metrics and results, and open questions. This is your',
-    '   persistent memory — the HISTORY above is built from these commits.',
-    '   It MUST be concise - MAX 400 tokens (use ttok to measure).',
-    '3. `git push`.',
-    '4. Your final response MUST be a single XML tag and absolutely nothing',
-    '   else — no words, no commentary, no explanation before or after it:',
-    '   `<GOAL:TO-BE-CONTINUED/>` or `<GOAL:FULLY-COMPLETED/>`',
-    '',
-    'GOAL:',
-    goal,
-  );
-
-  return parts.join('\n');
+function build_prompt(goal: string, history: string, review: string, memory: string, round: number): string {
+  return CODEX_PROMPT(round, history, memory, review, goal);
 }
 
 // Runs one codex exec round. Returns { last, captured }.
@@ -229,26 +313,8 @@ async function run_codex(
 
 // Calls the board to review a codex session. Returns the review text.
 async function run_board(captured: string, goal: string): Promise<string> {
-  var tmp = path.join(os.tmpdir(), `long-board-${process.pid}.txt`);
-  var content = [
-    'A coding agent just completed a work session on the following goal:',
-    '',
-    goal,
-    '',
-    '--- FULL SESSION OUTPUT ---',
-    '',
-    captured,
-    '',
-    '--- END SESSION OUTPUT ---',
-    '',
-    'Based on the session output and the goal, provide concise, actionable',
-    'insights that will help the agent make progress in the next iteration.',
-    'Focus on: mistakes to avoid, blind spots, better strategies, and key',
-    'technical corrections. If the agent is stuck in a local minima, get',
-    'it out by proposing fundamental changes. Reason from first principles',
-    'to deeply understand the domain, and then pass your most important',
-    'insights to the agent. Be brief and dense. Maximize insight per token.',
-  ].join('\n');
+  var tmp     = path.join(os.tmpdir(), `long-board-${process.pid}.txt`);
+  var content = BOARD_PROMPT(goal, captured);
 
   await fs.writeFile(tmp, content, 'utf8');
 
@@ -288,21 +354,16 @@ function parse_cli(argv: string[]): Opts {
   cmd
     .name('long')
     .summary('codex loop: goal → work → board review → repeat')
-    .argument('<goal>', 'Goal file path')
+    .argument('[goal]', 'Goal file path', DEFAULT_GOAL)
     .option('-n, --max-rounds <num>', 'Max rounds (0 = unlimited)', '0')
     .option('--model <name>', 'Codex model', DEFAULT_MODEL)
     .option('--no-board', 'Disable board review between rounds');
-
-  if (argv.length <= 2) {
-    cmd.outputHelp();
-    process.exit(0);
-  }
 
   cmd.parse(argv);
 
   var raw        = cmd.opts() as Record<string, unknown>;
   var max_rounds = Number(raw.maxRounds ?? 0);
-  var goal_file  = path.resolve(process.cwd(), cmd.args[0]);
+  var goal_file  = String(cmd.args[0] ?? DEFAULT_GOAL);
 
   return {
     goal_file,
@@ -310,6 +371,14 @@ function parse_cli(argv: string[]): Opts {
     model:    String(raw.model ?? DEFAULT_MODEL),
     no_board: Boolean(raw.noBoard),
   };
+}
+
+// Resolves the goal file path from repo root.
+function resolve_goal(goal_file: string, root: string): string {
+  if (path.isAbsolute(goal_file)) {
+    return goal_file;
+  }
+  return path.join(root, goal_file);
 }
 
 // Logging
@@ -359,31 +428,32 @@ async function main(): Promise<void> {
   var opts = parse_cli(process.argv);
   var log_file = start_log();
   log(`log: ${log_file}`);
-
-  if (!(await exists(opts.goal_file))) {
-    fail(`Goal file not found: ${opts.goal_file}`);
-  }
-
   var root   = await repo_root(process.cwd());
+  var goal_file = resolve_goal(opts.goal_file, root);
   var review = '';
+
+  if (!(await exists(goal_file))) {
+    fail(`Goal file not found: ${goal_file}`);
+  }
 
   await ensure_codex();
 
   var round = 1;
   while (opts.max_rounds === 0 || round <= opts.max_rounds) {
-    var goal    = (await fs.readFile(opts.goal_file, 'utf8')).trim();
+    var goal    = (await fs.readFile(goal_file, 'utf8')).trim();
+    var memory  = (await read_or(path.join(root, '.long', 'MEMORY'))).trim();
     var history = await get_history(root);
-    var prompt  = build_prompt(goal, history, review, round);
+    var prompt  = build_prompt(goal, history, review, memory, round);
     var header  = () => {
       log(`repo:  ${root}`);
-      log(`goal:  ${opts.goal_file}`);
+      log(`goal:  ${goal_file}`);
       log(`model: ${opts.model}`);
       log(`========== ROUND ${round} ==========`);
     };
     header();
     var result = await run_codex(root, prompt, opts, header);
 
-    if (result.last.includes(COMPLETED_TAG)) {
+    if (result.last.includes(HALT_TAG) || result.last.includes(LEGACY_HALT_TAG)) {
       log('Goal fully completed.');
       break;
     }
