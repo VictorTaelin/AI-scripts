@@ -156,7 +156,7 @@ function build_prompt(goal: string, history: string, review: string, round: numb
     '   then `git commit --allow-empty`. If good, `git add -A && git commit`.',
     '   Either way, the commit message must cover: what you did, what you',
     '   learned, key metrics and results, and open questions. This is your',
-    '   persistent memory — the HISTORY above is built from these commits.
+    '   persistent memory — the HISTORY above is built from these commits.',
     '   It MUST be concise - MAX 400 tokens (use ttok to measure).',
     '3. `git push`.',
     '4. Your final response must be a single XML tag and absolutely nothing',
