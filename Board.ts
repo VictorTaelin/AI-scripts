@@ -17,7 +17,7 @@ import { GenAI }             from './GenAI';
 var DEFAULT_MODELS = [
   'google:gemini-3.1-pro-preview:high',
   'anthropic:claude-opus-4-6:high',
-  'openai:gpt-5.2:xhigh',
+  'openai:gpt-5.2:high',
 ];
 
 var SYSTEM = [

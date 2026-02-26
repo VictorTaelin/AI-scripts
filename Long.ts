@@ -93,10 +93,26 @@ GOAL:
 ${goal}`;
 
 // Sent to the board reviewer after each codex session.
-var BOARD_PROMPT = (goal: string, session: string) => `\
-A coding agent just completed a work session on the following goal:
+var BOARD_PROMPT = (
+  goal: string,
+  history: string,
+  memory: string,
+  questions: string,
+  session: string,
+) => `\
+A coding agent just completed a work session.
 
-${goal}
+GOAL:
+${goal || '(empty)'}
+
+HISTORY:
+${history || '(empty)'}
+
+MEMORY:
+${memory || '(empty)'}
+
+QUESTIONS:
+${questions || '(empty)'}
 
 --- FULL SESSION OUTPUT ---
 
@@ -104,8 +120,8 @@ ${session}
 
 --- END SESSION OUTPUT ---
 
-Based on the session output and the goal, provide concise, actionable
-insights that will help the agent make progress in the next iteration.
+Based on the session output, provide concise, actionable insights that
+will help the agent make progress in the next iteration.
 Focus on: mistakes to avoid, blind spots, better strategies, and key
 technical corrections. If the agent is stuck in a local minima, get
 it out by proposing fundamental changes. Reason from first principles
@@ -152,6 +168,23 @@ async function read_or(p: string, fb = ''): Promise<string> {
       return fb;
     }
     throw e;
+  }
+}
+
+// Saves the latest prompt for a prompt category under ~/.ai.
+async function save_prompt(nam: string, txt: string): Promise<void> {
+  var dir  = path.join(os.homedir(), '.ai');
+  var file = path.join(dir, `long-${nam}.txt`);
+  if (nam === 'codex_prompt') {
+    file = path.join(dir, 'long-codex-prompt.txt');
+  } else if (nam === 'board_prompt') {
+    file = path.join(dir, 'long-board-prompt.txt');
+  }
+  try {
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(file, txt, 'utf8');
+  } catch (e) {
+    log(`Prompt save failed (${nam}): ${err_msg(e)}`);
   }
 }
 
@@ -269,7 +302,7 @@ async function run_codex(
   var args = [
     'exec', '-C', root,
     '-m', opts.model,
-    '-c', 'model_reasoning_effort="high"',
+    '-c', 'model_reasoning_effort="xhigh"',
     '--output-last-message', tmp,
     '--dangerously-bypass-approvals-and-sandbox',
     '-',
@@ -294,7 +327,11 @@ async function run_codex(
       child.stderr!.on('data', (chunk: Buffer) => {
         mirror_and_capture(process.stderr, chunk);
       });
-      setTimeout(() => { console.clear(); on_clear(); }, 500);
+      setTimeout(() => {
+        captured = '';
+        console.clear();
+        on_clear();
+      }, 250);
       child.on('error', reject);
       child.on('close', code => {
         if (code === 0) {
@@ -317,10 +354,17 @@ async function run_codex(
 // -----
 
 // Calls the board to review a codex session. Returns the review text.
-async function run_board(captured: string, goal: string): Promise<string> {
+async function run_board(
+  goal: string,
+  history: string,
+  memory: string,
+  questions: string,
+  captured: string,
+): Promise<string> {
   var tmp     = path.join(os.tmpdir(), `long-board-${process.pid}.txt`);
-  var content = BOARD_PROMPT(goal, captured);
+  var content = BOARD_PROMPT(goal, history, memory, questions, captured);
 
+  await save_prompt('board_prompt', content);
   await fs.writeFile(tmp, content, 'utf8');
 
   try {
@@ -452,8 +496,10 @@ async function main(): Promise<void> {
   while (opts.max_rounds === 0 || round <= opts.max_rounds) {
     var goal    = (await fs.readFile(goal_file, 'utf8')).trim();
     var memory  = (await read_or(path.join(root, '.long', 'MEMORY'))).trim();
+    var quests  = (await read_or(path.join(root, '.long', 'QUESTIONS'))).trim();
     var history = await get_history(root);
     var prompt  = build_prompt(goal, history, review, memory, round);
+    await save_prompt('codex_prompt', prompt);
     var header  = () => {
       log(`repo:  ${root}`);
       log(`goal:  ${goal_file}`);
@@ -469,9 +515,10 @@ async function main(): Promise<void> {
     }
 
     // Board review between rounds
-    if (!opts.no_board) {
+    var has_next_round = opts.max_rounds === 0 || round < opts.max_rounds;
+    if (!opts.no_board && has_next_round) {
       log('Running board review...');
-      review = await run_board(result.captured, goal);
+      review = await run_board(goal, history, memory, quests, result.captured);
       if (review) {
         log('Board review received.');
       }
