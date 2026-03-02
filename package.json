@@ -2,28 +2,27 @@
   "name": "tai_scripts",
   "version": "0.2.0",
   "description": "Taelin AI Scripts",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/askai/AskAI.js",
+  "types": "./dist/askai/AskAI.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/askai/AskAI.js",
+      "types": "./dist/askai/AskAI.d.ts"
     }
   },
   "bin": {
-    "refactor": "./dist/Refactor.js",
-    "holefill": "./dist/HoleFill.js",
-    "csh": "./dist/ChatSH.js",
-    "shot": "./dist/Shot.js",
-    "long": "./dist/Long.js",
-    "board": "./dist/Board.js"
+    "refactor": "./dist/tools/Refactor.js",
+    "holefill": "./dist/tools/HoleFill.js",
+    "csh": "./dist/tools/ChatSH.js",
+    "shot": "./dist/tools/Shot.js",
+    "long": "./dist/tools/Long.js",
+    "board": "./dist/tools/Board.js"
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "rm -rf dist && tsc && node scripts/build-esm-wrapper.js",
+    "build": "rm -rf dist && tsc && chmod +x dist/tools/*.js",
     "prepare": "npm run build",
     "test": "node test-import.ts",
     "test:esm": "node --input-type=module test-import.ts"

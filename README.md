@@ -1,27 +1,39 @@
 Taelin AI Scripts
 =================
 
-Some AI scripts I use daily.
+AI tools for daily coding workflows.
 
-- `chatsh`: like ChatGPT but in the terminal ([example chat](https://x.com/VictorTaelin/status/1655304645953089538)) ([example coding](https://x.com/VictorTaelin/status/1809290888356729002)) ([example refactor](https://x.com/VictorTaelin/status/1828893898594300220))
+Structure
+---------
 
-- `holefill`: I use it on VIM to fill code snippets
+- `./askai/` — unified AI interface (`AskAI`) and vendor implementations
+- `./tools/` — CLI tools built on AskAI
+- `./` — config files (`package.json`, `tsconfig.json`, etc.)
 
-For VIM integration, this is my messy [vimrc](https://github.com/VictorTaelin/OSX/blob/master/vimrc).
+Tools
+-----
 
-This repo in general is kinda gambiarra. Note: currently updating to ts!
+- `csh` — terminal chat with shell execution ([example](https://x.com/VictorTaelin/status/1655304645953089538))
+- `holefill` — fill `.?.` placeholders in code via AI
+- `shot` — one-shot AI code editing with tool calls
+- `refactor` — context-aware code refactoring with smart compaction
+- `board` — multi-advisor panel for file review
+- `long` — codex loop: goal → work → board review → repeat
 
-## Usage
+Usage
+-----
 
-Just `npm install -g` and run the given command the terminal.
+```bash
+npm install -g
+```
 
-You'll need to add Anthropic/OpenAI/etc. keys to `~/.config`.
+Then run any tool from the terminal (e.g. `csh s`, `holefill file.ts`).
 
-## Note
+API keys go in `~/.config/<vendor>.token` (e.g. `~/.config/openai.token`).
 
-Most of this scripts will save a log to `~/.ai`. If you don't want this
-behavior, edit the scripts to suit your needs. (TODO: add a proper option.)
+See `./askai/AskAI.md` for the AskAI library API reference.
 
-## LICENSE
+License
+-------
 
-Everything here is MIT-licensed.
+MIT

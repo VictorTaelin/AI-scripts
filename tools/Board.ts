@@ -9,7 +9,7 @@ import * as fs      from 'fs/promises';
 import * as process from 'process';
 import { AsyncLocalStorage } from 'async_hooks';
 import { Command }           from 'commander';
-import { GenAI }             from './GenAI';
+import { AskAI }             from '../askai/AskAI';
 
 // Constants
 // ---------
@@ -308,7 +308,7 @@ async function run_parallel_tagged<T>(tasks: (() => Promise<T>)[], tags: string[
 // Calls one advisor model.
 async function ask_one(model: string, prompt: string): Promise<Rep> {
   try {
-    var ai = await GenAI(model);
+    var ai = await AskAI(model);
     var raw = await ai.ask(prompt, {
       system: SYSTEM,
       stream: true,

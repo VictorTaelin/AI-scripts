@@ -26,8 +26,8 @@ import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import minimatch from 'minimatch';
-import { GenAI, resolveModelSpec, tokenCount } from './GenAI';
-import type { AskResult, ToolCall, ToolDef } from './GenAI';
+import { AskAI, resolveModelSpec, tokenCount } from '../askai/AskAI';
+import type { AskResult, ToolCall, ToolDef } from '../askai/AskAI';
 
 const exec_file_async = promisify(execFile);
 
@@ -646,7 +646,7 @@ async function request_tools(model: string, user_message: string): Promise<{ res
 
   for (var attempt = 0; attempt < 2; ++attempt) {
     try {
-      var ai = await GenAI(model);
+      var ai = await AskAI(model);
       var result = await ai.askTools(user_message, {
         system: TOOL_CALL_PROMPT,
         tools: EDIT_TOOLS,
@@ -673,7 +673,7 @@ async function request_tools(model: string, user_message: string): Promise<{ res
 // Requests free-text XML as fallback
 async function request_xml(model: string, user_message: string, tool_error: Error | null): Promise<string> {
   try {
-    var ai = await GenAI(model);
+    var ai = await AskAI(model);
     var reply_raw = await ai.ask(user_message, {
       system: XML_TOOL_PROMPT,
       stream: true,

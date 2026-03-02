@@ -6,7 +6,7 @@ import * as path from 'path';
 import * as process from 'process';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { GenAI, resolveModelSpec, ResolvedModelSpec, ThinkingLevel, tokenCount } from './GenAI';
+import { AskAI, resolveModelSpec, ResolvedModelSpec, ThinkingLevel, tokenCount } from '../askai/AskAI';
 
 const execFileAsync = promisify(execFile);
 
@@ -548,7 +548,7 @@ function normalizeFileReference(reference: string): string {
 }
 
 async function askAI(model: string, prompt: string): Promise<string> {
-  const ai = await GenAI(model);
+  const ai = await AskAI(model);
   const reply = await ai.ask(prompt, {});
   if (typeof reply === 'string') {
     return reply;

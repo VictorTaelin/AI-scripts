@@ -7,7 +7,7 @@ import type {
   ToolCall,
   ToolDef,
   VendorConfig,
-} from "../GenAI";
+} from "../AskAI";
 
 type Role = "user" | "assistant";
 interface Turn {

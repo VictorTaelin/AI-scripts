@@ -4,7 +4,7 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import * as process from 'process';
-import { GenAI, resolveModelSpec, tokenCount, AskOptions } from './GenAI';
+import { AskAI, resolveModelSpec, tokenCount, AskOptions } from '../askai/AskAI';
 
 const FILL = '{:FILL_HERE:}';
 const SYSTEM = [
@@ -42,7 +42,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const ai = await GenAI(model);
+  const ai = await AskAI(model);
 
   /* read user files */
   let file_code = await fs.readFile(file, 'utf-8');

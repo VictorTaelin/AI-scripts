@@ -1,16 +1,16 @@
-GenAI.ts
+AskAI.ts
 =======
-GenAI.ts is a TypeScript library providing a unified interface for interacting with various AI language models from providers like OpenAI, Anthropic, Google, and others. It enables stateful chat interactions, allowing users to send messages and receive responses from AI models seamlessly.
+AskAI.ts is a TypeScript library providing a unified interface for interacting with various AI language models from providers like OpenAI, Anthropic, Google, and others. It enables stateful chat interactions, allowing users to send messages and receive responses from AI models seamlessly.
 
 The library abstracts the complexities of different AI APIs, enabling easy switching between models or providers without code changes. It supports features like streaming responses, temperature control, and system prompts where applicable.
 
 Usage
 -----
 ```typescript
-import { GenAI } from './GenAI';
+import { AskAI } from './AskAI';
 
 async function main() {
-  const ai = await GenAI("openai:gpt-5.1:medium");
+  const ai = await AskAI("openai:gpt-5.1:medium");
 
   // Options
   const opts = {
@@ -57,10 +57,10 @@ follows a consistent pattern:
 
 API Reference
 -------------
-### GenAI
+### AskAI
 Creates and returns a chat instance for the specified model.
 
-**Signature:** `async function GenAI(modelShortcode: string): Promise<ChatInstance>`  
+**Signature:** `async function AskAI(modelShortcode: string): Promise<ChatInstance>`  
 **Parameters:**  
 - `modelShortcode: string` - Model shortcode (e.g., "g") or full model name.  
 **Returns:** A promise resolving to a `ChatInstance`.
@@ -95,7 +95,7 @@ Options for the `ask` method:
 - `stream?: boolean` - Enable streaming. Default: `true` where supported.
 - `system_cacheable?: boolean` - Allow caching the system message (Anthropic-specific).
 - `vendorConfig?: VendorConfig` - Optional per-call overrides for vendor-specific knobs
-  computed in `GenAI.ts` (e.g., reasoning effort, thinking budgets).
+  computed in `AskAI.ts` (e.g., reasoning effort, thinking budgets).
 
 **Note:** Not all options apply to every model; unsupported options are ignored.
 
@@ -148,7 +148,7 @@ Additional Notes
 - **Streaming:** When enabled, responses are streamed to `stdout`. When vendors expose
   explicit thinking traces (OpenAI Responses, Anthropic, Gemini), they are printed
   in dim gray before the final answer.
-- **Thinking Budgets:** Thinking levels are centrally managed in `GenAI.ts` and forwarded
+- **Thinking Budgets:** Thinking levels are centrally managed in `AskAI.ts` and forwarded
   to each vendor in an idiomatic way (e.g., OpenAI reasoning effort, Anthropic
   `thinking` blocks, Gemini `thinkingConfig`).
 - **Token Estimation:** `tokenCount` uses GPT-4o's tokenizer, which may differ from other models' tokenization.

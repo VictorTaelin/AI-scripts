@@ -8,11 +8,17 @@ import { XAIChat } from './Vendors/xai';
 import { countTokens } from 'gpt-tokenizer/model/gpt-4o';
 
 export const MODELS: Record<string, string> = {
-  // OpenAI GPT-5.1 family
+  // OpenAI GPT-5.2 family
   'g-' : 'openai:gpt-5.2:low',
   'g'  : 'openai:gpt-5.2:medium',
   'g+' : 'openai:gpt-5.2:high',
   'G'  : 'openai:gpt-5.2:high',
+
+  // OpenAI GPT-5.3 Codex family
+  'c-' : 'openai:gpt-5.3-codex:low',
+  'c'  : 'openai:gpt-5.3-codex:medium',
+  'c+' : 'openai:gpt-5.3-codex:high',
+  'C'  : 'openai:gpt-5.3-codex:high',
 
   // Anthropic Claude
   's-'  : 'anthropic:claude-sonnet-4-6:low',
@@ -369,7 +375,7 @@ function buildVendorConfig(vendor: Vendor, model: string, thinking: ThinkingLeve
   return cfg;
 }
 
-export async function GenAI(modelSpec: string): Promise<ChatInstance> {
+export async function AskAI(modelSpec: string): Promise<ChatInstance> {
   const resolved = resolveModelSpec(modelSpec);
   const vendorConfig = buildVendorConfig(resolved.vendor, resolved.model, resolved.thinking);
 

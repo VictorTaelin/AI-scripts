@@ -5,7 +5,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as readline from 'readline';
 import { Command } from 'commander';
-import { GenAI, resolveModelSpec } from './GenAI';
+import { AskAI, resolveModelSpec } from '../askai/AskAI';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
@@ -124,7 +124,7 @@ async function main() {
   const [model] = program.args;
   const resolvedSpec = resolveModelSpec(model);
   const resolvedModelName = `${resolvedSpec.vendor}:${resolvedSpec.model}:${resolvedSpec.thinking}${resolvedSpec.fast ? ':fast' : ''}`;
-  const ai = await GenAI(model);
+  const ai = await AskAI(model);
 
   let aiCommandOutputs: string[] = [];
   let userCommandOutputs: string[] = [];

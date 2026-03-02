@@ -13,6 +13,6 @@
     "declarationMap": true,
     "sourceMap": true
   },
-  "include": ["*.ts", "Vendors/*.ts"],
-  "exclude": ["node_modules", "test-import.ts", "scripts/**/*"]
+  "include": ["askai/**/*.ts", "tools/**/*.ts"],
+  "exclude": ["node_modules", "scripts/**/*"]
 }
