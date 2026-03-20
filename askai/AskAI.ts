@@ -387,7 +387,14 @@ export async function AskAI(modelSpec: string): Promise<ChatInstance> {
       : resolved.vendor === 'openai'
         ? 'https://api.openai.com/v1'
         : 'https://openrouter.ai/api/v1';
-    return new OpenAIChat(apiKey, baseURL, resolved.model, resolved.vendor, vendorConfig);
+    return new OpenAIChat(
+      apiKey,
+      baseURL,
+      resolved.model,
+      resolved.vendor,
+      vendorConfig,
+      resolved.fast,
+    );
   }
 
   if (resolved.vendor === 'anthropic') {
