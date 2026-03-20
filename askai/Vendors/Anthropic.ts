@@ -127,6 +127,20 @@ export class AnthropicChat implements ChatInstance {
     };
   }
 
+  private async createMessage(params: any): Promise<any> {
+    if (this.fast) {
+      return this.client.beta.messages.create(params);
+    }
+    return this.client.messages.create(params);
+  }
+
+  private streamMessage(params: any): any {
+    if (this.fast) {
+      return this.client.beta.messages.stream(params);
+    }
+    return this.client.messages.stream(params);
+  }
+
   private buildParams(options: AskOptions, wantStream: boolean, messages?: any[]): any {
     const mergedAnthropicConfig = this.mergeAnthropicConfig(options);
     const maxTokens = options.max_tokens ?? DEFAULT_MAX_TOKENS;
@@ -196,7 +210,7 @@ export class AnthropicChat implements ChatInstance {
     let stopReason = "";
 
     if (wantStream) {
-      const streamResp: AsyncIterable<any> = (await this.client.beta.messages.create(params)) as any;
+      const streamResp: AsyncIterable<any> = (await this.createMessage(params)) as any;
       let printedReasoning = false;
       for await (const event of streamResp) {
         if (event.type === "content_block_delta") {
@@ -218,7 +232,7 @@ export class AnthropicChat implements ChatInstance {
       }
       process.stdout.write("\n");
     } else {
-      const message: any = await this.client.beta.messages.create({ ...params, stream: false });
+      const message: any = await this.createMessage({ ...params, stream: false });
       stopReason = message.stop_reason ?? "";
       const blocks: any[] = message.content;
       let printedReasoning = false;
@@ -285,7 +299,7 @@ export class AnthropicChat implements ChatInstance {
 
       let message: any;
       if (wantStream) {
-        const stream = this.client.beta.messages.stream({ ...params, stream: true });
+        const stream = this.streamMessage({ ...params, stream: true });
         let roundPrintedAny = false;
         let lastKind: "thinking" | "text" | "tool" | null = null;
         let lastChar = "\n";
@@ -326,7 +340,7 @@ export class AnthropicChat implements ChatInstance {
           process.stdout.write("\n");
         }
       } else {
-        message = await this.client.beta.messages.create({ ...params, stream: false });
+        message = await this.createMessage({ ...params, stream: false });
       }
 
       const stopReason = message?.stop_reason ?? "";
