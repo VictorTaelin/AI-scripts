@@ -5,20 +5,22 @@ import { AnthropicChat } from './Vendors/Anthropic';
 import { GoogleChat } from './Vendors/Google';
 import { OpenAIChat } from './Vendors/OpenAI';
 import { XAIChat } from './Vendors/xai';
+import { VastChat } from './Vendors/Vast';
+import { FireworksChat } from './Vendors/Fireworks';
 import { countTokens } from 'gpt-tokenizer/model/gpt-4o';
 
 export const MODELS: Record<string, string> = {
-  // OpenAI GPT-5.2 family
-  'g-' : 'openai:gpt-5.2:low',
-  'g'  : 'openai:gpt-5.2:medium',
-  'g+' : 'openai:gpt-5.2:high',
-  'G'  : 'openai:gpt-5.2:high',
+  // OpenAI GPT-5.4 family
+  'g-' : 'openai:gpt-5.4:low',
+  'g'  : 'openai:gpt-5.4:medium',
+  'g+' : 'openai:gpt-5.4:high',
+  'G'  : 'openai:gpt-5.4:high',
 
-  // OpenAI GPT-5.3 Codex family
-  'c-' : 'openai:gpt-5.3-codex:low',
-  'c'  : 'openai:gpt-5.3-codex:medium',
-  'c+' : 'openai:gpt-5.3-codex:high',
-  'C'  : 'openai:gpt-5.3-codex:high',
+  // OpenAI GPT-5.3 Codex Spark family
+  'c-' : 'openai:gpt-5.3-codex-spark:low',
+  'c'  : 'openai:gpt-5.3-codex-spark:medium',
+  'c+' : 'openai:gpt-5.3-codex-spark:high',
+  'C'  : 'openai:gpt-5.3-codex-spark:high',
 
   // Anthropic Claude
   's-'  : 'anthropic:claude-sonnet-4-6:low',
@@ -27,25 +29,41 @@ export const MODELS: Record<string, string> = {
   's++' : 'anthropic:claude-sonnet-4-6:max',
   'S'   : 'anthropic:claude-sonnet-4-6:high',
 
-  'o-'  : 'anthropic:claude-opus-4-6:low',
-  'o'   : 'anthropic:claude-opus-4-6:medium',
-  'o+'  : 'anthropic:claude-opus-4-6:high',
-  'o++' : 'anthropic:claude-opus-4-6:max',
-  'O'   : 'anthropic:claude-opus-4-6:high',
+  'o-'  : 'anthropic:claude-opus-4-7:low',
+  'o'   : 'anthropic:claude-opus-4-7:medium',
+  'o+'  : 'anthropic:claude-opus-4-7:high',
+  'o++' : 'anthropic:claude-opus-4-7:max',
+  'O'   : 'anthropic:claude-opus-4-7:high',
 
   // Google Gemini
   'i-' : 'google:gemini-3.1-pro-preview:low',
   'i'  : 'google:gemini-3.1-pro-preview:medium',
   'i+' : 'google:gemini-3.1-pro-preview:high',
   'I'  : 'google:gemini-3.1-pro-preview:high',
+  'f-' : 'google:gemini-3.1-flash-lite-preview:low',
+  'f'  : 'google:gemini-3.1-flash-lite-preview:medium',
+  'f+' : 'google:gemini-3.1-flash-lite-preview:high',
+  'F'  : 'google:gemini-3.1-flash-lite-preview:high',
 
   // xAI Grok
   'x-' : 'xai:grok-4-0709:low',
   'x'  : 'xai:grok-4-0709:medium',
   'X'  : 'xai:grok-4-0709:high',
+
+  // Self-hosted (Vast.ai B200)
+  'm'  : 'vast:/root/model:none',
+  'q'  : 'vast:/root/model:none',
+
+  // GLM-5.1 via Fireworks
+  'z-' : 'fireworks:accounts/fireworks/models/glm-5p1:none',
+  'z'  : 'fireworks:accounts/fireworks/models/glm-5p1:none',
+  'z+' : 'fireworks:accounts/fireworks/models/glm-5p1:none',
+
+  // GLM-5.1 on Vast.ai (needs SSH tunnel on port 30000)
+  'v'  : 'vast:glm-5.1-fp4:none',
 };
 
-export type Vendor = 'openai' | 'anthropic' | 'google' | 'openrouter' | 'xai';
+export type Vendor = 'openai' | 'anthropic' | 'google' | 'openrouter' | 'xai' | 'vast' | 'fireworks';
 export type ThinkingLevel = 'none' | 'low' | 'medium' | 'high' | 'max' | 'auto';
 
 export interface ResolvedModelSpec {
@@ -70,6 +88,7 @@ export interface VendorConfig {
       type: 'enabled';
       budget_tokens: number;
     } | null;
+    effort?: 'low' | 'medium' | 'high' | 'max';
   };
   google?: {
     config?: {
@@ -121,7 +140,7 @@ export interface ChatInstance {
   askTools(userMessage: string, options: AskToolsOptions): Promise<AskResult>;
 }
 
-const SUPPORTED_VENDORS = new Set<Vendor>(['openai', 'anthropic', 'google', 'openrouter', 'xai']);
+const SUPPORTED_VENDORS = new Set<Vendor>(['openai', 'anthropic', 'google', 'openrouter', 'xai', 'vast', 'fireworks']);
 
 const CEREBRAS_MODELS = new Set<string>([
   'gpt-oss-120b',
@@ -140,6 +159,8 @@ const API_KEY_ENV_VARS: Record<string, string[]> = {
   openrouter: ['OPENROUTER_API_KEY'],
   xai: ['XAI_API_KEY'],
   cerebras: ['CEREBRAS_API_KEY'],
+  vast: [],
+  fireworks: [],
 };
 
 function inferVendor(model: string): Vendor {
@@ -186,7 +207,30 @@ async function getToken(vendor: string): Promise<string> {
   }
 }
 
+// Models that do not yet support Anthropic's fast mode beta. When fast is
+// requested on one of these, we silently fall back to the mapped model.
+// This is a deliberately hardcoded switch — remove an entry once the upstream
+// model gains fast-mode support.
+const FAST_MODE_FALLBACKS: Record<string, string> = {
+  'claude-opus-4-7': 'claude-opus-4-6',
+};
+
+function applyFastModeFallbacks(spec: ResolvedModelSpec): ResolvedModelSpec {
+  if (!spec.fast) {
+    return spec;
+  }
+  const fallback = FAST_MODE_FALLBACKS[spec.model];
+  if (!fallback) {
+    return spec;
+  }
+  return { ...spec, model: fallback };
+}
+
 export function resolveModelSpec(spec: string): ResolvedModelSpec {
+  return applyFastModeFallbacks(resolveModelSpecRaw(spec));
+}
+
+function resolveModelSpecRaw(spec: string): ResolvedModelSpec {
   let trimmed = spec.trim();
   if (!trimmed) {
     throw new Error('Model spec must be provided');
@@ -211,7 +255,7 @@ export function resolveModelSpec(spec: string): ResolvedModelSpec {
     const alias = MODELS[trimmed];
     if (alias) {
       if (alias.includes(':')) {
-        const resolved = resolveModelSpec(alias);
+        const resolved = resolveModelSpecRaw(alias);
         resolved.fast = resolved.fast || fast;
         return resolved;
       }
@@ -242,7 +286,7 @@ export function resolveModelSpec(spec: string): ResolvedModelSpec {
   let model = modelValue;
   let aliasThinking: ThinkingLevel | undefined;
   if (MODELS[modelValue]) {
-    const aliasSpec = resolveModelSpec(MODELS[modelValue]);
+    const aliasSpec = resolveModelSpecRaw(MODELS[modelValue]);
     if (aliasSpec.vendor !== vendor) {
       throw new Error(
         `Model alias "${modelValue}" belongs to vendor "${aliasSpec.vendor}", not "${vendorRaw}"`,
@@ -293,20 +337,18 @@ function mapThinkingToAnthropic(
   if (thinking === 'none') {
     return { thinking: { type: 'disabled' as const } };
   }
-  const budget = thinking === 'low'
-    ? 2048
+  const effort = thinking === 'low'
+    ? 'low' as const
     : thinking === 'medium'
-      ? 4096
+      ? 'medium' as const
       : thinking === 'high'
-        ? 6144
-        : 7168;
-  if (thinking === 'auto') {
-    return {
-      thinking: { type: 'enabled' as const, budget_tokens: 4096 },
-    };
-  }
+        ? 'high' as const
+        : thinking === 'max'
+          ? 'max' as const
+          : 'medium' as const; // auto -> medium
   return {
-    thinking: { type: 'enabled' as const, budget_tokens: budget },
+    thinking: { type: 'adaptive' as const },
+    effort,
   };
 }
 
@@ -410,6 +452,16 @@ export async function AskAI(modelSpec: string): Promise<ChatInstance> {
   if (resolved.vendor === 'xai') {
     const apiKey = await getToken(resolved.vendor);
     return new XAIChat(apiKey, resolved.model, vendorConfig);
+  }
+
+  if (resolved.vendor === 'vast') {
+    const baseURL = process.env.VAST_BASE_URL ?? 'http://localhost:30000/v1';
+    return new VastChat(baseURL, resolved.model, vendorConfig);
+  }
+
+  if (resolved.vendor === 'fireworks') {
+    const apiKey = await getToken(resolved.vendor);
+    return new FireworksChat(apiKey, resolved.model, vendorConfig);
   }
 
   throw new Error(`Unsupported vendor: ${resolved.vendor}`);

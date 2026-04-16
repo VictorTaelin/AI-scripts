@@ -1,0 +1,165 @@
+[
+  {
+    "name": "Opus 4.6",
+    "timeS": 11.113558458,
+    "inputTokens": 1485,
+    "outputTokens": 759,
+    "totalTokens": 2244,
+    "pricing": {
+      "input": 5,
+      "output": 25
+    },
+    "hourlyCost": {
+      "input": 2.405170234269892,
+      "output": 6.1465461542452795,
+      "total": 8.551716388515171
+    },
+    "outFile": "tok_bench/outputs/opus-4-6.txt"
+  },
+  {
+    "name": "Opus 4.6 (fast)",
+    "timeS": 4.023568458000001,
+    "inputTokens": 1485,
+    "outputTokens": 759,
+    "totalTokens": 2244,
+    "pricing": {
+      "input": 30,
+      "output": 150
+    },
+    "hourlyCost": {
+      "input": 39.8601394941147,
+      "output": 101.86480092940423,
+      "total": 141.72494042351892
+    },
+    "outFile": "tok_bench/outputs/opus-4-6-fast.txt"
+  },
+  {
+    "name": "GPT 5.4",
+    "timeS": 9.483154292,
+    "inputTokens": 1485,
+    "outputTokens": 767,
+    "totalTokens": 2252,
+    "pricing": {
+      "input": 2.5,
+      "output": 15
+    },
+    "hourlyCost": {
+      "input": 1.4093411947620351,
+      "output": 4.367534126797903,
+      "total": 5.776875321559938
+    },
+    "outFile": "tok_bench/outputs/gpt-5-4.txt"
+  },
+  {
+    "name": "GPT 5.4 (fast)",
+    "timeS": 12.612628666,
+    "inputTokens": 1485,
+    "outputTokens": 757,
+    "totalTokens": 2242,
+    "pricing": {
+      "input": 5,
+      "output": 30
+    },
+    "hourlyCost": {
+      "input": 2.1193044453973617,
+      "output": 6.482074606730516,
+      "total": 8.601379052127879
+    },
+    "outFile": "tok_bench/outputs/gpt-5-4-fast.txt"
+  },
+  {
+    "name": "GPT 5.4 mini",
+    "timeS": 7.481818625,
+    "inputTokens": 1485,
+    "outputTokens": 757,
+    "totalTokens": 2242,
+    "pricing": {
+      "input": 0.75,
+      "output": 4.5
+    },
+    "hourlyCost": {
+      "input": 0.5358991177094994,
+      "output": 1.6390934630549134,
+      "total": 2.174992580764413
+    },
+    "outFile": "tok_bench/outputs/gpt-5-4-mini.txt"
+  },
+  {
+    "name": "GPT 5.4 mini (fast)",
+    "timeS": 4.349824042,
+    "inputTokens": 1485,
+    "outputTokens": 755,
+    "totalTokens": 2240,
+    "pricing": null,
+    "hourlyCost": null,
+    "outFile": "tok_bench/outputs/gpt-5-4-mini-fast.txt"
+  },
+  {
+    "name": "GPT Codex 5.3",
+    "timeS": 12.256448875,
+    "inputTokens": 1485,
+    "outputTokens": 766,
+    "totalTokens": 2251,
+    "pricing": {
+      "input": 1.75,
+      "output": 14
+    },
+    "hourlyCost": {
+      "input": 0.7633124484435954,
+      "output": 3.149884635732224,
+      "total": 3.9131970841758195
+    },
+    "outFile": "tok_bench/outputs/gpt-codex-5-3.txt"
+  },
+  {
+    "name": "GPT Codex 5.3 (fast)",
+    "timeS": 10.460584292,
+    "inputTokens": 1485,
+    "outputTokens": 755,
+    "totalTokens": 2240,
+    "pricing": {
+      "input": 3.5,
+      "output": 28
+    },
+    "hourlyCost": {
+      "input": 1.7887146145660064,
+      "output": 7.275310620861063,
+      "total": 9.064025235427069
+    },
+    "outFile": "tok_bench/outputs/gpt-codex-5-3-fast.txt"
+  },
+  {
+    "name": "Gemini 3.1 Pro",
+    "timeS": 11.263181125,
+    "inputTokens": 1485,
+    "outputTokens": 757,
+    "totalTokens": 2242,
+    "pricing": {
+      "input": 1,
+      "output": 6
+    },
+    "hourlyCost": {
+      "input": 0.47464388086007986,
+      "output": 1.4517390618629513,
+      "total": 1.9263829427230312
+    },
+    "outFile": "tok_bench/outputs/gemini-3-1-pro.txt"
+  },
+  {
+    "name": "Gemini 3.1 Flash-Lite",
+    "timeS": 4.906843875000001,
+    "inputTokens": 1485,
+    "outputTokens": 758,
+    "totalTokens": 2243,
+    "pricing": {
+      "input": 0.25,
+      "output": 1.5
+    },
+    "hourlyCost": {
+      "input": 0.2723746738324744,
+      "output": 0.8341818293535983,
+      "total": 1.1065565031860727
+    },
+    "outFile": "tok_bench/outputs/gemini-3-1-flash-lite.txt"
+  }
+]

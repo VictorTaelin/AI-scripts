@@ -208,8 +208,13 @@ export class OpenAIChat implements ChatInstance {
   private readonly model: string;
   private readonly vendor: Vendor;
   private readonly vendorConfig?: VendorConfig;
+  private readonly fast: boolean;
   private readonly messages: { role: Role; content: string }[] = [];
   private instructions?: string;
+  public lastResponseMeta: {
+    serviceTierRequested?: string | null;
+    serviceTierUsed?: string | null;
+  } | null = null;
 
   constructor(
     apiKey: string,
@@ -217,6 +222,7 @@ export class OpenAIChat implements ChatInstance {
     model: string,
     vendor: Vendor,
     vendorConfig?: VendorConfig,
+    fast: boolean = false,
   ) {
     const defaultHeaders =
       vendor === "openrouter"
@@ -227,6 +233,7 @@ export class OpenAIChat implements ChatInstance {
     this.model = model;
     this.vendor = vendor;
     this.vendorConfig = vendorConfig;
+    this.fast = fast;
   }
 
   private updateInstructions(options: AskOptions): void {
@@ -286,6 +293,10 @@ export class OpenAIChat implements ChatInstance {
         ...mergedOpenAIConfig.reasoning,
         summary: "auto",
       };
+    }
+
+    if (this.fast) {
+      params.service_tier = "priority";
     }
 
     return params;
@@ -485,6 +496,11 @@ export class OpenAIChat implements ChatInstance {
     mergedOpenAIConfig: VendorConfig["openai"];
   }): Promise<string> {
     const params = this.buildResponsesParams(options, mergedOpenAIConfig);
+    this.lastResponseMeta = {
+      serviceTierRequested:
+        typeof params.service_tier === "string" ? params.service_tier : null,
+      serviceTierUsed: null,
+    };
 
     let visible = "";
     let lastType: "reasoning" | "text" | null = null;
@@ -536,8 +552,17 @@ export class OpenAIChat implements ChatInstance {
         console.error("[OpenAIChat stream error]:", err?.message || err);
       });
       await stream.done();
+      const finalResponse: any = await stream.finalResponse();
+      if (this.lastResponseMeta) {
+        this.lastResponseMeta.serviceTierUsed =
+          typeof finalResponse?.service_tier === "string" ? finalResponse.service_tier : null;
+      }
     } else {
       const response: any = await (this.client as any).responses.create(params);
+      if (this.lastResponseMeta) {
+        this.lastResponseMeta.serviceTierUsed =
+          typeof response?.service_tier === "string" ? response.service_tier : null;
+      }
       for (const item of response?.output ?? []) {
         if (item?.type === "reasoning" && Array.isArray(item.summary)) {
           for (const block of item.summary) {

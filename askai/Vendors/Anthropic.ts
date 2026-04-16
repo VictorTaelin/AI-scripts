@@ -17,6 +17,8 @@ const TEXT_EDITOR_TOOL_NAME = "str_replace_based_edit_tool";
 const TEXT_EDITOR_TOOL_TYPE = "text_editor_20250728";
 const DIM = "\x1b[2m";
 const RESET = "\x1b[0m";
+const STREAM_END_MARKER = "☮";
+const STREAM_END_INSTRUCTION = "END-OF-SEQUENCE: the final character of your entire response MUST be ☮. (IMPORTANT)";
 
 function canUseNativeEditor(tools: ToolDef[]): boolean {
   if (tools.length === 0) {
@@ -89,6 +91,51 @@ function textEditorError(toolUseId: string, message: string): any {
   };
 }
 
+function appendStreamEndInstruction(systemPrompt?: string): string {
+  if (!systemPrompt) {
+    return STREAM_END_INSTRUCTION;
+  }
+  return `${systemPrompt}\n\n${STREAM_END_INSTRUCTION}`;
+}
+
+function stripTrailingMarker(text: string): string {
+  return text.endsWith(STREAM_END_MARKER) ? text.slice(0, -STREAM_END_MARKER.length) : text;
+}
+
+function stripMarkerFromBlocks(blocks: any[]): any[] {
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const block = blocks[i];
+    if (block?.type !== "text" || typeof block.text !== "string") {
+      continue;
+    }
+    block.text = stripTrailingMarker(block.text);
+    break;
+  }
+  return blocks;
+}
+
+function createStreamMarkerState(onText: (text: string) => void) {
+  let seenMarker = false;
+  return {
+    get seenMarker(): boolean {
+      return seenMarker;
+    },
+    push(chunk: string): boolean {
+      if (!chunk || seenMarker) {
+        return seenMarker;
+      }
+      const markerIndex = chunk.indexOf(STREAM_END_MARKER);
+      if (markerIndex === -1) {
+        onText(chunk);
+        return false;
+      }
+      onText(chunk.slice(0, markerIndex));
+      seenMarker = true;
+      return true;
+    },
+  };
+}
+
 export class AnthropicChat implements ChatInstance {
   private readonly client: Anthropic;
   private readonly model: string;
@@ -158,10 +205,13 @@ export class AnthropicChat implements ChatInstance {
       params.speed = "fast";
     }
 
-    if (this.systemPrompt) {
+    const systemPrompt = wantStream
+      ? appendStreamEndInstruction(this.systemPrompt)
+      : this.systemPrompt;
+    if (systemPrompt) {
       params.system = this.systemCacheable
-        ? [{ type: "text", text: this.systemPrompt, cache_control: { type: "ephemeral" } }]
-        : this.systemPrompt;
+        ? [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }]
+        : systemPrompt;
     }
 
     const thinking = mergedAnthropicConfig?.thinking;
@@ -180,8 +230,21 @@ export class AnthropicChat implements ChatInstance {
           params.thinking = { type: "disabled" };
         }
       } else {
-        params.thinking = thinking;
+        params.thinking = { ...thinking };
       }
+      // On Claude Opus 4.7+ the default `thinking.display` is `"omitted"`,
+      // which means no thinking blocks are emitted at all (not even deltas
+      // during streaming). Request `"summarized"` so we can render the
+      // reasoning trace in dim gray. Harmless on older models that already
+      // default to summarized.
+      if (params.thinking && params.thinking.type !== "disabled" && !params.thinking.display) {
+        params.thinking.display = "summarized";
+      }
+    }
+
+    const effort = mergedAnthropicConfig?.effort;
+    if (effort) {
+      params.output_config = { effort };
     }
 
     const noThinking = !params.thinking || params.thinking.type === "disabled";
@@ -212,6 +275,17 @@ export class AnthropicChat implements ChatInstance {
     if (wantStream) {
       const streamResp: AsyncIterable<any> = (await this.createMessage(params)) as any;
       let printedReasoning = false;
+      const marker = createStreamMarkerState((text: string) => {
+        if (!text) {
+          return;
+        }
+        if (printedReasoning) {
+          process.stdout.write("\n");
+          printedReasoning = false;
+        }
+        process.stdout.write(text);
+        plain += text;
+      });
       for await (const event of streamResp) {
         if (event.type === "content_block_delta") {
           const delta: any = event.delta;
@@ -219,12 +293,10 @@ export class AnthropicChat implements ChatInstance {
             process.stdout.write(`\x1b[2m${delta.thinking}\x1b[0m`);
             printedReasoning = true;
           } else if (delta.type === "text_delta") {
-            if (printedReasoning) {
-              process.stdout.write("\n");
-              printedReasoning = false;
+            if (marker.push(delta.text)) {
+              stopReason = "end_turn";
+              break;
             }
-            process.stdout.write(delta.text);
-            plain += delta.text;
           }
         } else if (event.type === "message_delta") {
           stopReason = event.delta?.stop_reason ?? "";
@@ -245,8 +317,9 @@ export class AnthropicChat implements ChatInstance {
             process.stdout.write("\n");
             printedReasoning = false;
           }
-          process.stdout.write(block.text);
-          plain += block.text;
+          const text = stripTrailingMarker(block.text);
+          process.stdout.write(text);
+          plain += text;
         }
       }
       process.stdout.write("\n");
@@ -286,7 +359,7 @@ export class AnthropicChat implements ChatInstance {
     const maxRounds = 4;
 
     for (let round = 0; round < maxRounds; round++) {
-      const params = this.buildParams(localOptions, false, conversation);
+      const params = this.buildParams(localOptions, wantStream, conversation);
       if (useNativeEditor) {
         params.tools = [{ type: TEXT_EDITOR_TOOL_TYPE, name: TEXT_EDITOR_TOOL_NAME }];
       } else {
@@ -303,6 +376,7 @@ export class AnthropicChat implements ChatInstance {
         let roundPrintedAny = false;
         let lastKind: "thinking" | "text" | "tool" | null = null;
         let lastChar = "\n";
+        let abortedOnMarker = false;
         const ensureBoundary = (next: "thinking" | "text" | "tool") => {
           if (lastKind && lastKind !== next && lastChar !== "\n") {
             process.stdout.write("\n");
@@ -326,16 +400,32 @@ export class AnthropicChat implements ChatInstance {
             lastChar = end;
           }
         };
+        const marker = createStreamMarkerState((text: string) => {
+          writeChunk(text, "text", false);
+        });
         stream.on("thinking", (delta: string) => {
           writeChunk(delta, "thinking", true);
         });
         stream.on("text", (delta: string) => {
-          writeChunk(delta, "text", false);
+          if (marker.push(delta)) {
+            abortedOnMarker = true;
+            stream.abort();
+          }
         });
         stream.on("inputJson", (delta: string) => {
           writeChunk(delta, "tool", false);
         });
-        message = await stream.finalMessage();
+        try {
+          message = await stream.finalMessage();
+        } catch (err) {
+          if (!abortedOnMarker || !stream.currentMessage) {
+            throw err;
+          }
+          message = stream.currentMessage;
+        }
+        if (abortedOnMarker && Array.isArray(message?.content)) {
+          stripMarkerFromBlocks(message.content);
+        }
         if (roundPrintedAny && lastChar !== "\n") {
           process.stdout.write("\n");
         }
@@ -344,7 +434,7 @@ export class AnthropicChat implements ChatInstance {
       }
 
       const stopReason = message?.stop_reason ?? "";
-      const blocks: any[] = Array.isArray(message?.content) ? message.content : [];
+      const blocks: any[] = Array.isArray(message?.content) ? stripMarkerFromBlocks(message.content) : [];
 
       const nativeToolUses: any[] = [];
       const toolResults: any[] = [];

@@ -25,7 +25,7 @@ var exec = promisify(execFile);
 
 var MAX_BUFFER      = 64 * 1024 * 1024;
 var HISTORY_TAIL    = 6_000;
-var DEFAULT_MODEL   = 'gpt-5.3-codex';
+var DEFAULT_MODEL   = 'gpt-5.4';
 var DEFAULT_GOAL    = '.long/GOAL';
 var HALT_TAG        = '<HALT/>';
 var LEGACY_HALT_TAG = '<GOAL:FULLY-COMPLETED/>';
