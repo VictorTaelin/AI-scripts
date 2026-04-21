@@ -11,6 +11,9 @@ import type {
 
 type Role = "user" | "assistant" | "system";
 
+const DIM = "\x1b[2m";
+const RESET = "\x1b[0m";
+
 function parseToolArgs(raw: unknown): Record<string, any> {
   if (raw && typeof raw === "object" && !Array.isArray(raw)) {
     return raw as Record<string, any>;
@@ -73,7 +76,6 @@ export class VastChat implements ChatInstance {
     const body: Record<string, any> = {
       model: this.model,
       messages: this.messages as any,
-      max_tokens: 8192,
       tools: tools.map((tool: ToolDef) => ({
         type: "function",
         function: {
@@ -123,14 +125,13 @@ export class VastChat implements ChatInstance {
       return { messages: this.messages };
     }
 
-    const wantStream = false; // non-stream: thinking model streams silently during reasoning
+    const wantStream = options.stream !== false;
     this.ensureSystemMessage(options.system);
     this.messages.push({ role: "user", content: userMessage });
 
     const body: Record<string, any> = {
       model: this.model,
       messages: this.messages as any,
-      max_tokens: 16384,
       chat_template_kwargs: { enable_thinking: false },
     };
 
@@ -148,10 +149,18 @@ export class VastChat implements ChatInstance {
         ...(body as any),
         stream: true,
       });
+      let printedReasoning = false;
       for await (const chunk of stream) {
-        const delta: any = chunk.choices?.[0]?.delta;
-        if (delta?.reasoning_content) continue; // skip thinking tokens
-        if (delta?.content) {
+        const delta: any = chunk.choices?.[0]?.delta ?? {};
+        if (delta.reasoning_content) {
+          process.stdout.write(DIM + delta.reasoning_content + RESET);
+          printedReasoning = true;
+        }
+        if (delta.content) {
+          if (printedReasoning && !visible.endsWith("\n")) {
+            process.stdout.write("\n");
+            printedReasoning = false;
+          }
           process.stdout.write(delta.content);
           visible += delta.content;
         }
@@ -160,6 +169,9 @@ export class VastChat implements ChatInstance {
     } else {
       const resp: any = await (this.client.chat.completions.create as any)(body as any);
       const msg: any = resp.choices?.[0]?.message ?? {};
+      if (msg.reasoning_content) {
+        process.stdout.write(DIM + msg.reasoning_content + RESET + "\n");
+      }
       visible = msg.content ?? "";
       if (visible) {
         process.stdout.write(visible + "\n");

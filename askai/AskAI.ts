@@ -29,11 +29,11 @@ export const MODELS: Record<string, string> = {
   's++' : 'anthropic:claude-sonnet-4-6:max',
   'S'   : 'anthropic:claude-sonnet-4-6:high',
 
-  'o-'  : 'anthropic:claude-opus-4-7:low',
-  'o'   : 'anthropic:claude-opus-4-7:medium',
-  'o+'  : 'anthropic:claude-opus-4-7:high',
-  'o++' : 'anthropic:claude-opus-4-7:max',
-  'O'   : 'anthropic:claude-opus-4-7:high',
+  'o-'  : 'anthropic:claude-opus-4-6:low',
+  'o'   : 'anthropic:claude-opus-4-6:medium',
+  'o+'  : 'anthropic:claude-opus-4-6:high',
+  'o++' : 'anthropic:claude-opus-4-6:max',
+  'O'   : 'anthropic:claude-opus-4-6:high',
 
   // Google Gemini
   'i-' : 'google:gemini-3.1-pro-preview:low',
@@ -52,7 +52,7 @@ export const MODELS: Record<string, string> = {
 
   // Self-hosted (Vast.ai B200)
   'm'  : 'vast:/root/model:none',
-  'q'  : 'vast:/root/model:none',
+  'q'  : 'vast:RedHatAI/Qwen3.6-35B-A3B-NVFP4:none',
 
   // GLM-5.1 via Fireworks
   'z-' : 'fireworks:accounts/fireworks/models/glm-5p1:none',
@@ -455,7 +455,11 @@ export async function AskAI(modelSpec: string): Promise<ChatInstance> {
   }
 
   if (resolved.vendor === 'vast') {
-    const baseURL = process.env.VAST_BASE_URL ?? 'http://localhost:30000/v1';
+    // Per-model base URL override: QWEN_BASE_URL for our Qwen3.6, VAST_BASE_URL otherwise.
+    const isQwen = resolved.model === 'RedHatAI/Qwen3.6-35B-A3B-NVFP4';
+    const baseURL = isQwen
+      ? (process.env.QWEN_BASE_URL ?? 'http://52.32.147.192:42220/v1')
+      : (process.env.VAST_BASE_URL ?? 'http://localhost:30000/v1');
     return new VastChat(baseURL, resolved.model, vendorConfig);
   }
 
