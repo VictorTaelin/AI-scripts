@@ -10,11 +10,11 @@ import { FireworksChat } from './Vendors/Fireworks';
 import { countTokens } from 'gpt-tokenizer/model/gpt-4o';
 
 export const MODELS: Record<string, string> = {
-  // OpenAI GPT-5.4 family
-  'g-' : 'openai:gpt-5.4:low',
-  'g'  : 'openai:gpt-5.4:medium',
-  'g+' : 'openai:gpt-5.4:high',
-  'G'  : 'openai:gpt-5.4:high',
+  // OpenAI GPT-5.5 family
+  'g-' : 'openai:gpt-5.5:low',
+  'g'  : 'openai:gpt-5.5:medium',
+  'g+' : 'openai:gpt-5.5:high',
+  'G'  : 'openai:gpt-5.5:high',
 
   // OpenAI GPT-5.3 Codex Spark family
   'c-' : 'openai:gpt-5.3-codex-spark:low',
@@ -61,9 +61,15 @@ export const MODELS: Record<string, string> = {
 
   // GLM-5.1 on Vast.ai (needs SSH tunnel on port 30000)
   'v'  : 'vast:glm-5.1-fp4:none',
+
+  // DeepSeek
+  'd-' : 'deepseek:deepseek-v4-pro:low',
+  'd'  : 'deepseek:deepseek-v4-pro:medium',
+  'd+' : 'deepseek:deepseek-v4-pro:high',
+  'D'  : 'deepseek:deepseek-v4-pro:high',
 };
 
-export type Vendor = 'openai' | 'anthropic' | 'google' | 'openrouter' | 'xai' | 'vast' | 'fireworks';
+export type Vendor = 'openai' | 'anthropic' | 'google' | 'openrouter' | 'xai' | 'vast' | 'fireworks' | 'deepseek';
 export type ThinkingLevel = 'none' | 'low' | 'medium' | 'high' | 'max' | 'auto';
 
 export interface ResolvedModelSpec {
@@ -140,7 +146,7 @@ export interface ChatInstance {
   askTools(userMessage: string, options: AskToolsOptions): Promise<AskResult>;
 }
 
-const SUPPORTED_VENDORS = new Set<Vendor>(['openai', 'anthropic', 'google', 'openrouter', 'xai', 'vast', 'fireworks']);
+const SUPPORTED_VENDORS = new Set<Vendor>(['openai', 'anthropic', 'google', 'openrouter', 'xai', 'vast', 'fireworks', 'deepseek']);
 
 const CEREBRAS_MODELS = new Set<string>([
   'gpt-oss-120b',
@@ -397,7 +403,7 @@ function mapThinkingToGoogle(
 function buildVendorConfig(vendor: Vendor, model: string, thinking: ThinkingLevel): VendorConfig {
   const cfg: VendorConfig = {};
 
-  if (vendor === 'openai' || vendor === 'openrouter') {
+  if (vendor === 'openai' || vendor === 'openrouter' || vendor === 'deepseek') {
     const reasoning = mapThinkingToOpenAI(model, thinking);
     if (reasoning) {
       cfg.openai = reasoning;
@@ -421,14 +427,16 @@ export async function AskAI(modelSpec: string): Promise<ChatInstance> {
   const resolved = resolveModelSpec(modelSpec);
   const vendorConfig = buildVendorConfig(resolved.vendor, resolved.model, resolved.thinking);
 
-  if (resolved.vendor === 'openai' || resolved.vendor === 'openrouter') {
+  if (resolved.vendor === 'openai' || resolved.vendor === 'openrouter' || resolved.vendor === 'deepseek') {
     const useCerebras = resolved.vendor === 'openai' && CEREBRAS_MODELS.has(resolved.model);
     const apiKey = await getToken(useCerebras ? 'cerebras' : resolved.vendor);
     const baseURL = useCerebras
       ? process.env.CEREBRAS_BASE_URL ?? 'https://api.cerebras.ai/v1'
-      : resolved.vendor === 'openai'
-        ? 'https://api.openai.com/v1'
-        : 'https://openrouter.ai/api/v1';
+      : resolved.vendor === 'deepseek'
+        ? 'https://api.deepseek.com'
+        : resolved.vendor === 'openai'
+          ? 'https://api.openai.com/v1'
+          : 'https://openrouter.ai/api/v1';
     return new OpenAIChat(
       apiKey,
       baseURL,

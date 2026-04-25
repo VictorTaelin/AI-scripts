@@ -17,7 +17,7 @@ import { AskAI }             from '../askai/AskAI';
 var DEFAULT_MODELS = [
   'google:gemini-3.1-pro-preview:high',
   'anthropic:claude-opus-4-7:high',
-  'openai:gpt-5.4:high',
+  'openai:gpt-5.5:high',
 ];
 
 var SYSTEM = [

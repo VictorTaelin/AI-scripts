@@ -14,8 +14,8 @@ const text = fs.readFileSync('loren.txt', 'utf8');
 const models = [
   { name: 'Opus 4.7',              spec: 'anthropic:claude-opus-4-7:low' },
   { name: 'Opus 4.7 (fast)',       spec: 'anthropic:claude-opus-4-7:low:fast' },
-  { name: 'GPT 5.4',               spec: 'openai:gpt-5.4:low' },
-  { name: 'GPT 5.4 (fast)',        spec: 'openai:gpt-5.4:low:fast' },
+  { name: 'GPT 5.5',               spec: 'openai:gpt-5.5:low' },
+  { name: 'GPT 5.5 (fast)',        spec: 'openai:gpt-5.5:low:fast' },
   { name: 'GPT Codex 5.3',         spec: 'openai:gpt-5.3-codex:low' },
   { name: 'GPT Codex 5.3 (fast)',  spec: 'openai:gpt-5.3-codex:low:fast' },
   { name: 'Gemini 3.1 Pro',        spec: 'google:gemini-3.1-pro-preview:low' },
