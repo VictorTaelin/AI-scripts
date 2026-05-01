@@ -11,7 +11,7 @@ import type {
 
 type Role = "user" | "assistant";
 
-const DEFAULT_MAX_TOKENS = 128000;
+const FALLBACK_MAX_OUTPUT_TOKENS = 128000;
 const FAST_MODE_BETA = "fast-mode-2026-02-01";
 const TEXT_EDITOR_TOOL_NAME = "str_replace_based_edit_tool";
 const TEXT_EDITOR_TOOL_TYPE = "text_editor_20250728";
@@ -136,6 +136,17 @@ function createStreamMarkerState(onText: (text: string) => void) {
   };
 }
 
+function anthropicMaxOutputTokens(model: string): number {
+  const normalized = model.toLowerCase();
+  if (normalized.includes("claude-opus-4-7") || normalized.includes("claude-opus-4-6")) {
+    return 128000;
+  }
+  if (normalized.includes("claude-sonnet-4-6") || normalized.includes("claude-haiku-4-5")) {
+    return 64000;
+  }
+  return FALLBACK_MAX_OUTPUT_TOKENS;
+}
+
 export class AnthropicChat implements ChatInstance {
   private readonly client: Anthropic;
   private readonly model: string;
@@ -190,7 +201,7 @@ export class AnthropicChat implements ChatInstance {
 
   private buildParams(options: AskOptions, wantStream: boolean, messages?: any[]): any {
     const mergedAnthropicConfig = this.mergeAnthropicConfig(options);
-    const maxTokens = options.max_tokens ?? DEFAULT_MAX_TOKENS;
+    const maxTokens = anthropicMaxOutputTokens(this.model);
     const params: any = {
       model: this.model,
       stream: wantStream,
@@ -349,9 +360,6 @@ export class AnthropicChat implements ChatInstance {
     conversation.push({ role: "user", content: userMessage });
 
     const localOptions: AskOptions = { ...options };
-    if (typeof localOptions.max_tokens !== "number") {
-      localOptions.max_tokens = 8192;
-    }
     const useNativeEditor = canUseNativeEditor(tools);
     let plain = "";
     let printedReasoning = false;

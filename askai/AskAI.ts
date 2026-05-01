@@ -70,7 +70,7 @@ export const MODELS: Record<string, string> = {
 };
 
 export type Vendor = 'openai' | 'anthropic' | 'google' | 'openrouter' | 'xai' | 'vast' | 'fireworks' | 'deepseek';
-export type ThinkingLevel = 'none' | 'low' | 'medium' | 'high' | 'max' | 'auto';
+export type ThinkingLevel = 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'auto';
 
 export interface ResolvedModelSpec {
   vendor: Vendor;
@@ -94,7 +94,7 @@ export interface VendorConfig {
       type: 'enabled';
       budget_tokens: number;
     } | null;
-    effort?: 'low' | 'medium' | 'high' | 'max';
+    effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   };
   google?: {
     config?: {
@@ -305,9 +305,9 @@ function resolveModelSpecRaw(spec: string): ResolvedModelSpec {
   let thinking: ThinkingLevel = 'auto';
   if (thinkingRaw) {
     const normalized = thinkingRaw.trim().toLowerCase();
-    if (!['none', 'low', 'medium', 'high', 'max', 'auto'].includes(normalized)) {
+    if (!['none', 'low', 'medium', 'high', 'xhigh', 'max', 'auto'].includes(normalized)) {
       throw new Error(
-        `Unsupported thinking budget "${thinkingRaw}", expected one of none|low|medium|high|max|auto`,
+        `Unsupported thinking budget "${thinkingRaw}", expected one of none|low|medium|high|xhigh|max|auto`,
       );
     }
     thinking = normalized as ThinkingLevel;
@@ -349,9 +349,11 @@ function mapThinkingToAnthropic(
       ? 'medium' as const
       : thinking === 'high'
         ? 'high' as const
-        : thinking === 'max'
-          ? 'max' as const
-          : 'medium' as const; // auto -> medium
+        : thinking === 'xhigh'
+          ? 'xhigh' as const
+          : thinking === 'max'
+            ? 'max' as const
+            : 'medium' as const; // auto -> medium
   return {
     thinking: { type: 'adaptive' as const },
     effort,
