@@ -10,11 +10,11 @@ import { FireworksChat } from './Vendors/Fireworks';
 import { countTokens } from 'gpt-tokenizer/model/gpt-4o';
 
 export const MODELS: Record<string, string> = {
-  // OpenAI GPT-5.5 family
-  'g-' : 'openai:gpt-5.5:low',
-  'g'  : 'openai:gpt-5.5:medium',
-  'g+' : 'openai:gpt-5.5:high',
-  'G'  : 'openai:gpt-5.5:high',
+  // OpenAI GPT-5.4 family
+  'g-' : 'openai:gpt-5.4:low',
+  'g'  : 'openai:gpt-5.4:medium',
+  'g+' : 'openai:gpt-5.4:high',
+  'G'  : 'openai:gpt-5.4:high',
 
   // OpenAI GPT-5.3 Codex Spark family
   'c-' : 'openai:gpt-5.3-codex-spark:low',
@@ -29,11 +29,11 @@ export const MODELS: Record<string, string> = {
   's++' : 'anthropic:claude-sonnet-4-6:max',
   'S'   : 'anthropic:claude-sonnet-4-6:high',
 
-  'o-'  : 'anthropic:claude-opus-4-6:low',
-  'o'   : 'anthropic:claude-opus-4-6:medium',
-  'o+'  : 'anthropic:claude-opus-4-6:high',
-  'o++' : 'anthropic:claude-opus-4-6:max',
-  'O'   : 'anthropic:claude-opus-4-6:high',
+  'o-'  : 'anthropic:claude-opus-4-7:low',
+  'o'   : 'anthropic:claude-opus-4-7:medium',
+  'o+'  : 'anthropic:claude-opus-4-7:high',
+  'o++' : 'anthropic:claude-opus-4-7:max',
+  'O'   : 'anthropic:claude-opus-4-7:high',
 
   // Google Gemini
   'i-' : 'google:gemini-3.1-pro-preview:low',
@@ -50,28 +50,21 @@ export const MODELS: Record<string, string> = {
   'x'  : 'xai:grok-4-0709:medium',
   'X'  : 'xai:grok-4-0709:high',
 
-  // Self-hosted
+  // Self-hosted (Vast.ai B200)
   'm'  : 'vast:/root/model:none',
-  // Qwen3.6-35B-A3B IQ3_S GGUF served by llama.cpp on ssh mini.
-  'q'  : 'local:Qwen3.6-35B-A3B-IQ3S:none',
+  'q'  : 'vast:RedHatAI/Qwen3.6-35B-A3B-NVFP4:none',
 
   // GLM-5.1 via Fireworks
   'z-' : 'fireworks:accounts/fireworks/models/glm-5p1:none',
   'z'  : 'fireworks:accounts/fireworks/models/glm-5p1:none',
   'z+' : 'fireworks:accounts/fireworks/models/glm-5p1:none',
 
-  // Gemma 4 31B dense served with the DFlash drafter on Vast.ai B200.
-  'v'  : 'vast:google/gemma-4-31B-it:none',
-
-  // DeepSeek
-  'd-' : 'deepseek:deepseek-v4-pro:low',
-  'd'  : 'deepseek:deepseek-v4-pro:medium',
-  'd+' : 'deepseek:deepseek-v4-pro:high',
-  'D'  : 'deepseek:deepseek-v4-pro:high',
+  // GLM-5.1 on Vast.ai (needs SSH tunnel on port 30000)
+  'v'  : 'vast:glm-5.1-fp4:none',
 };
 
-export type Vendor = 'openai' | 'anthropic' | 'google' | 'openrouter' | 'xai' | 'vast' | 'local' | 'fireworks' | 'deepseek';
-export type ThinkingLevel = 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'auto';
+export type Vendor = 'openai' | 'anthropic' | 'google' | 'openrouter' | 'xai' | 'vast' | 'fireworks';
+export type ThinkingLevel = 'none' | 'low' | 'medium' | 'high' | 'max' | 'auto';
 
 export interface ResolvedModelSpec {
   vendor: Vendor;
@@ -95,7 +88,7 @@ export interface VendorConfig {
       type: 'enabled';
       budget_tokens: number;
     } | null;
-    effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+    effort?: 'low' | 'medium' | 'high' | 'max';
   };
   google?: {
     config?: {
@@ -106,9 +99,6 @@ export interface VendorConfig {
         includeThoughts?: boolean;
       };
     };
-  };
-  vast?: {
-    chat_template_kwargs?: Record<string, any>;
   };
 }
 
@@ -150,7 +140,7 @@ export interface ChatInstance {
   askTools(userMessage: string, options: AskToolsOptions): Promise<AskResult>;
 }
 
-const SUPPORTED_VENDORS = new Set<Vendor>(['openai', 'anthropic', 'google', 'openrouter', 'xai', 'vast', 'local', 'fireworks', 'deepseek']);
+const SUPPORTED_VENDORS = new Set<Vendor>(['openai', 'anthropic', 'google', 'openrouter', 'xai', 'vast', 'fireworks']);
 
 const CEREBRAS_MODELS = new Set<string>([
   'gpt-oss-120b',
@@ -170,7 +160,6 @@ const API_KEY_ENV_VARS: Record<string, string[]> = {
   xai: ['XAI_API_KEY'],
   cerebras: ['CEREBRAS_API_KEY'],
   vast: [],
-  local: [],
   fireworks: [],
 };
 
@@ -310,9 +299,9 @@ function resolveModelSpecRaw(spec: string): ResolvedModelSpec {
   let thinking: ThinkingLevel = 'auto';
   if (thinkingRaw) {
     const normalized = thinkingRaw.trim().toLowerCase();
-    if (!['none', 'low', 'medium', 'high', 'xhigh', 'max', 'auto'].includes(normalized)) {
+    if (!['none', 'low', 'medium', 'high', 'max', 'auto'].includes(normalized)) {
       throw new Error(
-        `Unsupported thinking budget "${thinkingRaw}", expected one of none|low|medium|high|xhigh|max|auto`,
+        `Unsupported thinking budget "${thinkingRaw}", expected one of none|low|medium|high|max|auto`,
       );
     }
     thinking = normalized as ThinkingLevel;
@@ -354,11 +343,9 @@ function mapThinkingToAnthropic(
       ? 'medium' as const
       : thinking === 'high'
         ? 'high' as const
-        : thinking === 'xhigh'
-          ? 'xhigh' as const
-          : thinking === 'max'
-            ? 'max' as const
-            : 'medium' as const; // auto -> medium
+        : thinking === 'max'
+          ? 'max' as const
+          : 'medium' as const; // auto -> medium
   return {
     thinking: { type: 'adaptive' as const },
     effort,
@@ -407,24 +394,10 @@ function mapThinkingToGoogle(
   };
 }
 
-function mapThinkingToVast(
-  model: string,
-  thinking: ThinkingLevel,
-): VendorConfig['vast'] | undefined {
-  if (!model.toLowerCase().includes('gemma-4')) {
-    return undefined;
-  }
-  return {
-    chat_template_kwargs: {
-      enable_thinking: thinking !== 'none',
-    },
-  };
-}
-
 function buildVendorConfig(vendor: Vendor, model: string, thinking: ThinkingLevel): VendorConfig {
   const cfg: VendorConfig = {};
 
-  if (vendor === 'openai' || vendor === 'openrouter' || vendor === 'deepseek') {
+  if (vendor === 'openai' || vendor === 'openrouter') {
     const reasoning = mapThinkingToOpenAI(model, thinking);
     if (reasoning) {
       cfg.openai = reasoning;
@@ -441,11 +414,6 @@ function buildVendorConfig(vendor: Vendor, model: string, thinking: ThinkingLeve
     cfg.google = google;
   }
 
-  const vast = mapThinkingToVast(model, thinking);
-  if (vendor === 'vast' && vast) {
-    cfg.vast = vast;
-  }
-
   return cfg;
 }
 
@@ -453,16 +421,14 @@ export async function AskAI(modelSpec: string): Promise<ChatInstance> {
   const resolved = resolveModelSpec(modelSpec);
   const vendorConfig = buildVendorConfig(resolved.vendor, resolved.model, resolved.thinking);
 
-  if (resolved.vendor === 'openai' || resolved.vendor === 'openrouter' || resolved.vendor === 'deepseek') {
+  if (resolved.vendor === 'openai' || resolved.vendor === 'openrouter') {
     const useCerebras = resolved.vendor === 'openai' && CEREBRAS_MODELS.has(resolved.model);
     const apiKey = await getToken(useCerebras ? 'cerebras' : resolved.vendor);
     const baseURL = useCerebras
       ? process.env.CEREBRAS_BASE_URL ?? 'https://api.cerebras.ai/v1'
-      : resolved.vendor === 'deepseek'
-        ? 'https://api.deepseek.com'
-        : resolved.vendor === 'openai'
-          ? 'https://api.openai.com/v1'
-          : 'https://openrouter.ai/api/v1';
+      : resolved.vendor === 'openai'
+        ? 'https://api.openai.com/v1'
+        : 'https://openrouter.ai/api/v1';
     return new OpenAIChat(
       apiKey,
       baseURL,
@@ -489,24 +455,11 @@ export async function AskAI(modelSpec: string): Promise<ChatInstance> {
   }
 
   if (resolved.vendor === 'vast') {
-    // VastChat is also used as a generic OpenAI-compatible client, but this
-    // branch is for actual Vast.ai / remote self-hosted models.
-    const modelName = resolved.model.toLowerCase();
-    const isQwen = modelName.includes('qwen3.6');
-    const isGemma = modelName.includes('gemma-4');
+    // Per-model base URL override: QWEN_BASE_URL for our Qwen3.6, VAST_BASE_URL otherwise.
+    const isQwen = resolved.model === 'RedHatAI/Qwen3.6-35B-A3B-NVFP4';
     const baseURL = isQwen
-      ? (process.env.QWEN_BASE_URL ?? 'http://52.32.147.192:42220/v1')
-      : isGemma
-        ? (process.env.GEMMA_BASE_URL ?? process.env.VAST_GEMMA_BASE_URL ?? 'http://44.227.210.72:42458/v1')
+      ? (process.env.QWEN_BASE_URL ?? 'http://44.228.159.145:42275/v1')
       : (process.env.VAST_BASE_URL ?? 'http://localhost:30000/v1');
-    return new VastChat(baseURL, resolved.model, vendorConfig);
-  }
-
-  if (resolved.vendor === 'local') {
-    // Local OpenAI-compatible servers. `q` defaults to llama.cpp on ssh mini.
-    const baseURL = process.env.LOCAL_OPENAI_BASE_URL
-      ?? process.env.QWEN_MINI_BASE_URL
-      ?? 'http://100.100.15.51:18080/v1';
     return new VastChat(baseURL, resolved.model, vendorConfig);
   }
 

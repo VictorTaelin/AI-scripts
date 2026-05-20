@@ -60,6 +60,10 @@ export class VastChat implements ChatInstance {
     }
   }
 
+  private chatTemplateKwargs(): Record<string, any> {
+    return this.vendorConfig?.vast?.chat_template_kwargs ?? {};
+  }
+
   async askTools(userMessage: string, options: AskToolsOptions): Promise<AskResult> {
     const tools = options.tools ?? [];
     if (tools.length === 0) {
@@ -85,6 +89,10 @@ export class VastChat implements ChatInstance {
         },
       })),
     };
+    const chatTemplateKwargs = this.chatTemplateKwargs();
+    if (Object.keys(chatTemplateKwargs).length > 0) {
+      body.chat_template_kwargs = chatTemplateKwargs;
+    }
 
     if (typeof options.temperature === "number") {
       body.temperature = options.temperature;
@@ -132,8 +140,11 @@ export class VastChat implements ChatInstance {
     const body: Record<string, any> = {
       model: this.model,
       messages: this.messages as any,
-      chat_template_kwargs: { enable_thinking: false },
     };
+    const chatTemplateKwargs = this.chatTemplateKwargs();
+    if (Object.keys(chatTemplateKwargs).length > 0) {
+      body.chat_template_kwargs = chatTemplateKwargs;
+    }
 
     if (typeof options.temperature === "number") {
       body.temperature = options.temperature;

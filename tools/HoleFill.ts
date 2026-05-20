@@ -72,7 +72,7 @@ async function main(): Promise<void> {
   file_code = leftAlignHoles(file_code);
   mini_code = leftAlignHoles(mini_code);
 
-  if (mini) await fs.writeFile(mini, mini_code, 'utf-8');
+  if (mini) await fs.writeFile(path.join('/tmp', path.basename(mini)), mini_code, 'utf-8');
 
   /* build prompt */
   const tokens = tokenCount(mini_code);
@@ -100,7 +100,9 @@ async function main(): Promise<void> {
   const fill = match[1].replace(/\$/g, '$$$$').replace(/^\n+|\n+$/g, '');
   file_code  = file_code.replace('.?.', fill);
 
-  await fs.writeFile(file, file_code, 'utf-8');
+  const outPath = path.join('/tmp', path.basename(file));
+  await fs.writeFile(outPath, file_code, 'utf-8');
+  console.log('output_file:', outPath);
 
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const logDir = path.join(os.homedir(), '.ai', 'prompt_history');
