@@ -32,7 +32,7 @@ function leftAlignHoles(code: string): string {
 async function main(): Promise<void> {
   const file  = process.argv[2];
   const mini  = process.argv[3];
-  const model = process.argv[4] || 'c';
+  const model = process.argv[4] || 'gpt-4o-mini';
   const resolvedModel = resolveModelSpec(model);
   const modelDescriptor = `${resolvedModel.vendor}:${resolvedModel.model}:${resolvedModel.thinking}${resolvedModel.fast ? ':fast' : ''}`;
 
@@ -72,7 +72,10 @@ async function main(): Promise<void> {
   file_code = leftAlignHoles(file_code);
   mini_code = leftAlignHoles(mini_code);
 
-  if (mini) await fs.writeFile(path.join('/tmp', path.basename(mini)), mini_code, 'utf-8');
+  if (mini) {
+    const miniPath = path.join(os.tmpdir(), `holefill-${process.pid}-${path.basename(mini)}`);
+    await fs.writeFile(miniPath, mini_code, 'utf-8');
+  }
 
   /* build prompt */
   const tokens = tokenCount(mini_code);
@@ -100,9 +103,8 @@ async function main(): Promise<void> {
   const fill = match[1].replace(/\$/g, '$$$$').replace(/^\n+|\n+$/g, '');
   file_code  = file_code.replace('.?.', fill);
 
-  const outPath = path.join('/tmp', path.basename(file));
-  await fs.writeFile(outPath, file_code, 'utf-8');
-  console.log('output_file:', outPath);
+  await fs.writeFile(file, file_code, 'utf-8');
+  console.log('output_file:', file);
 
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const logDir = path.join(os.homedir(), '.ai', 'prompt_history');
