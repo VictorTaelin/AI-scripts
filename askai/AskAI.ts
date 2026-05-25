@@ -29,11 +29,11 @@ export const MODELS: Record<string, string> = {
   's++' : 'anthropic:claude-sonnet-4-6:max',
   'S'   : 'anthropic:claude-sonnet-4-6:high',
 
-  'o-'  : 'anthropic:claude-opus-4-6:low',
-  'o'   : 'anthropic:claude-opus-4-6:medium',
-  'o+'  : 'anthropic:claude-opus-4-6:high',
-  'o++' : 'anthropic:claude-opus-4-6:max',
-  'O'   : 'anthropic:claude-opus-4-6:high',
+  'o-'  : 'anthropic:claude-opus-4-7:low',
+  'o'   : 'anthropic:claude-opus-4-7:medium',
+  'o+'  : 'anthropic:claude-opus-4-7:high',
+  'o++' : 'anthropic:claude-opus-4-7:max',
+  'O'   : 'anthropic:claude-opus-4-7:high',
 
   // Google Gemini
   'i-' : 'google:gemini-3.1-pro-preview:low',
@@ -222,9 +222,8 @@ async function getToken(vendor: string): Promise<string> {
 // requested on one of these, we silently fall back to the mapped model.
 // This is a deliberately hardcoded switch — remove an entry once the upstream
 // model gains fast-mode support.
-const FAST_MODE_FALLBACKS: Record<string, string> = {
-  'claude-opus-4-7': 'claude-opus-4-6',
-};
+// (Opus 4.7 gained fast-mode support, so it's no longer listed here.)
+const FAST_MODE_FALLBACKS: Record<string, string> = {};
 
 function applyFastModeFallbacks(spec: ResolvedModelSpec): ResolvedModelSpec {
   if (!spec.fast) {
