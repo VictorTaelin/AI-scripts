@@ -11,29 +11,26 @@ import { countTokens } from 'gpt-tokenizer/model/gpt-4o';
 
 export const MODELS: Record<string, string> = {
   // OpenAI GPT-5.5 family
+  'g--': 'openai:gpt-5.5:none',
   'g-' : 'openai:gpt-5.5:low',
   'g'  : 'openai:gpt-5.5:medium',
   'g+' : 'openai:gpt-5.5:high',
   'G'  : 'openai:gpt-5.5:high',
 
-  // OpenAI GPT-5.3 Codex Spark family
-  'c-' : 'openai:gpt-5.3-codex-spark:low',
-  'c'  : 'openai:gpt-5.3-codex-spark:medium',
-  'c+' : 'openai:gpt-5.3-codex-spark:high',
-  'C'  : 'openai:gpt-5.3-codex-spark:high',
-
   // Anthropic Claude
+  's--' : 'anthropic:claude-sonnet-4-6:none',
   's-'  : 'anthropic:claude-sonnet-4-6:low',
   's'   : 'anthropic:claude-sonnet-4-6:medium',
   's+'  : 'anthropic:claude-sonnet-4-6:high',
   's++' : 'anthropic:claude-sonnet-4-6:max',
   'S'   : 'anthropic:claude-sonnet-4-6:high',
 
-  'o-'  : 'anthropic:claude-opus-4-7:low',
-  'o'   : 'anthropic:claude-opus-4-7:medium',
-  'o+'  : 'anthropic:claude-opus-4-7:high',
-  'o++' : 'anthropic:claude-opus-4-7:max',
-  'O'   : 'anthropic:claude-opus-4-7:high',
+  'o--' : 'anthropic:claude-opus-4-8:none',
+  'o-'  : 'anthropic:claude-opus-4-8:low',
+  'o'   : 'anthropic:claude-opus-4-8:medium',
+  'o+'  : 'anthropic:claude-opus-4-8:high',
+  'o++' : 'anthropic:claude-opus-4-8:max',
+  'O'   : 'anthropic:claude-opus-4-8:high',
 
   // Google Gemini
   'i-' : 'google:gemini-3.1-pro-preview:low',
