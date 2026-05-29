@@ -96,11 +96,29 @@ async function main(): Promise<void> {
                    ? replyRaw
                    : replyRaw.messages.map((m: any) => m.content).join('\n');
 
-  const wrapped  = replyStr.includes('<COMPLETION>') ? replyStr : `<COMPLETION>${replyStr}</COMPLETION>`;
-  const match    = /<COMPLETION>([\s\S]*?)<\/COMPLETION>/g.exec(wrapped);
-  if (!match) { console.error('Error: no <COMPLETION> in AI response.'); process.exit(1); }
+  /* --------------------------------------------------------------
+   * Extract the completion robustly:
+   *   1. <COMPLETION>...</COMPLETION>  -> inner text
+   *   2. <COMPLETION>... (no closing) -> everything after the open tag
+   *   3. no tags at all               -> the whole reply is the completion
+   * -------------------------------------------------------------- */
+  let raw: string;
+  const full = /<COMPLETION>([\s\S]*?)<\/COMPLETION>/.exec(replyStr);
+  if (full) {
+    raw = full[1];
+  } else {
+    const openIdx = replyStr.indexOf('<COMPLETION>');
+    if (openIdx !== -1) {
+      raw = replyStr.slice(openIdx + '<COMPLETION>'.length);
+      /* drop a dangling/partial closing tag if one was emitted */
+      raw = raw.replace(/<\/?COMPLETION>?\s*$/, '');
+    } else {
+      raw = replyStr;
+    }
+  }
+  const wrapped = `<COMPLETION>${raw}</COMPLETION>`;
 
-  const fill = match[1].replace(/\$/g, '$$$$').replace(/^\n+|\n+$/g, '');
+  const fill = raw.replace(/\$/g, '$$$$').replace(/^\n+|\n+$/g, '');
   file_code  = file_code.replace('.?.', fill);
 
   await fs.writeFile(file, file_code, 'utf-8');
