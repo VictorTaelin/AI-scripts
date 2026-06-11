@@ -136,6 +136,37 @@ function createStreamMarkerState(onText: (text: string) => void) {
   };
 }
 
+const CACHE_CONTROL = { type: "ephemeral" } as const;
+
+// Adds cache_control to the last block of the last message, caching the
+// entire conversation prefix. Non-destructive (copies what it touches).
+// Anthropic ignores cache_control below the model's minimum prefix size,
+// so this is safe for small prompts.
+function addCacheControlToLastMessage(messages: any[]): any[] {
+  if (messages.length === 0) {
+    return messages;
+  }
+  const out = messages.slice();
+  const last = { ...out[out.length - 1] };
+  if (typeof last.content === "string" && last.content.length > 0) {
+    last.content = [{ type: "text", text: last.content, cache_control: CACHE_CONTROL }];
+  } else if (Array.isArray(last.content) && last.content.length > 0) {
+    const blocks = last.content.slice();
+    const lastBlock = { ...blocks[blocks.length - 1] };
+    if (lastBlock.type === "text" || lastBlock.type === "image" || lastBlock.type === "tool_result") {
+      lastBlock.cache_control = CACHE_CONTROL;
+      blocks[blocks.length - 1] = lastBlock;
+      last.content = blocks;
+    } else {
+      return messages;
+    }
+  } else {
+    return messages;
+  }
+  out[out.length - 1] = last;
+  return out;
+}
+
 function anthropicMaxOutputTokens(model: string): number {
   const normalized = model.toLowerCase();
   if (normalized.includes("claude-opus-4-7") || normalized.includes("claude-opus-4-6")) {
@@ -155,7 +186,7 @@ export class AnthropicChat implements ChatInstance {
   private readonly betas: string[];
   private readonly messages: { role: Role; content: string }[] = [];
   private systemPrompt?: string;
-  private systemCacheable = false;
+  private cacheable = true;
 
   constructor(apiKey: string, model: string, vendorConfig?: VendorConfig, fast: boolean = false) {
     const betas: string[] = [];
@@ -174,7 +205,10 @@ export class AnthropicChat implements ChatInstance {
       this.systemPrompt = options.system;
     }
     if (typeof options.system_cacheable === "boolean") {
-      this.systemCacheable = options.system_cacheable;
+      this.cacheable = options.system_cacheable;
+    }
+    if (typeof options.cacheable === "boolean") {
+      this.cacheable = options.cacheable;
     }
   }
 
@@ -206,7 +240,9 @@ export class AnthropicChat implements ChatInstance {
       model: this.model,
       stream: wantStream,
       max_tokens: maxTokens,
-      messages: messages ?? this.messages,
+      messages: this.cacheable
+        ? addCacheControlToLastMessage(messages ?? this.messages)
+        : (messages ?? this.messages),
     };
     if (this.betas.length > 0) {
       params.betas = this.betas;
@@ -220,8 +256,8 @@ export class AnthropicChat implements ChatInstance {
       ? appendStreamEndInstruction(this.systemPrompt)
       : this.systemPrompt;
     if (systemPrompt) {
-      params.system = this.systemCacheable
-        ? [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }]
+      params.system = this.cacheable
+        ? [{ type: "text", text: systemPrompt, cache_control: CACHE_CONTROL }]
         : systemPrompt;
     }
 
@@ -276,9 +312,10 @@ export class AnthropicChat implements ChatInstance {
 
     const wantStream = options.stream !== false;
     this.updateSystemOptions(options);
-    const params = this.buildParams(options, wantStream);
-
+    // Push the user message BEFORE building params so the cache breakpoint
+    // lands on it (buildParams snapshots the messages array when caching).
     this.messages.push({ role: "user", content: userMessage });
+    const params = this.buildParams(options, wantStream);
 
     let plain      = "";
     let stopReason = "";

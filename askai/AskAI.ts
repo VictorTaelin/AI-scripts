@@ -32,15 +32,23 @@ export const MODELS: Record<string, string> = {
   'o++' : 'anthropic:claude-opus-4-8:max',
   'O'   : 'anthropic:claude-opus-4-8:high',
 
+  // Anthropic Claude Fable 5 (adaptive thinking always on)
+  'f--' : 'anthropic:claude-fable-5:none',
+  'f-'  : 'anthropic:claude-fable-5:low',
+  'f'   : 'anthropic:claude-fable-5:medium',
+  'f+'  : 'anthropic:claude-fable-5:high',
+  'f++' : 'anthropic:claude-fable-5:max',
+  'F'   : 'anthropic:claude-fable-5:high',
+
   // Google Gemini
   'i-' : 'google:gemini-3.1-pro-preview:low',
   'i'  : 'google:gemini-3.1-pro-preview:medium',
   'i+' : 'google:gemini-3.1-pro-preview:high',
   'I'  : 'google:gemini-3.1-pro-preview:high',
-  'f-' : 'google:gemini-3.1-flash-lite-preview:low',
-  'f'  : 'google:gemini-3.1-flash-lite-preview:medium',
-  'f+' : 'google:gemini-3.1-flash-lite-preview:high',
-  'F'  : 'google:gemini-3.1-flash-lite-preview:high',
+  'l-' : 'google:gemini-3.1-flash-lite-preview:low',
+  'l'  : 'google:gemini-3.1-flash-lite-preview:medium',
+  'l+' : 'google:gemini-3.1-flash-lite-preview:high',
+  'L'  : 'google:gemini-3.1-flash-lite-preview:high',
 
   // xAI Grok
   'x-' : 'xai:grok-4-0709:low',
@@ -52,10 +60,10 @@ export const MODELS: Record<string, string> = {
   // Qwen3.6-35B-A3B IQ3_S GGUF served by llama.cpp on ssh mini.
   'q'  : 'local:Qwen3.6-35B-A3B-IQ3S:none',
 
-  // GLM-5.1 via Fireworks
-  'z-' : 'fireworks:accounts/fireworks/models/glm-5p1:none',
-  'z'  : 'fireworks:accounts/fireworks/models/glm-5p1:none',
-  'z+' : 'fireworks:accounts/fireworks/models/glm-5p1:none',
+  // Gemma 4 12B QAT Q4_0 served by llama.cpp on cluster-81.
+  'z-' : 'local:gemma-4-12b-it-qat-q4_0.gguf:none',
+  'z'  : 'local:gemma-4-12b-it-qat-q4_0.gguf:none',
+  'z+' : 'local:gemma-4-12b-it-qat-q4_0.gguf:high',
 
   // Gemma 4 31B dense served with the DFlash drafter on Vast.ai B200.
   'v'  : 'vast:google/gemma-4-31B-it:none',
@@ -135,6 +143,8 @@ export interface AskOptions {
   max_completion_tokens?: number;
   stream?: boolean;
   system_cacheable?: boolean;
+  // Anthropic prompt caching (default: enabled). Set false to disable.
+  cacheable?: boolean;
   vendorConfig?: VendorConfig;
 }
 
@@ -407,7 +417,8 @@ function mapThinkingToVast(
   model: string,
   thinking: ThinkingLevel,
 ): VendorConfig['vast'] | undefined {
-  if (!model.toLowerCase().includes('gemma-4')) {
+  const modelName = model.toLowerCase();
+  if (!modelName.includes('gemma-4') && !modelName.includes('gemma4')) {
     return undefined;
   }
   return {
@@ -438,7 +449,7 @@ function buildVendorConfig(vendor: Vendor, model: string, thinking: ThinkingLeve
   }
 
   const vast = mapThinkingToVast(model, thinking);
-  if (vendor === 'vast' && vast) {
+  if ((vendor === 'vast' || vendor === 'local') && vast) {
     cfg.vast = vast;
   }
 
@@ -499,10 +510,16 @@ export async function AskAI(modelSpec: string): Promise<ChatInstance> {
   }
 
   if (resolved.vendor === 'local') {
-    // Local OpenAI-compatible servers. `q` defaults to llama.cpp on ssh mini.
-    const baseURL = process.env.LOCAL_OPENAI_BASE_URL
-      ?? process.env.QWEN_MINI_BASE_URL
-      ?? 'http://100.100.15.51:18080/v1';
+    // Local OpenAI-compatible servers.
+    const modelName = resolved.model.toLowerCase();
+    const isGemma = modelName.includes('gemma4') || modelName.includes('gemma-4');
+    const baseURL = isGemma
+      ? (process.env.GEMMA_CLUSTER_BASE_URL
+        ?? process.env.LOCAL_GEMMA_BASE_URL
+        ?? 'http://127.0.0.1:9379/v1')
+      : (process.env.LOCAL_OPENAI_BASE_URL
+        ?? process.env.QWEN_MINI_BASE_URL
+        ?? 'http://100.100.15.51:18080/v1');
     return new VastChat(baseURL, resolved.model, vendorConfig);
   }
 
