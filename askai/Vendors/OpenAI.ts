@@ -15,6 +15,26 @@ type Role = "user" | "assistant";
 const DIM = "\x1b[2m";
 const RESET = "\x1b[0m";
 
+// Default output budget (reasoning + answer) per model. The Responses API uses
+// a LOWER default when `max_output_tokens` is omitted, which truncates long
+// replies — so, like the Anthropic vendor, we default to each model's true
+// maximum. Returns undefined for models we don't have a known max for, leaving
+// the API default in place.
+function openaiMaxOutputTokens(model: string): number | undefined {
+  const m = model.toLowerCase();
+  // GPT-5.x family and o-series reasoning models: 128k output.
+  if (m.startsWith("gpt-5") || /^o[134]/.test(m)) {
+    return 128000;
+  }
+  if (m.startsWith("gpt-4.1")) {
+    return 32768;
+  }
+  if (m.startsWith("gpt-4o")) {
+    return 16384;
+  }
+  return undefined;
+}
+
 type ParsedDiffHunk = {
   oldText: string;
   newText: string;
@@ -288,7 +308,7 @@ export class OpenAIChat implements ChatInstance {
         ? options.max_completion_tokens
         : typeof options.max_tokens === "number"
           ? options.max_tokens
-          : undefined;
+          : openaiMaxOutputTokens(this.model);
     if (typeof maxOutputTokens === "number") {
       params.max_output_tokens = maxOutputTokens;
     }
