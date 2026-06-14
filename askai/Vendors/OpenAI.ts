@@ -229,11 +229,10 @@ export class OpenAIChat implements ChatInstance {
         ? { "HTTP-Referer": "https://github.com/victortaelin/ai-scripts" }
         : undefined;
 
-    // Pro reasoning models (e.g. gpt-5.5-pro) can take several minutes per
-    // request. The SDK default timeout (10 min) can cut these off, so we extend
-    // it to 30 min for *-pro models to avoid premature client-side timeouts.
-    const isPro = /-pro\b/.test(model);
-    const timeout = isPro ? 30 * 60 * 1000 : undefined;
+    // Reasoning / pro models can run for many minutes. The SDK's default
+    // 10-minute timeout would kill those requests, so we set an effectively
+    // unlimited timeout — never cut a model off client-side.
+    const timeout = 1000 * 60 * 60 * 24; // 24h ~ no limit
 
     this.client = new OpenAI({ apiKey, baseURL, defaultHeaders, timeout });
     this.model = model;

@@ -235,15 +235,8 @@ export class AnthropicChat implements ChatInstance {
 
   private buildParams(options: AskOptions, wantStream: boolean, messages?: any[]): any {
     const mergedAnthropicConfig = this.mergeAnthropicConfig(options);
-    const modelMax = anthropicMaxOutputTokens(this.model);
-    // Respect a caller-supplied max_tokens (capped at the model maximum). This
-    // bounds runaway adaptive thinking: without it, Opus can think for the full
-    // 128k-token budget (~20 min) and truncate before answering. Other vendors
-    // already honor options.max_tokens; Anthropic previously ignored it.
-    const maxTokens =
-      typeof options.max_tokens === "number" && options.max_tokens > 0
-        ? Math.min(options.max_tokens, modelMax)
-        : modelMax;
+    // Always allow the model's full output budget — never cap it artificially.
+    const maxTokens = anthropicMaxOutputTokens(this.model);
     const params: any = {
       model: this.model,
       stream: wantStream,

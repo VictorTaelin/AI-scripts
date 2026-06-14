@@ -10,14 +10,6 @@ const DIM = "\x1b[2m";
 const BOLD = "\x1b[1m";
 const RESET = "\x1b[0m";
 
-// Default output ceiling (thinking + answer) for each panel member and the
-// synthesizer. Without a bound, a single model's adaptive thinking at high
-// effort can run for the full vendor budget (~128k tokens / ~20 min on Opus)
-// and then truncate before producing an answer. 32k is plenty for a focused
-// answer while keeping a worst-case member to a few minutes. A caller can still
-// override this via options.max_tokens.
-const FUSION_MAX_TOKENS = 32000;
-
 // A panel member: an already-constructed chat plus the metadata shown to the
 // synthesizer and used as the IRC-style stream prefix.
 export interface FusionMember {
@@ -143,7 +135,6 @@ export class FusionChat implements ChatInstance {
     }
 
     const display = options.stream !== false;
-    const maxTokens = options.max_tokens ?? FUSION_MAX_TOKENS;
 
     // --- Phase 1: fan out to the panel in parallel ------------------------
     // Only thinking is streamed live (dim IRC lines); each agent's full answer
@@ -164,7 +155,6 @@ export class FusionChat implements ChatInstance {
           const reply = await m.chat.ask(userMessage, {
             ...options,
             stream: true,
-            max_tokens: maxTokens,
             onStream: sink,
           });
           lb.end();
@@ -221,7 +211,6 @@ export class FusionChat implements ChatInstance {
     const synthReply = await this.synth.chat.ask(synthPrompt, {
       ...options,
       stream: true,
-      max_tokens: maxTokens,
       onStream: synthSink,
     });
     synthLb.end();
