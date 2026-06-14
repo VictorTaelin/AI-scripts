@@ -225,12 +225,35 @@ const PANELS: Record<string, PanelDef> = {
   },
 };
 
-const PANEL_ALIASES: Record<string, string> = {
-  b: 'board',
-  board: 'board',
+// Panel aliases support the same +/- thinking modifiers as model aliases.
+// The chosen level is applied to every panel member AND the synthesizer; each
+// vendor then clamps it to what it actually supports (e.g. Gemini -> low/high,
+// OpenAI 'max' -> 'xhigh'). Default (bare 'b'/'board') is 'high'.
+const PANEL_ALIASES: Record<string, { panel: string; thinking: ThinkingLevel }> = {
+  'b--':   { panel: 'board', thinking: 'low' },
+  'b-':    { panel: 'board', thinking: 'medium' },
+  'b':     { panel: 'board', thinking: 'high' },
+  'b+':    { panel: 'board', thinking: 'xhigh' },
+  'b++':   { panel: 'board', thinking: 'max' },
+  'B':     { panel: 'board', thinking: 'xhigh' },
+  'board': { panel: 'board', thinking: 'high' },
+  'Board': { panel: 'board', thinking: 'high' },
 };
 
-async function buildFusionChat(panelName: string): Promise<ChatInstance> {
+// Rewrites a "vendor:model:thinking" spec with a new thinking level and fast
+// flag, so a panel-wide modifier (e.g. 'b+') overrides each member's default.
+function overrideSpec(spec: string, thinking: ThinkingLevel, fast: boolean): string {
+  const [vendor, model] = spec.split(':');
+  let out = `${vendor}:${model}:${thinking}`;
+  if (fast) out = `.${out}`;
+  return out;
+}
+
+async function buildFusionChat(
+  panelName: string,
+  thinking: ThinkingLevel,
+  fast: boolean,
+): Promise<ChatInstance> {
   const def = PANELS[panelName];
   if (!def) {
     throw new Error(`Unknown fusion panel: "${panelName}"`);
@@ -238,13 +261,16 @@ async function buildFusionChat(panelName: string): Promise<ChatInstance> {
   const members: FusionMember[] = [];
   for (const agent of def.members) {
     members.push({
-      chat: await AskAI(agent.spec),
+      chat: await AskAI(overrideSpec(agent.spec, thinking, fast)),
       label: agent.label,
       nick: agent.nick,
       desc: agent.desc,
     });
   }
-  const synth = { chat: await AskAI(def.synth.spec), label: def.synth.label };
+  const synth = {
+    chat: await AskAI(overrideSpec(def.synth.spec, thinking, fast)),
+    label: def.synth.label,
+  };
   return new FusionChat(members, synth);
 }
 
@@ -358,11 +384,12 @@ function resolveModelSpecRaw(spec: string): ResolvedModelSpec {
   }
 
   if (parts.length === 1) {
-    // Fusion panel aliases (e.g. 'b' / 'board') resolve to the pseudo-vendor
-    // 'fusion'; AskAI() dispatches these to buildFusionChat().
-    const panel = PANEL_ALIASES[trimmed.toLowerCase()];
+    // Fusion panel aliases (e.g. 'b', 'b+', 'board') resolve to the pseudo-vendor
+    // 'fusion'; AskAI() dispatches these to buildFusionChat(). The thinking level
+    // is carried through and applied to every panel member + synthesizer.
+    const panel = PANEL_ALIASES[trimmed];
     if (panel) {
-      return { model: panel, vendor: 'fusion', thinking: 'auto', fast };
+      return { model: panel.panel, vendor: 'fusion', thinking: panel.thinking, fast };
     }
     const alias = MODELS[trimmed];
     if (alias) {
@@ -560,7 +587,7 @@ export async function AskAI(modelSpec: string): Promise<ChatInstance> {
   const resolved = resolveModelSpec(modelSpec);
 
   if (resolved.vendor === 'fusion') {
-    return buildFusionChat(resolved.model);
+    return buildFusionChat(resolved.model, resolved.thinking, resolved.fast);
   }
 
   const vendorConfig = buildVendorConfig(resolved.vendor, resolved.model, resolved.thinking);
