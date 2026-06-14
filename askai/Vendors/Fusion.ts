@@ -63,13 +63,40 @@ class LineBuffer {
 function buildSynthPrompt(userMessage: string, members: FusionMember[], outputs: string[]): string {
   const parts: string[] = [];
   parts.push(
-    `The request below was independently answered by ${members.length} expert agents, ` +
-      `each with different strengths and weaknesses (described before their answers). ` +
-      `Your job is to synthesize their answers into a single, final, perfected response: ` +
-      `combine their strengths, take the best ideas, resolve contradictions, and fix mistakes. ` +
-      `Weigh each answer in light of the agent's described tendencies. ` +
-      `Do not mention the agents or that multiple answers existed — write the final answer ` +
-      `directly, as your own, following any formatting rules from the system prompt.`,
+    `The request below was independently answered by ${members.length} expert agents working ` +
+      `in isolation. Each agent has different strengths and weaknesses (described before its ` +
+      `answer). Their answers are almost certainly imperfect: some parts will be correct, some ` +
+      `will contain mistakes, some will hold unique insights the others missed, and some will ` +
+      `over- or under-shoot the request.`,
+  );
+  parts.push("");
+  parts.push(
+    `Your job is to produce a SINGLE, FINAL answer that is genuinely BETTER than every ` +
+      `individual answer. This is a synthesis task, NOT a selection task. Do NOT just pick the ` +
+      `answer you like most and paste it back — that is a failure, even if one answer looks best.`,
+  );
+  parts.push("");
+  parts.push(`Reason thoroughly BEFORE writing the final answer. In your thinking:`);
+  parts.push(
+    `- Read every answer carefully and weigh it against that agent's known tendencies.`,
+  );
+  parts.push(
+    `- Find where they AGREE (likely correct), where they CONTRADICT (resolve each conflict — ` +
+      `decide who is right and why), what each one got UNIQUELY right, and what they ALL missed.`,
+  );
+  parts.push(
+    `- Verify the claims yourself. Trust no single answer, not even the strongest one; ` +
+      `independently check facts/logic/code and fix every mistake you find.`,
+  );
+  parts.push(
+    `- Then construct one coherent, complete, polished answer that merges the strongest correct ` +
+      `pieces from across all of them and improves on all of them.`,
+  );
+  parts.push("");
+  parts.push(
+    `Then write ONLY the final answer — as your own, with no mention of the agents, the panel, ` +
+      `or that multiple answers existed, and no exposition of your analysis. Follow any ` +
+      `formatting rules from the system prompt exactly.`,
   );
   parts.push("");
   parts.push("<original_request>");
@@ -86,7 +113,10 @@ function buildSynthPrompt(userMessage: string, members: FusionMember[], outputs:
     parts.push(outputs[i] ?? "(no answer)");
     parts.push("");
   });
-  parts.push("Now write the final, combined answer.");
+  parts.push(
+    `Now reason through all ${members.length} answers as instructed above, then write the ` +
+      `final, combined answer.`,
+  );
   return parts.join("\n");
 }
 
