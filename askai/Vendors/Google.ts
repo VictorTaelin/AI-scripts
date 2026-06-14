@@ -100,7 +100,7 @@ export class GoogleChat implements ChatInstance {
     let visible = "";
     if (wantStream) {
       const response = await this.client.models.generateContentStream(request);
-      visible = await this.handleStream(response);
+      visible = await this.handleStream(response, options.onStream);
     } else {
       const response = await this.client.models.generateContent(request);
       visible = this.printCandidate(response.candidates?.[0]);
@@ -213,7 +213,10 @@ export class GoogleChat implements ChatInstance {
     return calls;
   }
 
-  private async handleStream(stream: AsyncGenerator<any>) {
+  private async handleStream(
+    stream: AsyncGenerator<any>,
+    sink?: (chunk: string, kind: "reasoning" | "text") => void,
+  ) {
     let visible = "";
     let printedThought = false;
 
@@ -225,20 +228,28 @@ export class GoogleChat implements ChatInstance {
         const text = part?.text;
         if (!text) continue;
         if (part?.thought) {
-          process.stdout.write(DIM + text + RESET);
-          printedThought = true;
+          if (sink) {
+            sink(text, "reasoning");
+          } else {
+            process.stdout.write(DIM + text + RESET);
+            printedThought = true;
+          }
         } else {
+          visible += text;
+          if (sink) {
+            sink(text, "text");
+            continue;
+          }
           if (printedThought && !visible.endsWith("\n")) {
             process.stdout.write("\n");
             printedThought = false;
           }
           process.stdout.write(text);
-          visible += text;
         }
       }
     }
 
-    process.stdout.write("\n");
+    if (!sink) process.stdout.write("\n");
     return visible;
   }
 

@@ -7,6 +7,7 @@ import { OpenAIChat } from './Vendors/OpenAI';
 import { XAIChat } from './Vendors/xai';
 import { VastChat } from './Vendors/Vast';
 import { FireworksChat } from './Vendors/Fireworks';
+import { FusionChat, FusionMember } from './Vendors/Fusion';
 import { countTokens } from 'gpt-tokenizer/model/gpt-4o';
 
 export const MODELS: Record<string, string> = {
@@ -83,7 +84,7 @@ export const MODELS: Record<string, string> = {
   'D'  : 'deepseek:deepseek-v4-pro:high',
 };
 
-export type Vendor = 'openai' | 'anthropic' | 'google' | 'openrouter' | 'xai' | 'vast' | 'local' | 'fireworks' | 'deepseek';
+export type Vendor = 'openai' | 'anthropic' | 'google' | 'openrouter' | 'xai' | 'vast' | 'local' | 'fireworks' | 'deepseek' | 'fusion';
 export type ThinkingLevel = 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'auto';
 
 export interface ResolvedModelSpec {
@@ -154,7 +155,14 @@ export interface AskOptions {
   // Anthropic prompt caching (default: enabled). Set false to disable.
   cacheable?: boolean;
   vendorConfig?: VendorConfig;
+  // Streaming sink. When set, vendors route streamed deltas to this callback
+  // instead of writing to process.stdout. Used by Fusion to interleave the
+  // output of several panel models into readable, per-model IRC-style lines.
+  // `kind` is 'reasoning' for thinking traces and 'text' for the answer body.
+  onStream?: (chunk: string, kind: StreamKind) => void;
 }
+
+export type StreamKind = 'reasoning' | 'text';
 
 export interface AskToolsOptions extends AskOptions {
   tools: ToolDef[];
@@ -165,7 +173,80 @@ export interface ChatInstance {
   askTools(userMessage: string, options: AskToolsOptions): Promise<AskResult>;
 }
 
-const SUPPORTED_VENDORS = new Set<Vendor>(['openai', 'anthropic', 'google', 'openrouter', 'xai', 'vast', 'local', 'fireworks', 'deepseek']);
+const SUPPORTED_VENDORS = new Set<Vendor>(['openai', 'anthropic', 'google', 'openrouter', 'xai', 'vast', 'local', 'fireworks', 'deepseek', 'fusion']);
+
+// ---------------------------------------------------------------------------
+// Fusion panels
+// ---------------------------------------------------------------------------
+// A panel fans a prompt out to several models in parallel (no tools), then a
+// synthesizer model combines their answers into a final one. Each agent has a
+// hardcoded nickname + description that is shown to the synthesizer so it can
+// weigh each answer against that agent's known strengths and weaknesses.
+
+interface PanelAgent {
+  spec: string;
+  label: string; // short stream prefix, e.g. "GPT-5.5"
+  nick: string; // synthesizer-facing nickname, e.g. "Fox"
+  desc: string;
+}
+
+interface PanelDef {
+  members: PanelAgent[];
+  synth: { spec: string; label: string };
+}
+
+const AGENT_FOX: PanelAgent = {
+  spec: 'openai:gpt-5.5:high',
+  label: 'GPT-5.5',
+  nick: 'Fox',
+  desc: "Most intelligent. Very careful. Spots edge cases. Produces the most correct code. Bad at following style conventions. Rarely delivers half-done work, but has a bad tendency to over-engineer and bloat the codebase with unnecessary functions, which is very harmful. Has trouble grasping intent and will often read the prompt too literally, misunderstanding it and working on the wrong thing. Tendency to reward hack, specially if there are loopholes in the prompt. Not familiar with the domain, which may affect performance. When it understands the request, its code is the most trustworthy, but almost always requires a format and style pass.",
+};
+
+const AGENT_PEPPY: PanelAgent = {
+  spec: 'anthropic:claude-opus-4-8:high',
+  label: 'Opus-4.8',
+  nick: 'Peppy',
+  desc: "Most productive and honest. Very good at understanding intent and following instructions. Best at style adherence and sticking to the format, which is very important. Familiar with the author's work, which causes it to occasionally outperform, specially when related to HVM, Interaction Calculus, Bend. Has a hard time understanding hard concepts and complex logic. Lazy and will often deliver work half-done, or without properly checking references, or double-checking every case. This often leads to bugs.",
+};
+
+const AGENT_SLIPPY: PanelAgent = {
+  spec: 'google:gemini-3.1-pro-preview:high',
+  label: 'Gemini-3.1-Pro',
+  nick: 'Slippy',
+  desc: "Most generally knowledgeable, but struggles to follow instructions. Extremely inconsistent. Has the highest highs, but the lowest lows. Will sometimes nail the task. Other times, it doesn't even understand the assignment. Should be consulted for diversity and inspiration, but considered a secondary contributor.",
+};
+
+const PANELS: Record<string, PanelDef> = {
+  // 'b' / 'board' / 'Board': Gemini 3.1 Pro + GPT-5.5 + Opus 4.8 as the panel,
+  // with Opus 4.8 itself as the synthesizer.
+  board: {
+    members: [AGENT_SLIPPY, AGENT_FOX, AGENT_PEPPY],
+    synth: { spec: 'anthropic:claude-opus-4-8:high', label: 'Opus-4.8' },
+  },
+};
+
+const PANEL_ALIASES: Record<string, string> = {
+  b: 'board',
+  board: 'board',
+};
+
+async function buildFusionChat(panelName: string): Promise<ChatInstance> {
+  const def = PANELS[panelName];
+  if (!def) {
+    throw new Error(`Unknown fusion panel: "${panelName}"`);
+  }
+  const members: FusionMember[] = [];
+  for (const agent of def.members) {
+    members.push({
+      chat: await AskAI(agent.spec),
+      label: agent.label,
+      nick: agent.nick,
+      desc: agent.desc,
+    });
+  }
+  const synth = { chat: await AskAI(def.synth.spec), label: def.synth.label };
+  return new FusionChat(members, synth);
+}
 
 const CEREBRAS_MODELS = new Set<string>([
   'gpt-oss-120b',
@@ -277,6 +358,12 @@ function resolveModelSpecRaw(spec: string): ResolvedModelSpec {
   }
 
   if (parts.length === 1) {
+    // Fusion panel aliases (e.g. 'b' / 'board') resolve to the pseudo-vendor
+    // 'fusion'; AskAI() dispatches these to buildFusionChat().
+    const panel = PANEL_ALIASES[trimmed.toLowerCase()];
+    if (panel) {
+      return { model: panel, vendor: 'fusion', thinking: 'auto', fast };
+    }
     const alias = MODELS[trimmed];
     if (alias) {
       if (alias.includes(':')) {
@@ -471,6 +558,11 @@ function buildVendorConfig(vendor: Vendor, model: string, thinking: ThinkingLeve
 
 export async function AskAI(modelSpec: string): Promise<ChatInstance> {
   const resolved = resolveModelSpec(modelSpec);
+
+  if (resolved.vendor === 'fusion') {
+    return buildFusionChat(resolved.model);
+  }
+
   const vendorConfig = buildVendorConfig(resolved.vendor, resolved.model, resolved.thinking);
 
   if (resolved.vendor === 'openai' || resolved.vendor === 'openrouter' || resolved.vendor === 'deepseek') {

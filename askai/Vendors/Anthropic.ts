@@ -320,6 +320,7 @@ export class AnthropicChat implements ChatInstance {
     let plain      = "";
     let stopReason = "";
 
+    const sink = options.onStream;
     if (wantStream) {
       const streamResp: AsyncIterable<any> = (await this.createMessage(params)) as any;
       let printedReasoning = false;
@@ -327,19 +328,27 @@ export class AnthropicChat implements ChatInstance {
         if (!text) {
           return;
         }
+        plain += text;
+        if (sink) {
+          sink(text, "text");
+          return;
+        }
         if (printedReasoning) {
           process.stdout.write("\n");
           printedReasoning = false;
         }
         process.stdout.write(text);
-        plain += text;
       });
       for await (const event of streamResp) {
         if (event.type === "content_block_delta") {
           const delta: any = event.delta;
           if (delta.type === "thinking_delta") {
-            process.stdout.write(`\x1b[2m${delta.thinking}\x1b[0m`);
-            printedReasoning = true;
+            if (sink) {
+              sink(delta.thinking, "reasoning");
+            } else {
+              process.stdout.write(`\x1b[2m${delta.thinking}\x1b[0m`);
+              printedReasoning = true;
+            }
           } else if (delta.type === "text_delta") {
             if (marker.push(delta.text)) {
               stopReason = "end_turn";
@@ -350,7 +359,7 @@ export class AnthropicChat implements ChatInstance {
           stopReason = event.delta?.stop_reason ?? "";
         }
       }
-      process.stdout.write("\n");
+      if (!sink) process.stdout.write("\n");
     } else {
       const message: any = await this.createMessage({ ...params, stream: false });
       stopReason = message.stop_reason ?? "";

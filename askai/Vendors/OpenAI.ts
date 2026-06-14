@@ -567,6 +567,7 @@ export class OpenAIChat implements ChatInstance {
       serviceTierUsed: null,
     };
 
+    const sink = options.onStream;
     let visible = "";
     let lastType: "reasoning" | "text" | null = null;
     let lastChar = "\n";
@@ -581,13 +582,14 @@ export class OpenAIChat implements ChatInstance {
 
     const writeChunk = (chunk: string, kind: "reasoning" | "text") => {
       if (!chunk) return;
+      if (kind === "text") visible += chunk;
+      if (sink) { sink(chunk, kind); return; }
       if (kind === "reasoning") {
         ensureBoundary("reasoning");
         process.stdout.write(DIM + chunk + RESET);
       } else {
         ensureBoundary("text");
         process.stdout.write(chunk);
-        visible += chunk;
       }
       const end = chunk[chunk.length - 1];
       if (end) lastChar = end;
@@ -599,7 +601,7 @@ export class OpenAIChat implements ChatInstance {
         writeChunk(evt?.delta ?? "", "reasoning"),
       );
       stream.on("response.reasoning_summary_part.done", () => {
-        if (lastChar !== "\n") {
+        if (!sink && lastChar !== "\n") {
           process.stdout.write("\n");
           lastChar = "\n";
         }
@@ -608,7 +610,7 @@ export class OpenAIChat implements ChatInstance {
         writeChunk(evt?.delta ?? "", "text"),
       );
       stream.on("response.completed", () => {
-        if (lastChar !== "\n") {
+        if (!sink && lastChar !== "\n") {
           process.stdout.write("\n");
           lastChar = "\n";
         }
