@@ -24,22 +24,17 @@ export interface FusionSynth {
   label: string;
 }
 
-// Buffers a single model's streamed deltas and flushes them, one complete line
-// at a time, as `<label> ...`. Because panel models run in parallel, streaming
-// their raw deltas directly would interleave into an unreadable soup of letters.
-// Flushing only whole lines keeps each model's output on its own line.
+// Buffers a single model's streamed thinking deltas and flushes them, one
+// complete line at a time, as a dim `<label> ...`. Because panel models run in
+// parallel, streaming their raw deltas directly would interleave into an
+// unreadable soup of letters. Flushing only whole lines keeps each model's
+// thoughts on their own line (still interleaved between models, like an IRC
+// chat, but each line readable and correctly attributed).
 class LineBuffer {
   private buf = "";
-  private kind: StreamKind = "reasoning";
   constructor(private readonly label: string) {}
 
-  push(chunk: string, kind: StreamKind): void {
-    // A change of kind (thinking -> answer) ends the current partial line.
-    if (kind !== this.kind && this.buf.length > 0) {
-      this.flushLine(this.buf);
-      this.buf = "";
-    }
-    this.kind = kind;
+  push(chunk: string): void {
     this.buf += chunk;
     let idx: number;
     while ((idx = this.buf.indexOf("\n")) !== -1) {
@@ -59,8 +54,8 @@ class LineBuffer {
   private flushLine(line: string): void {
     if (line.trim() === "") return; // skip blank lines to reduce noise
     // Whole-line writes are atomic enough on a TTY that parallel members never
-    // interleave mid-line. Panel output is dimmed; the final answer (from the
-    // synthesizer) is rendered normally so it stands out.
+    // interleave mid-line. Thinking is dimmed; final answers are printed
+    // separately, in normal color.
     process.stdout.write(`${DIM}<${this.label}> ${line}${RESET}\n`);
   }
 }
@@ -111,17 +106,20 @@ export class FusionChat implements ChatInstance {
 
     const display = options.stream !== false;
 
-    // --- Phase 1: fan out to the panel in parallel -------------------------
+    // --- Phase 1: fan out to the panel in parallel ------------------------
+    // Only thinking is streamed live (dim IRC lines); each agent's full answer
+    // is printed afterwards, in normal color, so it is easy to read.
     if (display) {
       const names = this.members.map((m) => m.label).join(", ");
-      process.stdout.write(`${BOLD}\u25B6 Running panel (${names})...${RESET}\n`);
+      process.stdout.write(`\n${BOLD}\u25B6 Running panel (${names})...${RESET}\n`);
     }
 
     const outputs = await Promise.all(
       this.members.map(async (m) => {
         const lb = new LineBuffer(m.label);
         const sink = (chunk: string, kind: StreamKind) => {
-          if (display) lb.push(chunk, kind);
+          // Stream thinking only; the answer body is shown later, not live.
+          if (display && kind === "reasoning") lb.push(chunk);
         };
         try {
           const reply = await m.chat.ask(userMessage, {
@@ -144,19 +142,49 @@ export class FusionChat implements ChatInstance {
       }),
     );
 
-    // --- Phase 2: synthesize -----------------------------------------------
+    // --- Phase 1b: show each agent's final answer, after all thinking ------
+    if (display) {
+      this.members.forEach((m, i) => {
+        process.stdout.write(`\n${BOLD}\u2500\u2500 ${m.label} (${m.nick}) \u2500\u2500${RESET}\n`);
+        process.stdout.write(`${outputs[i].trim()}\n`);
+      });
+    }
+
+    // --- Phase 2: synthesize ----------------------------------------------
     if (display) {
       process.stdout.write(
-        `${BOLD}\u25B6 Synthesizing final answer with ${this.synth.label}...${RESET}\n`,
+        `\n${BOLD}\u25B6 Synthesizing final answer with ${this.synth.label}...${RESET}\n`,
       );
     }
 
     const synthPrompt = buildSynthPrompt(userMessage, this.members, outputs);
+
+    // Route the synth through a sink too: its thinking is shown as dim
+    // <label> lines (so it is clearly attributed and visible), while its
+    // answer body streams in normal color as the final output.
+    const synthLb = new LineBuffer(this.synth.label);
+    let answerStarted = false;
+    const synthSink = (chunk: string, kind: StreamKind) => {
+      if (!display) return;
+      if (kind === "reasoning") {
+        synthLb.push(chunk);
+        return;
+      }
+      if (!answerStarted) {
+        synthLb.end();
+        process.stdout.write("\n");
+        answerStarted = true;
+      }
+      process.stdout.write(chunk);
+    };
+
     const synthReply = await this.synth.chat.ask(synthPrompt, {
       ...options,
-      stream: display,
-      onStream: undefined, // synth streams normally to stdout (dim + answer)
+      stream: true,
+      onStream: synthSink,
     });
+    synthLb.end();
+    if (display && answerStarted) process.stdout.write("\n");
 
     return typeof synthReply === "string"
       ? synthReply
