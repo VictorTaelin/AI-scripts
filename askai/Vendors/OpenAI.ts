@@ -229,7 +229,13 @@ export class OpenAIChat implements ChatInstance {
         ? { "HTTP-Referer": "https://github.com/victortaelin/ai-scripts" }
         : undefined;
 
-    this.client = new OpenAI({ apiKey, baseURL, defaultHeaders });
+    // Pro reasoning models (e.g. gpt-5.5-pro) can take several minutes per
+    // request. The SDK default timeout (10 min) can cut these off, so we extend
+    // it to 30 min for *-pro models to avoid premature client-side timeouts.
+    const isPro = /-pro\b/.test(model);
+    const timeout = isPro ? 30 * 60 * 1000 : undefined;
+
+    this.client = new OpenAI({ apiKey, baseURL, defaultHeaders, timeout });
     this.model = model;
     this.vendor = vendor;
     this.vendorConfig = vendorConfig;
@@ -368,9 +374,89 @@ export class OpenAIChat implements ChatInstance {
       }));
     }
 
-    const response: any = await (this.client as any).responses.create(params);
+    const wantStream = options.stream !== false;
+
+    // Extracts tool calls from a Responses API `output` array.
+    const extractToolCalls = (output: any[]): ToolCall[] => {
+      const calls: ToolCall[] = [];
+      for (const item of output ?? []) {
+        if (item?.type === "function_call") {
+          const name = typeof item.name === "string" ? item.name : "";
+          if (!name) continue;
+          calls.push({
+            id: typeof item.call_id === "string" ? item.call_id : undefined,
+            name,
+            input: parseToolArgs(item.arguments),
+          });
+        } else if (item?.type === "apply_patch_call") {
+          for (const call of normalizeApplyPatchCall(item)) {
+            calls.push(call);
+          }
+        }
+      }
+      return calls;
+    };
+
     let visible = "";
-    const toolCalls: ToolCall[] = [];
+
+    if (wantStream) {
+      // Stream reasoning summary + output text live (same UX as ask()), then
+      // pull tool calls from the final response. Pro models can run for minutes,
+      // so without this the user would stare at a blank screen the whole time.
+      let lastType: "reasoning" | "text" | null = null;
+      let lastChar = "\n";
+      const ensureBoundary = (next: "reasoning" | "text") => {
+        if (lastType && lastType !== next && lastChar !== "\n") {
+          process.stdout.write("\n");
+          lastChar = "\n";
+        }
+        lastType = next;
+      };
+      const writeChunk = (chunk: string, kind: "reasoning" | "text") => {
+        if (!chunk) return;
+        if (kind === "reasoning") {
+          ensureBoundary("reasoning");
+          process.stdout.write(DIM + chunk + RESET);
+        } else {
+          ensureBoundary("text");
+          process.stdout.write(chunk);
+          visible += chunk;
+        }
+        const end = chunk[chunk.length - 1];
+        if (end) lastChar = end;
+      };
+
+      const stream = await (this.client as any).responses.stream(params);
+      stream.on("response.reasoning_summary_text.delta", (evt: any) =>
+        writeChunk(evt?.delta ?? "", "reasoning"),
+      );
+      stream.on("response.reasoning_summary_part.done", () => {
+        if (lastChar !== "\n") {
+          process.stdout.write("\n");
+          lastChar = "\n";
+        }
+      });
+      stream.on("response.output_text.delta", (evt: any) =>
+        writeChunk(evt?.delta ?? "", "text"),
+      );
+      stream.on("response.completed", () => {
+        if (lastChar !== "\n") {
+          process.stdout.write("\n");
+          lastChar = "\n";
+        }
+      });
+      stream.on("error", (err: any) => {
+        console.error("[OpenAIChat stream error]:", err?.message || err);
+      });
+      await stream.done();
+      const finalResponse: any = await stream.finalResponse();
+      const toolCalls = extractToolCalls(finalResponse?.output ?? []);
+      this.messages.push({ role: "assistant", content: visible });
+      return { text: visible, toolCalls };
+    }
+
+    const response: any = await (this.client as any).responses.create(params);
+    const toolCalls: ToolCall[] = extractToolCalls(response?.output ?? []);
 
     for (const item of response?.output ?? []) {
       if (item?.type === "reasoning" && Array.isArray(item.summary)) {
@@ -394,27 +480,6 @@ export class OpenAIChat implements ChatInstance {
         }
         if (wroteLine) {
           process.stdout.write("\n");
-        }
-        continue;
-      }
-
-      if (item?.type === "function_call") {
-        const name = typeof item.name === "string" ? item.name : "";
-        if (!name) {
-          continue;
-        }
-        toolCalls.push({
-          id: typeof item.call_id === "string" ? item.call_id : undefined,
-          name,
-          input: parseToolArgs(item.arguments),
-        });
-        continue;
-      }
-
-      if (item?.type === "apply_patch_call") {
-        const normalized = normalizeApplyPatchCall(item);
-        for (const call of normalized) {
-          toolCalls.push(call);
         }
       }
     }

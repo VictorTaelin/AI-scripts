@@ -14,8 +14,16 @@ export const MODELS: Record<string, string> = {
   'g--': 'openai:gpt-5.5:none',
   'g-' : 'openai:gpt-5.5:low',
   'g'  : 'openai:gpt-5.5:medium',
-  'g+' : 'openai:gpt-5.5:high',
-  'G'  : 'openai:gpt-5.5:high',
+  'g+' : 'openai:gpt-5.5:xhigh',
+  'G'  : 'openai:gpt-5.5:xhigh',
+
+  // OpenAI GPT-5.5 Pro
+  // NOTE: gpt-5.5-pro only supports 'medium', 'high' and 'xhigh' reasoning
+  // effort (it 400s on none/low/minimal), so there are no 'p--'/'p-' variants.
+  'p'  : 'openai:gpt-5.5-pro:medium',
+  'p+' : 'openai:gpt-5.5-pro:high',
+  'p++': 'openai:gpt-5.5-pro:xhigh',
+  'P'  : 'openai:gpt-5.5-pro:xhigh',
 
   // Anthropic Claude
   's--' : 'anthropic:claude-sonnet-4-6:none',
@@ -88,7 +96,7 @@ export interface ResolvedModelSpec {
 export interface VendorConfig {
   openai?: {
     reasoning?: {
-      effort: 'minimal' | 'low' | 'medium' | 'high';
+      effort: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
     };
   };
   anthropic?: {
@@ -339,11 +347,16 @@ function mapThinkingToOpenAI(
   if (thinking === 'none' || thinking === 'auto') {
     return undefined;
   }
+  // 'xhigh' is a real, distinct effort level for the gpt-5.5 family and must be
+  // passed through (previously it was silently downgraded to 'high'). 'max' has
+  // no OpenAI equivalent, so it maps to the strongest supported level, 'xhigh'.
   const effort = thinking === 'low'
     ? 'low'
     : thinking === 'medium'
       ? 'medium'
-      : 'high';
+      : thinking === 'xhigh' || thinking === 'max'
+        ? 'xhigh'
+        : 'high';
   return { reasoning: { effort } };
 }
 
