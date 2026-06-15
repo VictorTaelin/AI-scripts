@@ -72,7 +72,7 @@ type ParsedCommands = {
 // Constants
 // ---------
 
-const MAX_TOKENS = 8192;
+const MAX_TOKENS = 65536;
 
 const EDIT_TOOLS: ToolDef[] = [
   {
