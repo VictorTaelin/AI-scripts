@@ -19,12 +19,12 @@ export const MODELS: Record<string, string> = {
   'g+' : 'openai:gpt-5.6-sol:xhigh',
   'G'  : 'openai:gpt-5.6-sol:xhigh',
 
-  // 'p' aliases: kept for muscle memory. GPT-5.6 has no 'pro' tier anymore
-  // (Sol is the flagship), so these now point at Sol at higher effort.
-  'p'  : 'openai:gpt-5.6-sol:medium',
-  'p+' : 'openai:gpt-5.6-sol:high',
-  'p++': 'openai:gpt-5.6-sol:xhigh',
-  'P'  : 'openai:gpt-5.6-sol:xhigh',
+  // 'p' aliases: GPT-5.6 Sol in 'pro' mode (reasoning.mode='pro'). Not a
+  // separate model — same gpt-5.6-sol, higher-quality answers on hard tasks.
+  'p'  : 'openai:gpt-5.6-sol-pro:medium',
+  'p+' : 'openai:gpt-5.6-sol-pro:high',
+  'p++': 'openai:gpt-5.6-sol-pro:xhigh',
+  'P'  : 'openai:gpt-5.6-sol-pro:xhigh',
 
   // GPT-5.6 Terra (balanced, ~5.5-level quality at ~2x lower cost)
   't-' : 'openai:gpt-5.6-terra:low',
@@ -118,6 +118,9 @@ export interface VendorConfig {
   openai?: {
     reasoning?: {
       effort: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+      // GPT-5.6 'pro' mode: higher-quality answers on the same model, set via
+      // a '-pro' suffix on the alias (e.g. gpt-5.6-sol-pro). Not a separate model.
+      mode?: 'pro';
     };
   };
   anthropic?: {
@@ -497,7 +500,11 @@ function mapThinkingToOpenAI(
       : thinking === 'xhigh' || thinking === 'max'
         ? 'xhigh'
         : 'high';
-  return { reasoning: { effort } };
+  // A '-pro' suffix (e.g. gpt-5.6-sol-pro) requests OpenAI's 'pro' reasoning
+  // mode. It is not a distinct model; the vendor strips the suffix before the
+  // API call and we pass reasoning.mode='pro' alongside the effort.
+  const mode = /^gpt-5\.6-(sol|terra|luna)-pro$/.test(model) ? { mode: 'pro' as const } : {};
+  return { reasoning: { effort, ...mode } };
 }
 
 // Maps thinking level to Anthropic thinking config

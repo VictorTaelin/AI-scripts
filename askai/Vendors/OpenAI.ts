@@ -255,7 +255,11 @@ export class OpenAIChat implements ChatInstance {
     const timeout = 1000 * 60 * 60 * 24; // 24h ~ no limit
 
     this.client = new OpenAI({ apiKey, baseURL, defaultHeaders, timeout });
-    this.model = model;
+    // 'pro' mode is requested via a '-pro' suffix on GPT-5.6 aliases but is not a
+    // real model slug on the OpenAI API; strip it (the mode goes in reasoning).
+    this.model = /^gpt-5\.6-(sol|terra|luna)-pro$/.test(model)
+      ? model.replace(/-pro$/, "")
+      : model;
     this.vendor = vendor;
     this.vendorConfig = vendorConfig;
     this.fast = fast;
