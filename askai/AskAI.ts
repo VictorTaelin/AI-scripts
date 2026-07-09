@@ -11,20 +11,25 @@ import { FusionChat, FusionMember } from './Vendors/Fusion';
 import { countTokens } from 'gpt-tokenizer/model/gpt-4o';
 
 export const MODELS: Record<string, string> = {
-  // OpenAI GPT-5.6 family
-  'g--': 'openai:gpt-5.6:none',
-  'g-' : 'openai:gpt-5.6:low',
-  'g'  : 'openai:gpt-5.6:medium',
-  'g+' : 'openai:gpt-5.6:xhigh',
-  'G'  : 'openai:gpt-5.6:xhigh',
+  // OpenAI GPT-5.6 family: Sol (flagship), Terra (balanced), Luna (cheapest).
+  // 'gpt-5.6' is an alias for gpt-5.6-sol; there is no more gpt-5.x-pro.
+  'g--': 'openai:gpt-5.6-sol:none',
+  'g-' : 'openai:gpt-5.6-sol:low',
+  'g'  : 'openai:gpt-5.6-sol:medium',
+  'g+' : 'openai:gpt-5.6-sol:xhigh',
+  'G'  : 'openai:gpt-5.6-sol:xhigh',
 
-  // OpenAI GPT-5.6 Pro
-  // NOTE: gpt-5.6-pro only supports 'medium', 'high' and 'xhigh' reasoning
-  // effort (it 400s on none/low/minimal), so there are no 'p--'/'p-' variants.
-  'p'  : 'openai:gpt-5.6-pro:medium',
-  'p+' : 'openai:gpt-5.6-pro:high',
-  'p++': 'openai:gpt-5.6-pro:xhigh',
-  'P'  : 'openai:gpt-5.6-pro:xhigh',
+  // GPT-5.6 Terra (balanced, ~5.5-level quality at ~2x lower cost)
+  't-' : 'openai:gpt-5.6-terra:low',
+  't'  : 'openai:gpt-5.6-terra:medium',
+  't+' : 'openai:gpt-5.6-terra:xhigh',
+  'T'  : 'openai:gpt-5.6-terra:xhigh',
+
+  // GPT-5.6 Luna (fastest, cheapest)
+  'n-' : 'openai:gpt-5.6-luna:low',
+  'n'  : 'openai:gpt-5.6-luna:medium',
+  'n+' : 'openai:gpt-5.6-luna:xhigh',
+  'N'  : 'openai:gpt-5.6-luna:xhigh',
 
   // Anthropic Claude
   's--' : 'anthropic:claude-sonnet-5:none',
@@ -210,8 +215,8 @@ interface PanelDef {
 }
 
 const AGENT_FOX: PanelAgent = {
-  spec: 'openai:gpt-5.6:high',
-  label: 'GPT-5.6',
+  spec: 'openai:gpt-5.6-sol:high',
+  label: 'GPT-5.6-Sol',
   nick: 'Fox',
   desc: "Most intelligent. Very careful. Spots edge cases. Produces the most correct code. Bad at following style conventions. Rarely delivers half-done work, but has a bad tendency to over-engineer and bloat the codebase with unnecessary functions, which is very harmful. Has trouble grasping intent and will often read the prompt too literally, misunderstanding it and working on the wrong thing. Tendency to reward hack, specially if there are loopholes in the prompt. Not familiar with the domain, which may affect performance. When it understands the request, its code is the most trustworthy, but almost always requires a format and style pass.",
 };
@@ -231,7 +236,7 @@ const AGENT_SLIPPY: PanelAgent = {
 };
 
 const PANELS: Record<string, PanelDef> = {
-  // 'b' / 'board' / 'Board': Gemini 3.1 Pro + GPT-5.6 + Opus 4.8 as the panel,
+  // 'b' / 'board' / 'Board': Gemini 3.1 Pro + GPT-5.6 Sol + Opus 4.8 as the panel,
   // with Opus 4.8 itself as the synthesizer.
   board: {
     members: [AGENT_SLIPPY, AGENT_FOX, AGENT_PEPPY],
