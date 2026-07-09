@@ -19,6 +19,13 @@ export const MODELS: Record<string, string> = {
   'g+' : 'openai:gpt-5.6-sol:xhigh',
   'G'  : 'openai:gpt-5.6-sol:xhigh',
 
+  // 'p' aliases: kept for muscle memory. GPT-5.6 has no 'pro' tier anymore
+  // (Sol is the flagship), so these now point at Sol at higher effort.
+  'p'  : 'openai:gpt-5.6-sol:medium',
+  'p+' : 'openai:gpt-5.6-sol:high',
+  'p++': 'openai:gpt-5.6-sol:xhigh',
+  'P'  : 'openai:gpt-5.6-sol:xhigh',
+
   // GPT-5.6 Terra (balanced, ~5.5-level quality at ~2x lower cost)
   't-' : 'openai:gpt-5.6-terra:low',
   't'  : 'openai:gpt-5.6-terra:medium',
