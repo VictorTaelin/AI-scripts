@@ -11,28 +11,28 @@ import { FusionChat, FusionMember } from './Vendors/Fusion';
 import { countTokens } from 'gpt-tokenizer/model/gpt-4o';
 
 export const MODELS: Record<string, string> = {
-  // OpenAI GPT-5.5 family
-  'g--': 'openai:gpt-5.5:none',
-  'g-' : 'openai:gpt-5.5:low',
-  'g'  : 'openai:gpt-5.5:medium',
-  'g+' : 'openai:gpt-5.5:xhigh',
-  'G'  : 'openai:gpt-5.5:xhigh',
+  // OpenAI GPT-5.6 family
+  'g--': 'openai:gpt-5.6:none',
+  'g-' : 'openai:gpt-5.6:low',
+  'g'  : 'openai:gpt-5.6:medium',
+  'g+' : 'openai:gpt-5.6:xhigh',
+  'G'  : 'openai:gpt-5.6:xhigh',
 
-  // OpenAI GPT-5.5 Pro
-  // NOTE: gpt-5.5-pro only supports 'medium', 'high' and 'xhigh' reasoning
+  // OpenAI GPT-5.6 Pro
+  // NOTE: gpt-5.6-pro only supports 'medium', 'high' and 'xhigh' reasoning
   // effort (it 400s on none/low/minimal), so there are no 'p--'/'p-' variants.
-  'p'  : 'openai:gpt-5.5-pro:medium',
-  'p+' : 'openai:gpt-5.5-pro:high',
-  'p++': 'openai:gpt-5.5-pro:xhigh',
-  'P'  : 'openai:gpt-5.5-pro:xhigh',
+  'p'  : 'openai:gpt-5.6-pro:medium',
+  'p+' : 'openai:gpt-5.6-pro:high',
+  'p++': 'openai:gpt-5.6-pro:xhigh',
+  'P'  : 'openai:gpt-5.6-pro:xhigh',
 
   // Anthropic Claude
-  's--' : 'anthropic:claude-sonnet-4-6:none',
-  's-'  : 'anthropic:claude-sonnet-4-6:low',
-  's'   : 'anthropic:claude-sonnet-4-6:medium',
-  's+'  : 'anthropic:claude-sonnet-4-6:high',
-  's++' : 'anthropic:claude-sonnet-4-6:max',
-  'S'   : 'anthropic:claude-sonnet-4-6:high',
+  's--' : 'anthropic:claude-sonnet-5:none',
+  's-'  : 'anthropic:claude-sonnet-5:low',
+  's'   : 'anthropic:claude-sonnet-5:medium',
+  's+'  : 'anthropic:claude-sonnet-5:high',
+  's++' : 'anthropic:claude-sonnet-5:max',
+  'S'   : 'anthropic:claude-sonnet-5:high',
 
   'o--' : 'anthropic:claude-opus-4-8:none',
   'o-'  : 'anthropic:claude-opus-4-8:low',
@@ -82,9 +82,17 @@ export const MODELS: Record<string, string> = {
   'd'  : 'deepseek:deepseek-v4-pro:medium',
   'd+' : 'deepseek:deepseek-v4-pro:high',
   'D'  : 'deepseek:deepseek-v4-pro:high',
+
+  // Wafer (Z.ai GLM-5.2, OpenAI-compatible serverless)
+  'w'  : 'wafer:GLM-5.2:low',
+  'W'  : 'wafer:GLM-5.2:high',
+
+  // Sakana Fugu (multi-agent orchestration, OpenAI-compatible)
+  'u'  : 'sakana:fugu',
+  'U'  : 'sakana:fugu-ultra',
 };
 
-export type Vendor = 'openai' | 'anthropic' | 'google' | 'openrouter' | 'xai' | 'vast' | 'local' | 'fireworks' | 'deepseek' | 'fusion';
+export type Vendor = 'openai' | 'anthropic' | 'google' | 'openrouter' | 'xai' | 'vast' | 'local' | 'fireworks' | 'deepseek' | 'wafer' | 'sakana' | 'fusion';
 export type ThinkingLevel = 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'auto';
 
 export interface ResolvedModelSpec {
@@ -123,6 +131,12 @@ export interface VendorConfig {
   };
   vast?: {
     chat_template_kwargs?: Record<string, any>;
+  };
+  // Wafer / Z.ai GLM thinking control: GLM uses a `thinking` object to toggle
+  // reasoning, and `reasoning_effort` to grade it (only honored when enabled).
+  wafer?: {
+    thinking?: { type: 'enabled' | 'disabled' };
+    reasoning_effort?: 'low' | 'medium' | 'high';
   };
 }
 
@@ -173,7 +187,7 @@ export interface ChatInstance {
   askTools(userMessage: string, options: AskToolsOptions): Promise<AskResult>;
 }
 
-const SUPPORTED_VENDORS = new Set<Vendor>(['openai', 'anthropic', 'google', 'openrouter', 'xai', 'vast', 'local', 'fireworks', 'deepseek', 'fusion']);
+const SUPPORTED_VENDORS = new Set<Vendor>(['openai', 'anthropic', 'google', 'openrouter', 'xai', 'vast', 'local', 'fireworks', 'deepseek', 'wafer', 'sakana', 'fusion']);
 
 // ---------------------------------------------------------------------------
 // Fusion panels
@@ -185,7 +199,7 @@ const SUPPORTED_VENDORS = new Set<Vendor>(['openai', 'anthropic', 'google', 'ope
 
 interface PanelAgent {
   spec: string;
-  label: string; // short stream prefix, e.g. "GPT-5.5"
+  label: string; // short stream prefix, e.g. "GPT-5.6"
   nick: string; // synthesizer-facing nickname, e.g. "Fox"
   desc: string;
 }
@@ -196,8 +210,8 @@ interface PanelDef {
 }
 
 const AGENT_FOX: PanelAgent = {
-  spec: 'openai:gpt-5.5:high',
-  label: 'GPT-5.5',
+  spec: 'openai:gpt-5.6:high',
+  label: 'GPT-5.6',
   nick: 'Fox',
   desc: "Most intelligent. Very careful. Spots edge cases. Produces the most correct code. Bad at following style conventions. Rarely delivers half-done work, but has a bad tendency to over-engineer and bloat the codebase with unnecessary functions, which is very harmful. Has trouble grasping intent and will often read the prompt too literally, misunderstanding it and working on the wrong thing. Tendency to reward hack, specially if there are loopholes in the prompt. Not familiar with the domain, which may affect performance. When it understands the request, its code is the most trustworthy, but almost always requires a format and style pass.",
 };
@@ -217,7 +231,7 @@ const AGENT_SLIPPY: PanelAgent = {
 };
 
 const PANELS: Record<string, PanelDef> = {
-  // 'b' / 'board' / 'Board': Gemini 3.1 Pro + GPT-5.5 + Opus 4.8 as the panel,
+  // 'b' / 'board' / 'Board': Gemini 3.1 Pro + GPT-5.6 + Opus 4.8 as the panel,
   // with Opus 4.8 itself as the synthesizer.
   board: {
     members: [AGENT_SLIPPY, AGENT_FOX, AGENT_PEPPY],
@@ -461,7 +475,7 @@ function mapThinkingToOpenAI(
   if (thinking === 'none' || thinking === 'auto') {
     return undefined;
   }
-  // 'xhigh' is a real, distinct effort level for the gpt-5.5 family and must be
+  // 'xhigh' is a real, distinct effort level for the gpt-5.6 family and must be
   // passed through (previously it was silently downgraded to 'high'). 'max' has
   // no OpenAI equivalent, so it maps to the strongest supported level, 'xhigh'.
   const effort = thinking === 'low'
@@ -540,6 +554,21 @@ function mapThinkingToGoogle(
   };
 }
 
+function mapThinkingToWafer(
+  thinking: ThinkingLevel,
+): VendorConfig['wafer'] | undefined {
+  if (thinking === 'none') {
+    return { thinking: { type: 'disabled' } };
+  }
+  // 'auto' leaves it to the model default (thinking enabled, max effort).
+  if (thinking === 'auto') {
+    return { thinking: { type: 'enabled' } };
+  }
+  const effort: 'low' | 'medium' | 'high' =
+    thinking === 'low' ? 'low' : thinking === 'medium' ? 'medium' : 'high';
+  return { thinking: { type: 'enabled' }, reasoning_effort: effort };
+}
+
 function mapThinkingToVast(
   model: string,
   thinking: ThinkingLevel,
@@ -580,6 +609,11 @@ function buildVendorConfig(vendor: Vendor, model: string, thinking: ThinkingLeve
     cfg.vast = vast;
   }
 
+  const wafer = mapThinkingToWafer(thinking);
+  if (vendor === 'wafer' && wafer) {
+    cfg.wafer = wafer;
+  }
+
   return cfg;
 }
 
@@ -592,16 +626,20 @@ export async function AskAI(modelSpec: string): Promise<ChatInstance> {
 
   const vendorConfig = buildVendorConfig(resolved.vendor, resolved.model, resolved.thinking);
 
-  if (resolved.vendor === 'openai' || resolved.vendor === 'openrouter' || resolved.vendor === 'deepseek') {
+  if (resolved.vendor === 'openai' || resolved.vendor === 'openrouter' || resolved.vendor === 'deepseek' || resolved.vendor === 'wafer' || resolved.vendor === 'sakana') {
     const useCerebras = resolved.vendor === 'openai' && CEREBRAS_MODELS.has(resolved.model);
     const apiKey = await getToken(useCerebras ? 'cerebras' : resolved.vendor);
     const baseURL = useCerebras
       ? process.env.CEREBRAS_BASE_URL ?? 'https://api.cerebras.ai/v1'
       : resolved.vendor === 'deepseek'
         ? 'https://api.deepseek.com'
-        : resolved.vendor === 'openai'
-          ? 'https://api.openai.com/v1'
-          : 'https://openrouter.ai/api/v1';
+        : resolved.vendor === 'wafer'
+          ? process.env.WAFER_BASE_URL ?? 'https://pass.wafer.ai/v1'
+          : resolved.vendor === 'sakana'
+            ? process.env.SAKANA_BASE_URL ?? 'https://api.sakana.ai/v1'
+            : resolved.vendor === 'openai'
+              ? 'https://api.openai.com/v1'
+              : 'https://openrouter.ai/api/v1';
     return new OpenAIChat(
       apiKey,
       baseURL,

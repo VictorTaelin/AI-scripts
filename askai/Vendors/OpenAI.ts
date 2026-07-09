@@ -274,6 +274,15 @@ export class OpenAIChat implements ChatInstance {
     };
   }
 
+  // Wafer / Z.ai GLM use a `thinking` object plus `reasoning_effort` rather than
+  // OpenAI's `reasoning.effort`. Inject them into a chat-completions param body.
+  private applyWaferConfig(params: Record<string, any>): void {
+    const wafer = this.vendorConfig?.wafer;
+    if (!wafer) return;
+    if (wafer.thinking) params.thinking = wafer.thinking;
+    if (wafer.reasoning_effort) params.reasoning_effort = wafer.reasoning_effort;
+  }
+
   private buildResponsesHistory() {
     return this.messages.map((message) => ({
       type: "message",
@@ -543,6 +552,7 @@ export class OpenAIChat implements ChatInstance {
     if (mergedOpenAIConfig?.reasoning) {
       params.reasoning = mergedOpenAIConfig.reasoning;
     }
+    this.applyWaferConfig(params);
 
     const resp: any = await (this.client.chat.completions.create as any)(params);
     const message = resp?.choices?.[0]?.message ?? {};
@@ -702,6 +712,7 @@ export class OpenAIChat implements ChatInstance {
     if (mergedOpenAIConfig?.reasoning) {
       params.reasoning = mergedOpenAIConfig.reasoning;
     }
+    this.applyWaferConfig(params);
 
     let visible = "";
 

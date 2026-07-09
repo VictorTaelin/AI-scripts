@@ -12,6 +12,17 @@ import type {
 type Role = "user" | "assistant";
 
 const FALLBACK_MAX_OUTPUT_TOKENS = 128000;
+// When a response stops with stop_reason === "max_tokens", ask() automatically
+// continues it (feeding the partial text back) up to this many extra rounds.
+// 128k is a HARD cap on the synchronous Messages API (the 300k beta is
+// Batch-only), and thinking tokens count against max_tokens, so a big
+// one-shot generation at high effort can legitimately exhaust it.
+const MAX_CONTINUATION_ROUNDS = 8;
+const CONTINUE_PROMPT =
+  "Your previous message was cut off because it hit the output token limit. " +
+  "Continue your response from EXACTLY where it stopped. Output only the " +
+  "continuation: do not repeat anything you already wrote, do not add " +
+  "commentary, and do not restart.";
 const FAST_MODE_BETA = "fast-mode-2026-02-01";
 const TEXT_EDITOR_TOOL_NAME = "str_replace_based_edit_tool";
 const TEXT_EDITOR_TOOL_TYPE = "text_editor_20250728";
@@ -167,12 +178,22 @@ function addCacheControlToLastMessage(messages: any[]): any[] {
   return out;
 }
 
+// Max output tokens on the SYNCHRONOUS Messages API, per the models overview
+// docs (2026-07). Sending more than the model's cap is a 400 error, so lower
+// caps must be listed explicitly; everything current supports 128k:
+//   128k: fable-5, mythos-5, opus-4-8, opus-4-7, opus-4-6, sonnet-5, sonnet-4-6
+//   64k:  haiku-4-5, sonnet-4-5, opus-4-5
+//   32k:  opus-4-1
 function anthropicMaxOutputTokens(model: string): number {
   const normalized = model.toLowerCase();
-  if (normalized.includes("claude-opus-4-7") || normalized.includes("claude-opus-4-6")) {
-    return 128000;
+  if (normalized.includes("claude-opus-4-1")) {
+    return 32000;
   }
-  if (normalized.includes("claude-sonnet-4-6") || normalized.includes("claude-haiku-4-5")) {
+  if (
+    normalized.includes("claude-haiku-4-5") ||
+    normalized.includes("claude-sonnet-4-5") ||
+    normalized.includes("claude-opus-4-5")
+  ) {
     return 64000;
   }
   return FALLBACK_MAX_OUTPUT_TOKENS;
@@ -316,76 +337,96 @@ export class AnthropicChat implements ChatInstance {
     // Push the user message BEFORE building params so the cache breakpoint
     // lands on it (buildParams snapshots the messages array when caching).
     this.messages.push({ role: "user", content: userMessage });
-    const params = this.buildParams(options, wantStream);
+    // Local conversation copy: continuation rounds append partial assistant
+    // output + a continue instruction here without polluting this.messages.
+    const conversation: { role: Role; content: string }[] = this.messages.slice();
 
     let plain      = "";
     let stopReason = "";
 
     const sink = options.onStream;
-    if (wantStream) {
-      const streamResp: AsyncIterable<any> = (await this.createMessage(params)) as any;
-      let printedReasoning = false;
-      const marker = createStreamMarkerState((text: string) => {
-        if (!text) {
-          return;
-        }
-        plain += text;
-        if (sink) {
-          sink(text, "text");
-          return;
-        }
-        if (printedReasoning) {
-          process.stdout.write("\n");
-          printedReasoning = false;
-        }
-        process.stdout.write(text);
-      });
-      for await (const event of streamResp) {
-        if (event.type === "content_block_delta") {
-          const delta: any = event.delta;
-          if (delta.type === "thinking_delta") {
-            if (sink) {
-              sink(delta.thinking, "reasoning");
-            } else {
-              process.stdout.write(`\x1b[2m${delta.thinking}\x1b[0m`);
-              printedReasoning = true;
-            }
-          } else if (delta.type === "text_delta") {
-            if (marker.push(delta.text)) {
-              stopReason = "end_turn";
-              break;
-            }
+
+    for (let round = 0; round <= MAX_CONTINUATION_ROUNDS; round++) {
+      const params = this.buildParams(options, wantStream, conversation);
+      let roundText = "";
+      stopReason = "";
+
+      if (wantStream) {
+        const streamResp: AsyncIterable<any> = (await this.createMessage(params)) as any;
+        let printedReasoning = false;
+        const marker = createStreamMarkerState((text: string) => {
+          if (!text) {
+            return;
           }
-        } else if (event.type === "message_delta") {
-          stopReason = event.delta?.stop_reason ?? "";
-        }
-      }
-      if (!sink) process.stdout.write("\n");
-    } else {
-      const message: any = await this.createMessage({ ...params, stream: false });
-      stopReason = message.stop_reason ?? "";
-      const blocks: any[] = message.content;
-      let printedReasoning = false;
-      for (const block of blocks) {
-        if (block.type === "thinking") {
-          process.stdout.write(`\x1b[2m${block.thinking}\x1b[0m`);
-          printedReasoning = true;
-        } else if (block.type === "text") {
+          roundText += text;
+          if (sink) {
+            sink(text, "text");
+            return;
+          }
           if (printedReasoning) {
             process.stdout.write("\n");
             printedReasoning = false;
           }
-          const text = stripTrailingMarker(block.text);
           process.stdout.write(text);
-          plain += text;
+        });
+        for await (const event of streamResp) {
+          if (event.type === "content_block_delta") {
+            const delta: any = event.delta;
+            if (delta.type === "thinking_delta") {
+              if (sink) {
+                sink(delta.thinking, "reasoning");
+              } else {
+                process.stdout.write(`\x1b[2m${delta.thinking}\x1b[0m`);
+                printedReasoning = true;
+              }
+            } else if (delta.type === "text_delta") {
+              if (marker.push(delta.text)) {
+                stopReason = "end_turn";
+                break;
+              }
+            }
+          } else if (event.type === "message_delta") {
+            stopReason = event.delta?.stop_reason ?? "";
+          }
+        }
+      } else {
+        const message: any = await this.createMessage({ ...params, stream: false });
+        stopReason = message.stop_reason ?? "";
+        const blocks: any[] = message.content;
+        let printedReasoning = false;
+        for (const block of blocks) {
+          if (block.type === "thinking") {
+            process.stdout.write(`\x1b[2m${block.thinking}\x1b[0m`);
+            printedReasoning = true;
+          } else if (block.type === "text") {
+            if (printedReasoning) {
+              process.stdout.write("\n");
+              printedReasoning = false;
+            }
+            const text = stripTrailingMarker(block.text);
+            process.stdout.write(text);
+            roundText += text;
+          }
         }
       }
-      process.stdout.write("\n");
+
+      plain += roundText;
+
+      if (stopReason !== "max_tokens") {
+        break;
+      }
+      // Can't stitch a continuation onto empty text (the whole budget went to
+      // thinking, and Anthropic rejects empty assistant messages): give up.
+      if (round === MAX_CONTINUATION_ROUNDS || roundText.length === 0) {
+        process.stderr.write("\x1b[33m[warning: response truncated by max_tokens limit]\x1b[0m\n");
+        break;
+      }
+      process.stderr.write(`\x1b[33m[max_tokens hit: auto-continuing response (round ${round + 1}/${MAX_CONTINUATION_ROUNDS})]\x1b[0m\n`);
+      conversation.push({ role: "assistant", content: roundText });
+      conversation.push({ role: "user", content: CONTINUE_PROMPT });
     }
 
-    if (stopReason === "max_tokens") {
-      process.stderr.write("\x1b[33m[warning: response truncated by max_tokens limit]\x1b[0m\n");
-    }
+    if (!wantStream || !sink) process.stdout.write("\n");
 
     this.messages.push({ role: "assistant", content: plain });
     return plain;

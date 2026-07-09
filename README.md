@@ -14,7 +14,7 @@ Tools
 -----
 
 - `csh` — terminal chat with shell execution ([example](https://x.com/VictorTaelin/status/1655304645953089538))
-- `holefill` — fill `.?.` placeholders in code via AI
+- `holefill` — fill `.?.` placeholders, or apply many edits via `.!.` (instructions written in-file), via AI
 - `shot` — one-shot AI code editing with tool calls
 - `refactor` — context-aware code refactoring with smart compaction
 - `board` — multi-advisor panel for file review

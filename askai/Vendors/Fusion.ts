@@ -14,7 +14,7 @@ const RESET = "\x1b[0m";
 // synthesizer and used as the IRC-style stream prefix.
 export interface FusionMember {
   chat: ChatInstance;
-  label: string; // short name used as the <label> stream prefix, e.g. "GPT-5.5"
+  label: string; // short name used as the <label> stream prefix, e.g. "GPT-5.6"
   nick: string; // nickname shown in the synthesizer prompt, e.g. "Fox"
   desc: string; // description of the agent's strengths/weaknesses
 }
