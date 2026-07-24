@@ -46,18 +46,18 @@ export const MODELS: Record<string, string> = {
   's++' : 'anthropic:claude-sonnet-5:max',
   'S'   : 'anthropic:claude-sonnet-5:high',
 
-  'o--' : 'anthropic:claude-opus-4-8:none',
-  'o-'  : 'anthropic:claude-opus-4-8:low',
-  'o'   : 'anthropic:claude-opus-4-8:medium',
-  'o+'  : 'anthropic:claude-opus-4-8:high',
-  'o++' : 'anthropic:claude-opus-4-8:max',
-  'O'   : 'anthropic:claude-opus-4-8:high',
+  'o--' : 'anthropic:claude-opus-5:none',
+  'o-'  : 'anthropic:claude-opus-5:low',
+  'o'   : 'anthropic:claude-opus-5:medium',
+  'o+'  : 'anthropic:claude-opus-5:high',
+  'o++' : 'anthropic:claude-opus-5:max',
+  'O'   : 'anthropic:claude-opus-5:high',
 
   // Anthropic Claude Fable 5 (adaptive thinking always on)
   'f--' : 'anthropic:claude-fable-5:none',
   'f-'  : 'anthropic:claude-fable-5:low',
   'f'   : 'anthropic:claude-fable-5:medium',
-  'f+'  : 'anthropic:claude-fable-5:high',
+  'f+'  : 'anthropic:claude-fable-5:xhigh',
   'f++' : 'anthropic:claude-fable-5:max',
   'F'   : 'anthropic:claude-fable-5:high',
 
@@ -232,8 +232,8 @@ const AGENT_FOX: PanelAgent = {
 };
 
 const AGENT_PEPPY: PanelAgent = {
-  spec: 'anthropic:claude-opus-4-8:high',
-  label: 'Opus-4.8',
+  spec: 'anthropic:claude-opus-5:high',
+  label: 'Opus-5',
   nick: 'Peppy',
   desc: "Most productive and honest. Very good at understanding intent and following instructions. Best at style adherence and sticking to the format, which is very important. Familiar with the author's work, which causes it to occasionally outperform, specially when related to HVM, Interaction Calculus, Bend. Has a hard time understanding hard concepts and complex logic. Lazy and will often deliver work half-done, or without properly checking references, or double-checking every case. This often leads to bugs.",
 };
@@ -246,11 +246,11 @@ const AGENT_SLIPPY: PanelAgent = {
 };
 
 const PANELS: Record<string, PanelDef> = {
-  // 'b' / 'board' / 'Board': Gemini 3.1 Pro + GPT-5.6 Sol + Opus 4.8 as the panel,
-  // with Opus 4.8 itself as the synthesizer.
+  // 'b' / 'board' / 'Board': Gemini 3.1 Pro + GPT-5.6 Sol + Opus 5 as the panel,
+  // with Opus 5 itself as the synthesizer.
   board: {
     members: [AGENT_SLIPPY, AGENT_FOX, AGENT_PEPPY],
-    synth: { spec: 'anthropic:claude-opus-4-8:high', label: 'Opus-4.8' },
+    synth: { spec: 'anthropic:claude-opus-5:high', label: 'Opus-5' },
   },
 };
 

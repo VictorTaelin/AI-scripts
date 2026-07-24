@@ -181,7 +181,7 @@ function addCacheControlToLastMessage(messages: any[]): any[] {
 // Max output tokens on the SYNCHRONOUS Messages API, per the models overview
 // docs (2026-07). Sending more than the model's cap is a 400 error, so lower
 // caps must be listed explicitly; everything current supports 128k:
-//   128k: fable-5, mythos-5, opus-4-8, opus-4-7, opus-4-6, sonnet-5, sonnet-4-6
+//   128k: fable-5, mythos-5, opus-5, opus-4-8, opus-4-7, opus-4-6, sonnet-5, sonnet-4-6
 //   64k:  haiku-4-5, sonnet-4-5, opus-4-5
 //   32k:  opus-4-1
 function anthropicMaxOutputTokens(model: string): number {
