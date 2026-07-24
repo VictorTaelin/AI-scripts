@@ -46,19 +46,19 @@ export const MODELS: Record<string, string> = {
   's++' : 'anthropic:claude-sonnet-5:max',
   'S'   : 'anthropic:claude-sonnet-5:high',
 
-  'o--' : 'anthropic:claude-opus-5:none',
+  'o--' : 'anthropic:claude-opus-5:low',
   'o-'  : 'anthropic:claude-opus-5:low',
   'o'   : 'anthropic:claude-opus-5:medium',
   'o+'  : 'anthropic:claude-opus-5:high',
-  'o++' : 'anthropic:claude-opus-5:max',
+  'o++' : 'anthropic:claude-opus-5:xhigh',
   'O'   : 'anthropic:claude-opus-5:high',
 
   // Anthropic Claude Fable 5 (adaptive thinking always on)
-  'f--' : 'anthropic:claude-fable-5:none',
+  'f--' : 'anthropic:claude-fable-5:low',
   'f-'  : 'anthropic:claude-fable-5:low',
   'f'   : 'anthropic:claude-fable-5:medium',
-  'f+'  : 'anthropic:claude-fable-5:xhigh',
-  'f++' : 'anthropic:claude-fable-5:max',
+  'f+'  : 'anthropic:claude-fable-5:high',
+  'f++' : 'anthropic:claude-fable-5:xhigh',
   'F'   : 'anthropic:claude-fable-5:high',
 
   // Google Gemini
