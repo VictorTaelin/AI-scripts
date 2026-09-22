@@ -13,6 +13,7 @@
   "bin": {
     "refactor": "./dist/tools/Refactor.js",
     "holefill": "./dist/tools/HoleFill.js",
+    "holefill2": "./dist/tools/HoleFill2.js",
     "csh": "./dist/tools/ChatSH.js",
     "shot": "./dist/tools/Shot.js",
     "long": "./dist/tools/Long.js",

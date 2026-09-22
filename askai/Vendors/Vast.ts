@@ -39,9 +39,9 @@ export class VastChat implements ChatInstance {
   private readonly messages: { role: Role; content: string }[] = [];
   private systemInstruction?: string;
 
-  constructor(baseURL: string, model: string, vendorConfig?: VendorConfig) {
+  constructor(baseURL: string, model: string, vendorConfig?: VendorConfig, apiKey?: string) {
     this.client = new OpenAI({
-      apiKey: "not-needed",
+      apiKey: apiKey ?? "not-needed",
       baseURL,
     });
     this.model = model;
@@ -163,8 +163,11 @@ export class VastChat implements ChatInstance {
       let printedReasoning = false;
       for await (const chunk of stream) {
         const delta: any = chunk.choices?.[0]?.delta ?? {};
-        if (delta.reasoning_content) {
-          process.stdout.write(DIM + delta.reasoning_content + RESET);
+        // vLLM streams thinking as `reasoning` (nightly) or `reasoning_content`
+        // (older releases / llama.cpp with --reasoning-format deepseek).
+        const reasoning = delta.reasoning ?? delta.reasoning_content;
+        if (reasoning) {
+          process.stdout.write(DIM + reasoning + RESET);
           printedReasoning = true;
         }
         if (delta.content) {
@@ -180,8 +183,9 @@ export class VastChat implements ChatInstance {
     } else {
       const resp: any = await (this.client.chat.completions.create as any)(body as any);
       const msg: any = resp.choices?.[0]?.message ?? {};
-      if (msg.reasoning_content) {
-        process.stdout.write(DIM + msg.reasoning_content + RESET + "\n");
+      const reasoning = msg.reasoning ?? msg.reasoning_content;
+      if (reasoning) {
+        process.stdout.write(DIM + reasoning + RESET + "\n");
       }
       visible = msg.content ?? "";
       if (visible) {

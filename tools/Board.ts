@@ -16,8 +16,8 @@ import { AskAI }             from '../askai/AskAI';
 
 var DEFAULT_MODELS = [
   'google:gemini-3.1-pro-preview:high',
-  'anthropic:claude-opus-5:high',
-  'openai:gpt-5.6-sol:high',
+  'anthropic:claude-opus-5-5:high',
+  'openai:gpt-6-astra:high',
 ];
 
 var SYSTEM = [
@@ -67,8 +67,8 @@ function model_tag(model: string): string {
   if (name.includes('codex')) {
     return 'cdx5';
   }
-  if (name.includes('gpt-5')) {
-    return 'gpt5';
+  if (name.startsWith('gpt-')) {
+    return 'gpt' + name[4];
   }
   if (name.includes('gemini')) {
     return 'gemi';

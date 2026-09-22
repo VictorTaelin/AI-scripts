@@ -238,6 +238,9 @@ async function main(): Promise<void> {
   const model = process.argv[4] || 'gpt-4o-mini';
   const resolvedModel = resolveModelSpec(model);
   const modelDescriptor = `${resolvedModel.vendor}:${resolvedModel.model}:${resolvedModel.thinking}${resolvedModel.fast ? ':fast' : ''}`;
+  // Self-hosted models (vast/local): never persist prompts or replies to disk
+  // (~/.ai/.holefill debug dump and ~/.ai/prompt_history logs).
+  const logPrompts = resolvedModel.vendor !== 'vast' && resolvedModel.vendor !== 'local';
 
   if (!file) {
     console.log('Usage: holefill <file> [<shortened_file>] [<model_name>]');
@@ -277,9 +280,11 @@ async function main(): Promise<void> {
     const prompt = `<FILE>\n${promptCode}\n</FILE>\n\n${instruction}`;
     const tokens = tokenCount(prompt);
 
-    await fs.mkdir(path.join(os.homedir(), '.ai'), { recursive: true });
-    await fs.writeFile(path.join(os.homedir(), '.ai', '.holefill'),
-                       `${SYSTEM_EDIT}\n###\n${prompt}`, 'utf-8');
+    if (logPrompts) {
+      await fs.mkdir(path.join(os.homedir(), '.ai'), { recursive: true });
+      await fs.writeFile(path.join(os.homedir(), '.ai', '.holefill'),
+                         `${SYSTEM_EDIT}\n###\n${prompt}`, 'utf-8');
+    }
 
     console.log('token_count:', tokens);
     console.log('model_label:', modelDescriptor);
@@ -300,7 +305,7 @@ async function main(): Promise<void> {
     if (skipped.length) { for (const s of skipped) console.log('skipped:', s); }
     console.log('output_file:', file);
 
-    await logRun(modelDescriptor, SYSTEM_EDIT, prompt, replyStr);
+    if (logPrompts) await logRun(modelDescriptor, SYSTEM_EDIT, prompt, replyStr);
     return;
   }
 
@@ -318,9 +323,11 @@ async function main(): Promise<void> {
   const tokens = tokenCount(mini_code);
   const prompt = mini_code.replace('.?.', FILL);
 
-  await fs.mkdir(path.join(os.homedir(), '.ai'), { recursive: true });
-  await fs.writeFile(path.join(os.homedir(), '.ai', '.holefill'),
-                     `${SYSTEM_FILL}\n###\n${prompt}`, 'utf-8');
+  if (logPrompts) {
+    await fs.mkdir(path.join(os.homedir(), '.ai'), { recursive: true });
+    await fs.writeFile(path.join(os.homedir(), '.ai', '.holefill'),
+                       `${SYSTEM_FILL}\n###\n${prompt}`, 'utf-8');
+  }
 
   console.log('token_count:', tokens);
   console.log('model_label:', modelDescriptor);
@@ -353,7 +360,7 @@ async function main(): Promise<void> {
   await fs.writeFile(file, file_code, 'utf-8');
   console.log('output_file:', file);
 
-  await logRun(modelDescriptor, SYSTEM_FILL, prompt, wrapped);
+  if (logPrompts) await logRun(modelDescriptor, SYSTEM_FILL, prompt, wrapped);
 }
 
 main().catch(console.error);

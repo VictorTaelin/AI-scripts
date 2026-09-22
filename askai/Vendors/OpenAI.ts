@@ -15,6 +15,11 @@ type Role = "user" | "assistant";
 const DIM = "\x1b[2m";
 const RESET = "\x1b[0m";
 
+// Aliases that request OpenAI's 'pro' reasoning mode. The '-pro' suffix is not
+// a model slug: the vendor strips it and AskAI.ts sets reasoning.mode='pro'.
+// (gpt-5.5-pro and older '-pro' names ARE real slugs, hence the explicit list.)
+export const OPENAI_PRO_SUFFIX = /^(gpt-6-astra|gpt-5\.6-(sol|terra|luna))-pro$/;
+
 // Default output budget (reasoning + answer) per model. The Responses API uses
 // a LOWER default when `max_output_tokens` is omitted, which truncates long
 // replies — so, like the Anthropic vendor, we default to each model's true
@@ -22,8 +27,8 @@ const RESET = "\x1b[0m";
 // the API default in place.
 function openaiMaxOutputTokens(model: string): number | undefined {
   const m = model.toLowerCase();
-  // GPT-5.x family and o-series reasoning models: 128k output.
-  if (m.startsWith("gpt-5") || /^o[134]/.test(m)) {
+  // GPT-6 Astra, GPT-5.x family and o-series reasoning models: 128k output.
+  if (m.startsWith("gpt-6") || m.startsWith("gpt-5") || /^o[134]/.test(m)) {
     return 128000;
   }
   if (m.startsWith("gpt-4.1")) {
@@ -33,6 +38,33 @@ function openaiMaxOutputTokens(model: string): number | undefined {
     return 16384;
   }
   return undefined;
+}
+
+// Same rule for the chat-completions path: when `max_tokens` is omitted, GLM
+// (Z.ai / Wafer) applies a server-side default of ~64k that silently truncates
+// long reasoning runs, so default to the model's true maximum (131072 for
+// GLM-4.6 and above per Z.ai docs). DeepSeek's API documents 384K and
+// rejects anything above 393216. OpenRouter budgets are per model, so only
+// models with a known maximum get one; Ox Alpha also tops out at 131072.
+function chatMaxOutputTokens(vendor: Vendor, model: string): number | undefined {
+  if (vendor === "zai" || vendor === "wafer") {
+    return 131072;
+  }
+  if (vendor === "deepseek") {
+    return 393216;
+  }
+  if (vendor === "openrouter" && model.toLowerCase().includes("ox-alpha")) {
+    return 131072;
+  }
+  return undefined;
+}
+
+// A completion that stops with finish_reason "length" was cut by the output
+// budget; surface it instead of ending silently.
+function warnIfTruncated(finishReason: unknown): void {
+  if (finishReason === "length") {
+    console.error("\n[OpenAIChat] output truncated: finish_reason=length (max_tokens hit)");
+  }
 }
 
 type ParsedDiffHunk = {
@@ -255,11 +287,7 @@ export class OpenAIChat implements ChatInstance {
     const timeout = 1000 * 60 * 60 * 24; // 24h ~ no limit
 
     this.client = new OpenAI({ apiKey, baseURL, defaultHeaders, timeout });
-    // 'pro' mode is requested via a '-pro' suffix on GPT-5.6 aliases but is not a
-    // real model slug on the OpenAI API; strip it (the mode goes in reasoning).
-    this.model = /^gpt-5\.6-(sol|terra|luna)-pro$/.test(model)
-      ? model.replace(/-pro$/, "")
-      : model;
+    this.model = OPENAI_PRO_SUFFIX.test(model) ? model.replace(/-pro$/, "") : model;
     this.vendor = vendor;
     this.vendorConfig = vendorConfig;
     this.fast = fast;
@@ -278,13 +306,14 @@ export class OpenAIChat implements ChatInstance {
     };
   }
 
-  // Wafer / Z.ai GLM use a `thinking` object plus `reasoning_effort` rather than
-  // OpenAI's `reasoning.effort`. Inject them into a chat-completions param body.
-  private applyWaferConfig(params: Record<string, any>): void {
-    const wafer = this.vendorConfig?.wafer;
-    if (!wafer) return;
-    if (wafer.thinking) params.thinking = wafer.thinking;
-    if (wafer.reasoning_effort) params.reasoning_effort = wafer.reasoning_effort;
+  // GLM (Z.ai official / Wafer) uses a `thinking` object plus `reasoning_effort`
+  // rather than OpenAI's `reasoning.effort`. Inject them into a chat-completions
+  // param body.
+  private applyGlmConfig(params: Record<string, any>): void {
+    const cfg = this.vendorConfig?.deepseek;
+    if (!cfg) return;
+    if (cfg.thinking) params.thinking = cfg.thinking;
+    if (cfg.reasoning_effort) params.reasoning_effort = cfg.reasoning_effort;
   }
 
   private buildResponsesHistory() {
@@ -550,15 +579,20 @@ export class OpenAIChat implements ChatInstance {
     if (typeof options.temperature === "number") {
       params.temperature = options.temperature;
     }
-    if (typeof options.max_tokens === "number") {
-      params.max_tokens = options.max_tokens;
+    const maxTokens =
+      typeof options.max_tokens === "number"
+        ? options.max_tokens
+        : chatMaxOutputTokens(this.vendor, this.model);
+    if (typeof maxTokens === "number") {
+      params.max_tokens = maxTokens;
     }
     if (mergedOpenAIConfig?.reasoning) {
       params.reasoning = mergedOpenAIConfig.reasoning;
     }
-    this.applyWaferConfig(params);
+    this.applyGlmConfig(params);
 
     const resp: any = await (this.client.chat.completions.create as any)(params);
+    warnIfTruncated(resp?.choices?.[0]?.finish_reason);
     const message = resp?.choices?.[0]?.message ?? {};
     const content = typeof message.content === "string" ? message.content : "";
     if (content) {
@@ -710,13 +744,17 @@ export class OpenAIChat implements ChatInstance {
     if (typeof options.temperature === "number") {
       params.temperature = options.temperature;
     }
-    if (typeof options.max_tokens === "number") {
-      params.max_tokens = options.max_tokens;
+    const maxTokens =
+      typeof options.max_tokens === "number"
+        ? options.max_tokens
+        : chatMaxOutputTokens(this.vendor, this.model);
+    if (typeof maxTokens === "number") {
+      params.max_tokens = maxTokens;
     }
     if (mergedOpenAIConfig?.reasoning) {
       params.reasoning = mergedOpenAIConfig.reasoning;
     }
-    this.applyWaferConfig(params);
+    this.applyGlmConfig(params);
 
     let visible = "";
 
@@ -726,10 +764,16 @@ export class OpenAIChat implements ChatInstance {
         stream: true,
       });
       let printedReasoning = false;
+      let finishReason: unknown = null;
       for await (const chunk of stream) {
-        const delta: any = chunk.choices?.[0]?.delta ?? {};
-        if (delta.reasoning_content) {
-          process.stdout.write(DIM + delta.reasoning_content + RESET);
+        const choice: any = chunk.choices?.[0] ?? {};
+        if (choice.finish_reason) finishReason = choice.finish_reason;
+        const delta: any = choice.delta ?? {};
+        // Thinking traces arrive as `reasoning_content` (GLM, DeepSeek) or as
+        // `reasoning` (OpenRouter); accept both.
+        const reasoning = delta.reasoning_content ?? delta.reasoning;
+        if (reasoning) {
+          process.stdout.write(DIM + reasoning + RESET);
           printedReasoning = true;
         }
         if (delta.content) {
@@ -742,11 +786,14 @@ export class OpenAIChat implements ChatInstance {
         }
       }
       process.stdout.write("\n");
+      warnIfTruncated(finishReason);
     } else {
       const resp: any = await (this.client.chat.completions.create as any)(params);
+      warnIfTruncated(resp?.choices?.[0]?.finish_reason);
       const message = resp?.choices?.[0]?.message;
-      if (message?.reasoning_content) {
-        process.stdout.write(DIM + message.reasoning_content + RESET + "\n");
+      const reasoning = message?.reasoning_content ?? message?.reasoning;
+      if (reasoning) {
+        process.stdout.write(DIM + reasoning + RESET + "\n");
       }
       const content = message?.content ?? "";
       process.stdout.write(content + "\n");

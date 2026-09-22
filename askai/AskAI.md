@@ -10,7 +10,7 @@ Usage
 import { AskAI } from './AskAI';
 
 async function main() {
-  const ai = await AskAI("openai:gpt-5.1:medium");
+  const ai = await AskAI("openai:gpt-6-astra:medium");
 
   // Options
   const opts = {
@@ -32,28 +32,28 @@ async function main() {
   console.log(history);
 }
 ```
-In this example, we create a chat instance for GPT-4o, send two messages, and then retrieve the conversation history.
+In this example, we create a chat instance for GPT-6 Astra, send two messages, and then retrieve the conversation history.
 
 Models
 ------
 Models are now referenced using the canonical `vendor:official_model_name:thinking_budget`
 format, for example:
 
-- `openai:gpt-5.1:high`
+- `openai:gpt-6-astra:high`
 - `anthropic:claude-sonnet-4-5-20250929:medium`
 - `google:gemini-2.5-pro:medium`
 - `openrouter:meta-llama/llama-3.3-70b-instruct:auto`
 - `xai:grok-4-0709:auto`
 
-The optional third segment controls the thinking budget (`none | low | medium | high | auto`).
+The optional third segment controls the thinking budget (`none | low | medium | high | xhigh | max | auto`).
 Legacy shortcodes remain available via the `MODELS` export for convenience. Each shortcut
 follows a consistent pattern:
 
 - Each character (`g`, `G`, `c`, `C`, `l`, `L`, etc.) maps directly to a specific
-  vendor/model pairing (e.g., `c` is Claude Sonnet, `C` is Claude Opus, `g` and `G`
-  both map to GPT‑5.1).
+  vendor/model pairing (e.g., `s` is Claude Sonnet, `o` is Claude Opus, `g` and `G`
+  both map to GPT‑6 Astra, `p` is GPT‑6 Astra in pro mode).
 - Append `-` to request the low thinking budget, omit it for medium, and append `+`
-  for high (e.g., `g-`, `g`, `g+` map to `openai:gpt-5.1:low|medium|high`).
+  for high (e.g., `g-`, `g`, `g+`, `g++` map to `openai:gpt-6-astra:low|medium|xhigh|max`).
 
 API Reference
 -------------
@@ -93,7 +93,9 @@ Options for the `ask` method:
 - `max_tokens?: number` - Maximum tokens to generate (chat-completions style APIs).
 - `max_completion_tokens?: number` - Maximum output tokens (Responses API).
 - `stream?: boolean` - Enable streaming. Default: `true` where supported.
-- `system_cacheable?: boolean` - Allow caching the system message (Anthropic-specific).
+- `cacheable?: boolean` - Anthropic prompt caching (default: enabled). Set `false` to disable.
+- `cache_ttl?: '5m' | '1h'` - Anthropic cache entry lifetime (default `'1h'`).
+- `cache_cuts?: number[]` - Char offsets into the outgoing user message where stable content ends; Anthropic pins a cache breakpoint exactly there (used by holefill2's file/prompt seam). Other vendors ignore it.
 - `vendorConfig?: VendorConfig` - Optional per-call overrides for vendor-specific knobs
   computed in `AskAI.ts` (e.g., reasoning effort, thinking budgets).
 
