@@ -733,7 +733,7 @@ async function main(): Promise<void> {
   var context = await build_context(paths);
   var user_message = build_user_message(context, parsed.prompt);
   var resolved = resolveModelSpec(parsed.model);
-  var model_label = `${resolved.vendor}:${resolved.model}:${resolved.thinking}${resolved.fast ? ':fast' : ''}`;
+  var model_label = `${resolved.vendor}:${resolved.model}:${resolved.thinking}${['', ':fast', ':ultrafast'][resolved.fast]}`;
   var full_prompt = `[SYSTEM]\n${TOOL_CALL_PROMPT}\n\n[USER]\n${user_message}`;
 
   console.log(`model_label: ${model_label}`);

@@ -570,7 +570,7 @@ function reply_splices(reply: string): Splice[] {
 // =====
 
 function model_label(spec: askai.ResolvedModelSpec): string {
-  return `${spec.vendor}:${spec.model}:${spec.thinking}${spec.fast ? ":fast" : ""}`;
+  return `${spec.vendor}:${spec.model}:${spec.thinking}${["", ":fast", ":ultrafast"][spec.fast]}`;
 }
 
 // the filter pass runs the same model with thinking off (fable has no
@@ -578,10 +578,10 @@ function model_label(spec: askai.ResolvedModelSpec): string {
 // board panel's synthesizer)
 function model_filter(spec: askai.ResolvedModelSpec): string {
   if (spec.vendor === "fusion") {
-    return `${spec.fast ? "." : ""}anthropic:claude-opus-5-5:none`;
+    return `${".".repeat(spec.fast)}anthropic:claude-opus-5-5:none`;
   }
   const thinking = spec.model.startsWith("claude-fable") ? "low" : "none";
-  return `${spec.fast ? "." : ""}${spec.vendor}:${spec.model}:${thinking}`;
+  return `${".".repeat(spec.fast)}${spec.vendor}:${spec.model}:${thinking}`;
 }
 
 // Mirror

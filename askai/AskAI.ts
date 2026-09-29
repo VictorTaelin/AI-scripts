@@ -133,7 +133,8 @@ export interface ResolvedModelSpec {
   vendor: Vendor;
   model: string;
   thinking: ThinkingLevel;
-  fast: boolean;
+  // speed tier: 0 = standard, 1 = fast, 2 = ultrafast (one per leading '.')
+  fast: number;
 }
 
 export interface VendorConfig {
@@ -303,19 +304,17 @@ const PANEL_ALIASES: Record<string, { panel: string; thinking: ThinkingLevel }> 
   'Board': { panel: 'board', thinking: 'high' },
 };
 
-// Rewrites a "vendor:model:thinking" spec with a new thinking level and fast
-// flag, so a panel-wide modifier (e.g. 'b+') overrides each member's default.
-function overrideSpec(spec: string, thinking: ThinkingLevel, fast: boolean): string {
+// Rewrites a "vendor:model:thinking" spec with a new thinking level and speed
+// tier, so a panel-wide modifier (e.g. 'b+') overrides each member's default.
+function overrideSpec(spec: string, thinking: ThinkingLevel, fast: number): string {
   const [vendor, model] = spec.split(':');
-  let out = `${vendor}:${model}:${thinking}`;
-  if (fast) out = `.${out}`;
-  return out;
+  return `${'.'.repeat(fast)}${vendor}:${model}:${thinking}`;
 }
 
 async function buildFusionChat(
   panelName: string,
   thinking: ThinkingLevel,
-  fast: boolean,
+  fast: number,
 ): Promise<ChatInstance> {
   const def = PANELS[panelName];
   if (!def) {
@@ -434,10 +433,10 @@ function resolveModelSpecRaw(spec: string): ResolvedModelSpec {
     throw new Error('Model spec must be provided');
   }
 
-  // '.' prefix enables fast mode (e.g. '.o+' -> 'o+' with fast=true)
-  let fast = false;
-  if (trimmed.startsWith('.')) {
-    fast = true;
+  // Each leading '.' raises the speed tier (e.g. '.o+' -> fast, '..g' -> ultrafast)
+  let fast = 0;
+  while (trimmed.startsWith('.')) {
+    fast++;
     trimmed = trimmed.slice(1);
   }
 
@@ -445,7 +444,7 @@ function resolveModelSpecRaw(spec: string): ResolvedModelSpec {
 
   // Check if last part is 'fast'
   if (parts.length > 1 && parts[parts.length - 1].trim().toLowerCase() === 'fast') {
-    fast = true;
+    fast = Math.max(fast, 1);
     parts.pop();
   }
 
@@ -461,7 +460,7 @@ function resolveModelSpecRaw(spec: string): ResolvedModelSpec {
     if (alias) {
       if (alias.includes(':')) {
         const resolved = resolveModelSpecRaw(alias);
-        resolved.fast = resolved.fast || fast;
+        resolved.fast = Math.max(resolved.fast, fast);
         return resolved;
       }
       const vendor = inferVendor(alias);
@@ -754,7 +753,7 @@ export async function AskAI(modelSpec: string): Promise<ChatInstance> {
 
   if (resolved.vendor === 'anthropic') {
     const apiKey = await getToken(resolved.vendor);
-    return new AnthropicChat(apiKey, resolved.model, vendorConfig, resolved.fast);
+    return new AnthropicChat(apiKey, resolved.model, vendorConfig, resolved.fast > 0);
   }
 
   if (resolved.vendor === 'google') {

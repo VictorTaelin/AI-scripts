@@ -237,7 +237,7 @@ async function main(): Promise<void> {
   const mini  = process.argv[3];
   const model = process.argv[4] || 'gpt-4o-mini';
   const resolvedModel = resolveModelSpec(model);
-  const modelDescriptor = `${resolvedModel.vendor}:${resolvedModel.model}:${resolvedModel.thinking}${resolvedModel.fast ? ':fast' : ''}`;
+  const modelDescriptor = `${resolvedModel.vendor}:${resolvedModel.model}:${resolvedModel.thinking}${['', ':fast', ':ultrafast'][resolvedModel.fast]}`;
   // Self-hosted models (vast/local): never persist prompts or replies to disk
   // (~/.ai/.holefill debug dump and ~/.ai/prompt_history logs).
   const logPrompts = resolvedModel.vendor !== 'vast' && resolvedModel.vendor !== 'local';

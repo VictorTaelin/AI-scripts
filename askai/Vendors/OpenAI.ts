@@ -260,7 +260,7 @@ export class OpenAIChat implements ChatInstance {
   private readonly model: string;
   private readonly vendor: Vendor;
   private readonly vendorConfig?: VendorConfig;
-  private readonly fast: boolean;
+  private readonly fast: number;
   private readonly messages: { role: Role; content: string }[] = [];
   private instructions?: string;
   public lastResponseMeta: {
@@ -274,7 +274,7 @@ export class OpenAIChat implements ChatInstance {
     model: string,
     vendor: Vendor,
     vendorConfig?: VendorConfig,
-    fast: boolean = false,
+    fast: number = 0,
   ) {
     const defaultHeaders =
       vendor === "openrouter"
@@ -363,7 +363,7 @@ export class OpenAIChat implements ChatInstance {
     }
 
     if (this.fast) {
-      params.service_tier = "priority";
+      params.service_tier = this.fast > 1 ? "ultrafast" : "priority";
     }
 
     return params;
