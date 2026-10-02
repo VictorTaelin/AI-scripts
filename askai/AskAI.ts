@@ -10,6 +10,10 @@ import { FireworksChat } from './Vendors/Fireworks';
 import { FusionChat, FusionMember } from './Vendors/Fusion';
 import { countTokens } from 'gpt-tokenizer/model/gpt-4o';
 
+// Where every tool logs its prompts and runs: Taelin's chats live in
+// ~/t/self/chat/, one dir per program.
+export const LOGS = path.join(os.homedir(), 't', 'self', 'chat', 'ai');
+
 export const MODELS: Record<string, string> = {
   // OpenAI GPT-6 Astra (flagship; 1.05M context, 128k output). Reasoning
   // effort accepts low|medium|high|xhigh|max ('none'/'minimal' are rejected;

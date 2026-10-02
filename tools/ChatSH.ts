@@ -5,7 +5,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as readline from 'readline';
 import { Command } from 'commander';
-import { AskAI, resolveModelSpec } from '../askai/AskAI';
+import { AskAI, resolveModelSpec, LOGS } from '../askai/AskAI';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
@@ -130,8 +130,7 @@ async function main() {
   let userCommandOutputs: string[] = [];
   const history: string[] = [];
 
-  const homeDir = process.env.HOME || process.env.USERPROFILE || '';
-  const logDir = path.join(homeDir, '.ai', 'chatsh3_history');
+  const logDir = path.join(LOGS, 'chatsh3_history');
   if (!fs.existsSync(logDir)) {
     fs.mkdirSync(logDir, { recursive: true });
   }

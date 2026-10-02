@@ -4,7 +4,7 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import * as process from 'process';
-import { AskAI, resolveModelSpec, tokenCount, AskOptions } from '../askai/AskAI';
+import { AskAI, resolveModelSpec, tokenCount, AskOptions, LOGS } from '../askai/AskAI';
 
 /* ==================================================================
  * HoleFill has two modes:
@@ -221,7 +221,7 @@ async function expandImports(code: string, baseFile: string): Promise<string> {
 
 async function logRun(modelDescriptor: string, system: string, prompt: string, reply: string): Promise<void> {
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
-  const logDir = path.join(os.homedir(), '.ai', 'prompt_history');
+  const logDir = path.join(LOGS, 'prompt_history');
   await fs.mkdir(logDir, { recursive: true });
   const safeModelLabel = modelDescriptor.replace(/[:/]/g, '_');
   await fs.writeFile(path.join(logDir, `${ts}_${safeModelLabel}.log`),
@@ -239,7 +239,7 @@ async function main(): Promise<void> {
   const resolvedModel = resolveModelSpec(model);
   const modelDescriptor = `${resolvedModel.vendor}:${resolvedModel.model}:${resolvedModel.thinking}${['', ':fast', ':ultrafast'][resolvedModel.fast]}`;
   // Self-hosted models (vast/local): never persist prompts or replies to disk
-  // (~/.ai/.holefill debug dump and ~/.ai/prompt_history logs).
+  // (LOGS/.holefill debug dump and LOGS/prompt_history logs).
   const logPrompts = resolvedModel.vendor !== 'vast' && resolvedModel.vendor !== 'local';
 
   if (!file) {
@@ -281,8 +281,8 @@ async function main(): Promise<void> {
     const tokens = tokenCount(prompt);
 
     if (logPrompts) {
-      await fs.mkdir(path.join(os.homedir(), '.ai'), { recursive: true });
-      await fs.writeFile(path.join(os.homedir(), '.ai', '.holefill'),
+      await fs.mkdir(LOGS, { recursive: true });
+      await fs.writeFile(path.join(LOGS, '.holefill'),
                          `${SYSTEM_EDIT}\n###\n${prompt}`, 'utf-8');
     }
 
@@ -324,8 +324,8 @@ async function main(): Promise<void> {
   const prompt = mini_code.replace('.?.', FILL);
 
   if (logPrompts) {
-    await fs.mkdir(path.join(os.homedir(), '.ai'), { recursive: true });
-    await fs.writeFile(path.join(os.homedir(), '.ai', '.holefill'),
+    await fs.mkdir(LOGS, { recursive: true });
+    await fs.writeFile(path.join(LOGS, '.holefill'),
                        `${SYSTEM_FILL}\n###\n${prompt}`, 'utf-8');
   }
 

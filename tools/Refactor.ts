@@ -1,12 +1,11 @@
 #!/usr/bin/env bun
 
 import * as fs from 'fs/promises';
-import * as os from 'os';
 import * as path from 'path';
 import * as process from 'process';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { AskAI, resolveModelSpec, ResolvedModelSpec, ThinkingLevel, tokenCount } from '../askai/AskAI';
+import { AskAI, resolveModelSpec, ResolvedModelSpec, ThinkingLevel, tokenCount, LOGS } from '../askai/AskAI';
 
 const execFileAsync = promisify(execFile);
 
@@ -420,7 +419,7 @@ interface SessionLogContext {
 }
 
 async function initSessionLogContext(): Promise<SessionLogContext> {
-  const aiDir = path.join(os.homedir(), '.ai');
+  const aiDir = LOGS;
   const historyDir = path.join(aiDir, 'refactor-history');
   await fs.mkdir(aiDir, { recursive: true });
   await fs.mkdir(historyDir, { recursive: true });

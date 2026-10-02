@@ -31,12 +31,11 @@
 // splices may not target them, and on write-back the import line itself is
 // preserved, never its expansion.
 //
-// Every run logs to ~/.ai/holefill2_history (prompt before the call, so a
+// Every run logs to LOGS/holefill2_history (prompt before the call, so a
 // cancelled run still leaves a trace) and mirrors the outgoing prompt to
-// ~/.ai/.holefill2. Without a marker, it prints the token count and stops.
+// LOGS/.holefill2. Without a marker, it prints the token count and stops.
 
 import * as fs from "fs/promises";
-import * as os from "os";
 import * as path from "path";
 import * as process from "process";
 import * as askai from "../askai/AskAI";
@@ -587,13 +586,13 @@ function model_filter(spec: askai.ResolvedModelSpec): string {
 // Mirror
 // ======
 
-// The previous run's outgoing prompt, kept in the ~/.ai/.holefill2 mirror.
+// The previous run's outgoing prompt, kept in the LOGS/.holefill2 mirror.
 // The char where this run's prompt diverges from it becomes a cache cut:
 // the vendor lookup then lands exactly at the deepest cache entry the
 // previous run could have written (see askai/Vendors/Anthropic.ts).
 async function mirror_read(): Promise<string> {
   try {
-    const prev = await fs.readFile(path.join(os.homedir(), ".ai", ".holefill2"), "utf-8");
+    const prev = await fs.readFile(path.join(askai.LOGS, ".holefill2"), "utf-8");
     const sep = prev.indexOf("\n###\n");
     return sep === -1 ? "" : prev.slice(sep + 5);
   } catch {
@@ -618,7 +617,7 @@ let log_path: string | null = null;
 async function log_note(label: string, tag: string, text: string): Promise<void> {
   if (log_path === null) {
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
-    const dir = path.join(os.homedir(), ".ai", "holefill2_history");
+    const dir = path.join(askai.LOGS, "holefill2_history");
     await fs.mkdir(dir, { recursive: true });
     log_path = path.join(dir, `${ts}_${label.replace(/[:/]/g, "_")}.log`);
   }
@@ -626,8 +625,8 @@ async function log_note(label: string, tag: string, text: string): Promise<void>
 }
 
 async function preview_write(prompt: string): Promise<void> {
-  await fs.mkdir(path.join(os.homedir(), ".ai"), { recursive: true });
-  await fs.writeFile(path.join(os.homedir(), ".ai", ".holefill2"), `${SYSTEM}\n###\n${prompt}`, "utf-8");
+  await fs.mkdir(askai.LOGS, { recursive: true });
+  await fs.writeFile(path.join(askai.LOGS, ".holefill2"), `${SYSTEM}\n###\n${prompt}`, "utf-8");
 }
 
 // Main

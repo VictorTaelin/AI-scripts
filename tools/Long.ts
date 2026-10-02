@@ -17,6 +17,7 @@ import * as process from 'process';
 import { spawn, execFile } from 'child_process';
 import { promisify }       from 'util';
 import { Command }         from 'commander';
+import { LOGS }            from '../askai/AskAI';
 
 var exec = promisify(execFile);
 
@@ -179,9 +180,9 @@ async function read_or(p: string, fb = ''): Promise<string> {
   }
 }
 
-// Saves the latest prompt for a prompt category under ~/.ai.
+// Saves the latest prompt for a prompt category under LOGS.
 async function save_prompt(nam: string, txt: string): Promise<void> {
-  var dir  = path.join(os.homedir(), '.ai');
+  var dir  = LOGS;
   var file = path.join(dir, `long-${nam}.txt`);
   if (nam === 'codex_prompt') {
     file = path.join(dir, 'long-codex-prompt.txt');
@@ -471,7 +472,7 @@ function fmt_time(d: Date): string {
 
 // Tees all stdout/stderr to a log file. Returns the log path.
 function start_log(): string {
-  var dir  = path.join(os.homedir(), '.ai', 'long_history');
+  var dir  = path.join(LOGS, 'long_history');
   var file = path.join(dir, `${fmt_time(new Date())}.txt`);
   sfs.mkdirSync(dir, { recursive: true });
   var fd = sfs.openSync(file, 'a');
