@@ -9,6 +9,7 @@ import type {
   Vendor,
   VendorConfig,
 } from "../AskAI";
+import { wire, wire_msgs } from "../Inline";
 
 type Role = "user" | "assistant";
 
@@ -320,12 +321,9 @@ export class OpenAIChat implements ChatInstance {
     return this.messages.map((message) => ({
       type: "message",
       role: message.role,
-      content: [
-        {
-          type: message.role === "assistant" ? "output_text" : "input_text",
-          text: message.content,
-        },
-      ],
+      content: message.role === "assistant"
+        ? [{ type: "output_text", text: message.content }]
+        : wire(message.content, "responses"),
     }));
   }
 
@@ -560,7 +558,7 @@ export class OpenAIChat implements ChatInstance {
   }): Promise<AskResult> {
     const chatMessages = [
       ...(this.instructions ? [{ role: "system", content: this.instructions }] : []),
-      ...this.messages.map((m) => ({ role: m.role, content: m.content })),
+      ...wire_msgs(this.messages, "chat"),
     ];
 
     const params: Record<string, any> = {
@@ -733,7 +731,7 @@ export class OpenAIChat implements ChatInstance {
   }): Promise<string> {
     const chatMessages = [
       ...(this.instructions ? [{ role: "system", content: this.instructions }] : []),
-      ...this.messages.map((m) => ({ role: m.role, content: m.content })),
+      ...wire_msgs(this.messages, "chat"),
     ];
 
     const params: Record<string, any> = {

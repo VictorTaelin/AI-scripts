@@ -77,6 +77,7 @@ Interface for chat interactions.
 - If `userMessage` is a string: AI's response as a string.  
 - If `userMessage` is `null`: Object containing conversation history.  
 **Note:** When `stream` is `true`, the response is streamed to `stdout`, and the full response is still returned as a string.
+**Inline files:** `///./path/to/file.pdf///` in a user message (of `ask` or `askTools`) sends that pdf or image (png, jpg, gif, webp) to the model at that spot. Paths are relative to the working dir; a missing file throws.
 
 #### askTools
 **Signature:** `askTools(userMessage: string, options: AskToolsOptions): Promise<AskResult>`  

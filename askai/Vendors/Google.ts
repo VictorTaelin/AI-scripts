@@ -8,6 +8,7 @@ import type {
   ToolDef,
   VendorConfig,
 } from "../AskAI";
+import { wire } from "../Inline";
 
 type Role = "user" | "assistant";
 interface Turn {
@@ -166,12 +167,12 @@ export class GoogleChat implements ChatInstance {
   private buildContents(userMessage: string) {
     const contents = this.history.map((turn) => ({
       role: turn.role === "assistant" ? "model" : "user",
-      parts: [{ text: turn.content }],
+      parts: turn.role === "assistant" ? [{ text: turn.content }] : wire(turn.content, "google"),
     }));
 
     contents.push({
       role: "user",
-      parts: [{ text: userMessage }],
+      parts: wire(userMessage, "google"),
     });
 
     return contents;

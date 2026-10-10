@@ -8,6 +8,7 @@ import type {
   ToolDef,
   VendorConfig,
 } from "../AskAI";
+import { wire_msgs } from "../Inline";
 
 type Role = "user" | "assistant" | "system";
 
@@ -79,7 +80,7 @@ export class VastChat implements ChatInstance {
 
     const body: Record<string, any> = {
       model: this.model,
-      messages: this.messages as any,
+      messages: wire_msgs(this.messages, "chat"),
       tools: tools.map((tool: ToolDef) => ({
         type: "function",
         function: {
@@ -139,7 +140,7 @@ export class VastChat implements ChatInstance {
 
     const body: Record<string, any> = {
       model: this.model,
-      messages: this.messages as any,
+      messages: wire_msgs(this.messages, "chat"),
     };
     const chatTemplateKwargs = this.chatTemplateKwargs();
     if (Object.keys(chatTemplateKwargs).length > 0) {

@@ -8,6 +8,7 @@ import type {
   ToolDef,
   VendorConfig,
 } from "../AskAI";
+import { wire_msgs } from "../Inline";
 
 type Role = "user" | "assistant";
 
@@ -431,8 +432,8 @@ export class AnthropicChat implements ChatInstance {
       stream: wantStream,
       max_tokens: maxTokens,
       messages: this.cacheable
-        ? planCache(messages ?? this.messages, this.cacheTtl, this.cacheCuts)
-        : (messages ?? this.messages),
+        ? planCache(wire_msgs(messages ?? this.messages, "anthropic"), this.cacheTtl, this.cacheCuts)
+        : wire_msgs(messages ?? this.messages, "anthropic"),
     };
     params.betas = this.betas;
     params.fallbacks = "default";

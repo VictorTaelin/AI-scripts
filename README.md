@@ -29,6 +29,8 @@ npm install -g
 
 Then run any tool from the terminal (e.g. `csh s`, `holefill file.ts`).
 
+Any prompt can inline a pdf or image as `///./path/to/file.pdf///`. In holefill, the path is relative to the file, like imports.
+
 API keys go in `~/.config/<vendor>.token` (e.g. `~/.config/openai.token`).
 
 See `./askai/AskAI.md` for the AskAI library API reference.

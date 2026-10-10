@@ -183,9 +183,8 @@ async function import_read(file: string, seen: Set<string>): Promise<string> {
   return out.join("\n");
 }
 
-async function doc_load(file: string, cwd: string | null): Promise<Doc> {
+async function doc_load(file: string): Promise<Doc> {
   const text = (await fs.readFile(file, "utf-8")).replace(/\r\n/g, "\n");
-  const base = cwd ?? path.dirname(path.resolve(file));
   const seen = new Set<string>([path.resolve(file)]);
   const parts: Part[] = [];
   const blks: Blk[] = [];
@@ -209,7 +208,7 @@ async function doc_load(file: string, cwd: string | null): Promise<Doc> {
     flush();
     const part = parts.length;
     parts.push(Imp(line.trim()));
-    const body = await import_read(path.resolve(base, imp), seen);
+    const body = await import_read(path.resolve(imp), seen);
     for (const lines of text_blocks(body)) {
       blks.push({ lines, part });
     }
@@ -648,7 +647,7 @@ async function main(): Promise<void> {
       args.push(process.argv[i]);
     }
   }
-  const file = args[0];
+  const file = args[0] === undefined ? undefined : path.resolve(args[0]);
   const model = args[1] ?? "f";
   if (file === undefined) {
     console.log("Usage: holefill2 <file> [<model>] [--cwd <dir>]");
@@ -662,7 +661,9 @@ async function main(): Promise<void> {
 
   const spec = askai.resolveModelSpec(model);
   const label = model_label(spec);
-  const doc = await doc_load(file, cwd);
+  /* imports and inline ///path/// files resolve from here */
+  process.chdir(cwd === null ? path.dirname(file) : path.resolve(cwd));
+  const doc = await doc_load(file);
   const prompt = doc_prompt(doc);
 
   if (prompt === null) {

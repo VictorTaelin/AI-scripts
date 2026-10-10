@@ -8,6 +8,7 @@ import type {
   ToolDef,
   VendorConfig,
 } from "../AskAI";
+import { wire_msgs } from "../Inline";
 
 type Role = "user" | "assistant" | "system";
 
@@ -72,7 +73,7 @@ export class FireworksChat implements ChatInstance {
 
     const body: Record<string, any> = {
       model: this.model,
-      messages: this.messages as any,
+      messages: wire_msgs(this.messages, "chat"),
       max_tokens: 16384,
       thinking: { type: 'disabled' },
       tools: tools.map((tool: ToolDef) => ({
@@ -130,7 +131,7 @@ export class FireworksChat implements ChatInstance {
 
     const body: Record<string, any> = {
       model: this.model,
-      messages: this.messages as any,
+      messages: wire_msgs(this.messages, "chat"),
       max_tokens: 16384,
       thinking: { type: 'disabled' },
     };

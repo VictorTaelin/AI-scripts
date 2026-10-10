@@ -8,6 +8,7 @@ import type {
   ToolDef,
   VendorConfig,
 } from "../AskAI";
+import { wire, wire_msgs } from "../Inline";
 
 type Role = "user" | "assistant" | "system";
 
@@ -73,12 +74,9 @@ export class XAIChat implements ChatInstance {
     const input = this.messages.map((message) => ({
       type: "message",
       role: message.role,
-      content: [
-        {
-          type: message.role === "assistant" ? "output_text" : "input_text",
-          text: message.content,
-        },
-      ],
+      content: message.role === "assistant"
+        ? [{ type: "output_text", text: message.content }]
+        : wire(message.content, "responses"),
     }));
 
     const body: Record<string, any> = {
@@ -156,7 +154,7 @@ export class XAIChat implements ChatInstance {
 
     const body: Record<string, any> = {
       model: this.model,
-      messages: this.messages as any,
+      messages: wire_msgs(this.messages, "chat"),
     };
 
     if (typeof options.temperature === "number") {

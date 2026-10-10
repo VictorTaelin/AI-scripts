@@ -233,8 +233,8 @@ async function logRun(modelDescriptor: string, system: string, prompt: string, r
  * ================================================================== */
 
 async function main(): Promise<void> {
-  const file  = process.argv[2];
-  const mini  = process.argv[3];
+  const file  = process.argv[2] && path.resolve(process.argv[2]);
+  const mini  = process.argv[3] && path.resolve(process.argv[3]);
   const model = process.argv[4] || 'gpt-4o-mini';
   const resolvedModel = resolveModelSpec(model);
   const modelDescriptor = `${resolvedModel.vendor}:${resolvedModel.model}:${resolvedModel.thinking}${['', ':fast', ':ultrafast'][resolvedModel.fast]}`;
@@ -249,6 +249,9 @@ async function main(): Promise<void> {
     console.log('           instructions written inside the file itself.');
     process.exit(1);
   }
+
+  /* inline ///path/// files resolve from the file's dir, like imports */
+  process.chdir(path.dirname(file));
 
   const ai = await AskAI(model);
 
